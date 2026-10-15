@@ -1181,7 +1181,12 @@ input[type="range"] {
 .studio {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: grid;
+  /* One column that is exactly the shell's width: an implicit `auto` column would grow to
+     the timeline's content width (thousands of px for long videos) and push the whole
+     editor off-screen. The timeline scrolls inside its own box instead. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   background: var(--bg-app);
   color: var(--text);
@@ -1217,6 +1222,7 @@ input[type="range"] {
 }
 .studio__main {
   min-height: 0;
+  min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
 }
@@ -1227,6 +1233,8 @@ input[type="range"] {
   align-items: center;
   justify-content: center;
   padding: var(--s-4);
+  /* The player sizes itself from this box (cqw / cqh) so it always fits, keeping 16:9. */
+  container-type: size;
 }
 .studio__panel {
   min-height: 0;
@@ -1242,15 +1250,15 @@ input[type="range"] {
   margin-top: auto;
 }
 .studio__timeline {
+  min-width: 0;
   border-top: 1px solid var(--border);
   background: var(--bg-shell);
 }
 
 /* player */
 .player {
-  width: 100%;
-  max-width: 1100px;
-  max-height: 100%;
+  /* As wide as the box allows, but never taller than it: stage (16:9) + 48 px control bar. */
+  width: min(100cqw, 1100px, calc((100cqh - 48px) * 16 / 9));
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
@@ -1258,7 +1266,6 @@ input[type="range"] {
 .player__stage {
   position: relative;
   aspect-ratio: 16 / 9;
-  max-height: calc(100% - 48px);
   background: #000;
   border-radius: var(--r-sm);
   overflow: hidden;
@@ -1280,7 +1287,8 @@ input[type="range"] {
 }
 .player__bar {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  height: 40px;
   align-items: center;
 }
 .player__bar > :last-child {
@@ -1383,6 +1391,7 @@ input[type="range"] {
 
 /* timeline */
 .tl {
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1395,6 +1404,7 @@ input[type="range"] {
   border-bottom: 1px solid var(--border);
 }
 .tl__scroll {
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   cursor: pointer;
@@ -1431,6 +1441,8 @@ input[type="range"] {
 .tl__ruler {
   position: relative;
   height: 24px;
+  /* The last tick label must not stick out past the end and add a needless scrollbar. */
+  overflow: hidden;
 }
 .tl__tick {
   position: absolute;

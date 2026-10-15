@@ -6,7 +6,7 @@ import { SceneThumb } from "../SceneThumb";
 import { useI18n } from "../../i18n/context";
 import { cueText, type SubtitleState } from "../../lib/subtitleStates";
 import type { Language, Scene, TimelineScene } from "../../lib/types";
-import { formatTime, sceneIndexAt } from "../../lib/timeline";
+import { followScroll, formatTime, sceneIndexAt } from "../../lib/timeline";
 
 const MIN_PPS = 4;
 const MAX_PPS = 200;
@@ -82,15 +82,15 @@ export function Timeline({ projectId, lang, scenes, projectScenes, states, timeM
   const current = sceneIndexAt(scenes, timeMs);
   const x = (ms: number) => (ms / 1000) * pps;
 
-  // Keep the playhead visible (time only changes while playing or seeking).
+  // Follow the playhead: during playback and after a seek (scene buttons, keys, clicks),
+  // scroll so it stays visible. Runs only when the time or zoom changes, so scrolling the
+  // timeline by hand while paused is not undone.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || dragging.current) return;
-    const px = LABEL_W + x(timeMs);
-    if (px < el.scrollLeft + LABEL_W || px > el.scrollLeft + el.clientWidth - 40) {
-      el.scrollLeft = Math.max(0, px - el.clientWidth / 3);
-    }
-  });
+    const next = followScroll(LABEL_W + (timeMs / 1000) * pps, el.scrollLeft, el.clientWidth, LABEL_W);
+    if (next !== null) el.scrollLeft = next;
+  }, [timeMs, pps]);
 
   const seekFrom = (e: ReactPointerEvent<HTMLDivElement>) => {
     const el = scrollRef.current;

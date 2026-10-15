@@ -24,3 +24,16 @@ export function formatTime(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
+
+/**
+ * Timeline auto-follow: the new `scrollLeft` that brings the playhead back into view, or
+ * `null` when it is already visible. `px` = playhead position in content pixels (including
+ * the sticky label column of width `labelW`, which covers the left edge of the view).
+ */
+export function followScroll(px: number, scrollLeft: number, clientWidth: number, labelW: number): number | null {
+  const left = scrollLeft + labelW;
+  const right = scrollLeft + clientWidth - 40;
+  if (px >= left && px <= right) return null;
+  // Put the playhead a third into the visible track area.
+  return Math.max(0, px - labelW - (clientWidth - labelW) / 3);
+}

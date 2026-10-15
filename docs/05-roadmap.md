@@ -6,7 +6,7 @@ After the human confirms, they (or you, if asked) move the **CURRENT** marker.
 
 ---
 
-## Phase 1 — Scaffold, settings, script  ← **CURRENT**
+## Phase 1 — Scaffold, settings, script  ✅ (tested by the owner)
 
 Goal: create a project and get an editable Khmer/English script from Gemini.
 
@@ -24,17 +24,26 @@ Goal: create a project and get an editable Khmer/English script from Gemini.
 **Test:** create a 3-minute Khmer project about "Where did rice come from?" → ~25
 scenes appear, editable, saved after restart. Key never appears in any file or log.
 
-## Phase 2 — Voice
+## Phase 2 — Voice  ← **CURRENT**
 
-- [ ] `gemini/tts.rs` per scene, model selectable (flash / flash-lite), voice + direction
-- [ ] WAV saved, duration via ffprobe sidecar, suspicious-length check
+- [ ] `tts/` module: `TtsEngine` trait with `EdgeTts` (default) and `GeminiTts`
+- [ ] Gemini TTS per scene, model selectable (flash / flash-lite), voice + direction
+- [ ] Edge TTS: km-KH-PisethNeural / km-KH-SreymomNeural + en-US voices, rate + pitch;
+      clear "Edge TTS unavailable" error, Gemini TTS stays usable
+- [ ] Settings: voice engine dropdown + voice / rate / pitch / Gemini model & direction
+- [ ] Audio saved per scene (Edge MP3 / Gemini WAV); duration measured in Rust from the
+      audio file (ffprobe arrives with the FFmpeg sidecar in Phase 4); suspicious-length check
+- [ ] Edge WordBoundary events saved to `scenes/<id>/words.json`; subtitle timing helper uses
+      them when present (proportional timing otherwise)
 - [ ] Scheduler with semaphore, cancel, `scene-progress` events
 - [ ] Khmer number-to-words fallback (`khmer_numbers.rs`) + unit tests
 - [ ] Scene list shows play button + status per scene; regenerate voice for one scene
-- [ ] Edited text → voice marked `stale` → regenerated on next run
+- [ ] Edited text or voice settings → voice marked `stale` → regenerated on next run
 
-**Test:** generate voices for the 3-minute project; close app mid-way; reopen → it
-resumes without redoing finished scenes.
+**Test:** generate voices for the 1-minute Khmer project "How was Angkor Wat built?" with
+Edge TTS and play them back in the scene list; switch to Gemini TTS and regenerate one scene;
+close the app mid-way through a 3-minute project; reopen → it resumes without redoing
+finished scenes.
 
 ## Phase 3 — Images
 

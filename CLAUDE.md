@@ -20,6 +20,12 @@ stop and ask the human to test. Do not start the next phase on your own.
 - **Target hardware is a low-spec Windows laptop** (8 GB RAM, integrated GPU, no CUDA).
   No Remotion, no Node at runtime, no headless Chrome, no local AI models.
 - **All AI runs through the Gemini API** with the user's own key (BYOK).
+  **Exception (decided by the project owner, 2026-10-15):** voices may also come from
+  **Edge TTS** (Microsoft Edge "Read aloud", via the `msedge-tts` crate). It is an unofficial,
+  undocumented service that can break or be blocked at any time and its terms are unclear:
+  keep it behind the `TtsEngine` trait, label it unofficial in the UI, show a clear
+  "Edge TTS unavailable — switch to Gemini TTS in Settings" error, and keep Gemini TTS fully
+  working as the alternative. No other non-Gemini AI services.
   - Store the key only via the `keyring` crate (Windows Credential Manager).
   - Never log the key, never write it to project files.
   - **Never rotate multiple keys/accounts to bypass rate limits** (violates Google's terms).

@@ -18,15 +18,40 @@ pub struct Profile {
     pub files: Vec<ModelFile>,
     #[serde(rename = "gen")]
     pub generation: GenParams,
-    /// Prompt adapter: "sd15".
+    /// Prompt builder: "sd15" (short, ≤ 75 tokens) or "flux" (full prompt, like Cloudflare).
     pub prompt_style: String,
+    /// Extra `sd-server` start flags (shipped with the app, e.g. `--diffusion-fa`).
+    #[serde(default)]
+    pub engine_args: Vec<String>,
 }
 
+/// What a file is; each maps to one `sd-server` flag (see `flag`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum FileRole {
+    /// Full checkpoint (SD 1.5): `-m`.
     Model,
+    /// Standalone diffusion model (FLUX GGUF): `--diffusion-model`.
+    Diffusion,
+    Vae,
+    ClipL,
+    T5xxl,
+    /// Applied per request (`lora` field), from `--lora-model-dir`.
     Lora,
+}
+
+impl FileRole {
+    /// `sd-server` flag that loads this file (`None` for LoRAs).
+    pub fn flag(self) -> Option<&'static str> {
+        match self {
+            Self::Model => Some("-m"),
+            Self::Diffusion => Some("--diffusion-model"),
+            Self::Vae => Some("--vae"),
+            Self::ClipL => Some("--clip_l"),
+            Self::T5xxl => Some("--t5xxl"),
+            Self::Lora => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -91,8 +116,14 @@ impl Manifest {
             if !is_safe_name(&p.id) || !ids.insert(&p.id) {
                 return Err(format!("profile id '{}' is invalid or duplicated", p.id));
             }
-            if !p.files.iter().any(|f| f.role == FileRole::Model) {
+            if !p.files.iter().any(|f| matches!(f.role, FileRole::Model | FileRole::Diffusion)) {
                 return Err(format!("profile '{}' has no model file", p.id));
+            }
+            if !matches!(p.prompt_style.as_str(), "sd15" | "flux") {
+                return Err(format!("profile '{}' has an unknown prompt_style", p.id));
+            }
+            if p.engine_args.iter().any(|a| !a.starts_with("--") || a.contains(char::is_whitespace)) {
+                return Err(format!("profile '{}' has an invalid engine argument", p.id));
             }
             if p.generation.width % 64 != 0 || p.generation.height % 64 != 0 || p.generation.steps == 0 {
                 return Err(format!("profile '{}' has an invalid size or step count", p.id));
@@ -119,8 +150,9 @@ impl Profile {
         self.files.iter().map(|f| f.size_mb).sum()
     }
 
-    pub fn model(&self) -> Option<&ModelFile> {
-        self.files.iter().find(|f| f.role == FileRole::Model)
+    /// Files loaded at server start, as (flag, file).
+    pub fn loaded(&self) -> impl Iterator<Item = (&'static str, &ModelFile)> {
+        self.files.iter().filter_map(|f| f.role.flag().map(|flag| (flag, f)))
     }
 
     pub fn loras(&self) -> impl Iterator<Item = &ModelFile> {

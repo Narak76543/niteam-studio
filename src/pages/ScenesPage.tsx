@@ -81,6 +81,12 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   const [jobs, setJobs] = useState<Record<Job, JobState>>({ voice: IDLE, image: IDLE });
   const [retry, setRetry] = useState<Record<Job, Retry>>({ voice: null, image: null });
   const [estimate, setEstimate] = useState<ImageEstimate | null>(null);
+  const [local, setLocal] = useState<{ secondsPerImage: number | null; onBattery: boolean }>({
+    secondsPerImage: null,
+    onBattery: false,
+  });
+  /** When each image of the current run finished (for "≈ s / image · ~min left"). */
+  const [imageTimes, setImageTimes] = useState<number[]>([]);
   const [playing, setPlaying] = useState<string | null>(null);
   const [promptEdit, setPromptEdit] = useState<Scene | null>(null);
   const reloadTimer = useRef<number | null>(null);
@@ -128,6 +134,10 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       .then(setEstimate)
       .catch(() => setEstimate(null));
     api
+      .localStatus()
+      .then((s) => setLocal({ secondsPerImage: s.prefs.seconds_per_image, onBattery: s.power.on_battery }))
+      .catch(() => undefined);
+    api
       .generateRunning(projectId)
       .then((running) => setJobs((j) => ({ ...j, voice: { ...j.voice, running } })))
       .catch(() => undefined);
@@ -145,6 +155,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       onSceneProgress((ev) => {
         if (ev.project_id !== projectId) return;
         const job: Job = ev.asset === "image" ? "image" : "voice";
+        if (job === "image" && ev.status === "done") setImageTimes((ts) => [...ts.slice(-9), Date.now()]);
         setRetry((r) => ({ ...r, [job]: null }));
         setProject((p) => (p ? applySceneProgress(p, ev) : p));
         // Thumbnail path / hash are not in the event.
@@ -186,7 +197,10 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   };
 
   const startVoices = () => void start("voice", () => api.generateStart(projectId));
-  const startImages = () => void start("image", () => api.imagesStart(projectId));
+  const startImages = () => {
+    setImageTimes([]);
+    void start("image", () => api.imagesStart(projectId));
+  };
 
   const play = async (scene: Scene) => {
     if (playing === scene.id) {
@@ -232,6 +246,16 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   const paused = project.status === "paused_quota";
   const perImage = project.image_settings.scenes_per_image;
 
+  /** Average of the last few image intervals → "≈ 7 s / image · 38 left · ~5 min". */
+  const imageSpeed = (left: number): string | null => {
+    const ts = imageTimes;
+    if (ts.length < 2 || left <= 0) return null;
+    const first = ts[0] ?? 0;
+    const last = ts.at(-1) ?? 0;
+    const per = (last - first) / 1000 / (ts.length - 1);
+    return t("images.speed", { s: per.toFixed(1), left, min: Math.max(1, Math.round((per * left) / 60)) });
+  };
+
   const jobStrip = (job: Job, label: string, retryJob: () => void) => {
     const { running, progress } = jobs[job];
     const total = progress?.total ?? 0;
@@ -243,6 +267,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
           <span className="t-small">
             {label}: {t("scenes.jobProgress", { done, total })}
             {(progress?.failed ?? 0) > 0 && ` · ${t("scenes.progressFailed", { failed: progress?.failed ?? 0 })}`}
+            {job === "image" && imageSpeed(total - done) && ` · ${imageSpeed(total - done) ?? ""}`}
           </span>
           <ProgressBar label={label} value={total > 0 ? done / total : undefined} />
           {r && <RetryStatus key={r.at} retry={r.notice} receivedAt={r.at} />}
@@ -335,6 +360,8 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
             running={jobs.image.running}
             onScenesPerImage={(n) => void update(() => api.projectSetScenesPerImage(projectId, n))}
             onResume={startImages}
+            secondsPerImage={local.secondsPerImage}
+            onBattery={local.onBattery}
           />
         )}
         {!anyRunning && failedTotal > 0 && <Notice tone="warn">{t("scenes.someFailed", { n: failedTotal })}</Notice>}

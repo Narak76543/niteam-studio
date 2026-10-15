@@ -84,6 +84,14 @@ export default function App() {
     return saved;
   }, []);
 
+  const reloadSettings = useCallback(async () => {
+    try {
+      setSettings(await api.settingsGet());
+    } catch {
+      // Keep the current copy; the next save reports any problem.
+    }
+  }, []);
+
   const toggleLanguage = useCallback(() => {
     if (!settings) return;
     void saveSettings({ ...settings, ui_language: lang === "km" ? "en" : "km" });
@@ -142,7 +150,7 @@ export default function App() {
               <RenderPage key={route.projectId} projectId={route.projectId} navigate={navigate} />
             )}
             {route.name === "settings" && (
-              <SettingsPage settings={settings} onSave={saveSettings} onKeyChanged={refreshKey} />
+              <SettingsPage settings={settings} onSave={saveSettings} onKeyChanged={refreshKey} onReload={reloadSettings} />
             )}
           </main>
         </div>

@@ -19,7 +19,7 @@ export interface ModelSettings {
   tts_lite: string;
 }
 
-export type ProviderId = "cloudflare_flux" | "gemini_nano_banana";
+export type ProviderId = "cloudflare_flux" | "gemini_nano_banana" | "local_sdcpp";
 
 /** Settings → Images (docs/07-image-generation.md §1). */
 export interface ImageSettings {
@@ -31,6 +31,61 @@ export interface ImageSettings {
   /** Not secret; the API token is in the keyring. */
   cloudflare_account_id: string;
   cloudflare_concurrency: number;
+  /** Installed local model profile (docs/08-local-gpu.md). */
+  local_profile: string | null;
+}
+
+export interface GpuInfo {
+  name: string;
+  vendor: "nvidia" | "amd" | "intel" | "other";
+  vram_mb: number;
+}
+
+export interface LocalPrefs {
+  cooldown_every: number;
+  cooldown_seconds: number;
+  offer_dismissed: boolean;
+  seconds_per_image: number | null;
+}
+
+export interface LocalFileInfo {
+  name: string;
+  role: "model" | "diffusion" | "vae" | "clip_l" | "t5xxl" | "lora";
+  size_mb: number;
+  license: string;
+  license_url: string;
+}
+
+export interface LocalProfileStatus {
+  id: string;
+  label: string;
+  min_vram_mb: number;
+  total_mb: number;
+  fits: boolean;
+  installed: boolean;
+  downloaded_mb: number;
+  files: LocalFileInfo[];
+}
+
+export interface LocalStatus {
+  gpu: GpuInfo | null;
+  capable: boolean;
+  engine_version: string;
+  engine_present: boolean;
+  profiles: LocalProfileStatus[];
+  installing: string | null;
+  selected: string | null;
+  prefs: LocalPrefs;
+  power: { has_battery: boolean; on_battery: boolean };
+}
+
+/** Payload of `model-download-progress`. */
+export interface DownloadProgress {
+  profile_id: string;
+  stage: "running" | "done" | "failed" | "cancelled";
+  done_mb: number;
+  total_mb: number;
+  error: string | null;
 }
 
 export interface ImageCatalog {
@@ -49,6 +104,8 @@ export interface ImageEstimate {
   images: number;
   cloudflare: number;
   gemini: number;
+  /** Made on the user's GPU (free). */
+  local: number;
   cached: number;
   cloudflare_neurons: number;
   cloudflare_percent_of_daily: number;
@@ -71,6 +128,8 @@ export interface Settings {
   voice: VoiceDefaults;
   image: ImageSettings;
   render: RenderPrefs;
+  gpu: GpuInfo | null;
+  local: LocalPrefs;
 }
 
 /** Settings → Video. */
@@ -115,6 +174,7 @@ export interface RenderProgress {
 
 /** Stable error codes from `GeminiError::kind` / `ProjectError::kind`. */
 export type ErrorKind =
+  | "local_engine"
   | "ffmpeg_missing"
   | "ffmpeg"
   | "quota_daily"
@@ -134,6 +194,7 @@ export type ErrorKind =
   | "other";
 
 export const ERROR_KINDS: readonly ErrorKind[] = [
+  "local_engine",
   "ffmpeg_missing",
   "ffmpeg",
   "quota_daily",
@@ -292,6 +353,7 @@ export interface ImageSnapshot {
   steps: number;
   key_scene_provider: ProviderId | null;
   scenes_per_image: number;
+  local_profile: string | null;
 }
 
 export interface ImagePause {

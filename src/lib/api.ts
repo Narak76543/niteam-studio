@@ -11,6 +11,8 @@ import type {
   GeminiRetry,
   GenerateProgress,
   CueIn,
+  DownloadProgress,
+  LocalStatus,
   ImageCatalog,
   ProofProgress,
   RenderProgress,
@@ -133,6 +135,15 @@ export const api = {
   renderOpenOutput: (projectId: string, reveal: boolean) =>
     invoke<null>("render_open_output", { projectId, reveal }),
 
+  // local GPU images (Phase 6)
+  localStatus: () => invoke<LocalStatus>("local_status"),
+  localInstall: (profileId: string) => invoke<null>("local_install", { profileId }),
+  localInstallCancel: () => invoke<null>("local_install_cancel"),
+  localVerify: (profileId: string) => invoke<boolean>("local_verify", { profileId }),
+  localDelete: (profileId: string) => invoke<Settings>("local_delete", { profileId }),
+  localOfferDismiss: () => invoke<Settings>("local_offer_dismiss"),
+  localBenchmark: () => invoke<{ seconds_per_image: number; load_seconds: number }>("local_benchmark"),
+
   // native helpers
   pickFolder: async (): Promise<string | null> => {
     const picked = await openDialog({ directory: true, multiple: false });
@@ -155,6 +166,10 @@ export function onGenerateProgress(cb: (p: GenerateProgress) => void): Promise<U
 
 export function onProofreadProgress(cb: (p: ProofProgress) => void): Promise<UnlistenFn> {
   return listen<ProofProgress>("proofread-progress", (e) => cb(e.payload));
+}
+
+export function onDownloadProgress(cb: (p: DownloadProgress) => void): Promise<UnlistenFn> {
+  return listen<DownloadProgress>("model-download-progress", (e) => cb(e.payload));
 }
 
 export function onRenderProgress(cb: (p: RenderProgress) => void): Promise<UnlistenFn> {

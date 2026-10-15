@@ -1620,3 +1620,49 @@ input[type="range"] {
   background: var(--bg-hover);
   color: var(--text);
 }
+
+/* ---------- local images (Settings) ---------- */
+.local-profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.local-profile__head {
+  gap: var(--s-2);
+}
+.local-profile__files {
+  margin: 0;
+  padding-left: var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.offer {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-bottom: var(--s-5);
+  padding: var(--s-4);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.offer__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  flex: none;
+}
+.offer__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

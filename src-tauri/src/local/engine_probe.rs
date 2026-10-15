@@ -40,7 +40,15 @@ async fn engine_probe() {
 
     let cfg = EngineConfig {
         exe,
-        model: PathBuf::from(env("NITEAN_MODEL")),
+        files: std::env::var("NITEAN_FILES")
+            .map(|v| {
+                v.split(';')
+                    .filter_map(|p| p.split_once('='))
+                    .map(|(f, p)| (f.to_owned(), PathBuf::from(p)))
+                    .collect()
+            })
+            .unwrap_or_else(|_| vec![("-m".to_owned(), PathBuf::from(env("NITEAN_MODEL")))]),
+        args: std::env::var("NITEAN_ARGS").map(|a| a.split(' ').map(str::to_owned).collect()).unwrap_or_default(),
         lora_dir: PathBuf::from(env("NITEAN_LORA_DIR")),
         device,
     };
@@ -49,7 +57,9 @@ async fn engine_probe() {
     let mut server = SdServer::start(&cfg, &cancel).await.unwrap();
     println!("model loaded in {:.1} s", t0.elapsed().as_secs_f64());
 
-    let short = presets::find("stickman").unwrap().short_style;
+    let preset = presets::find("stickman").unwrap().short_style.to_owned();
+    let short_owned = std::env::var("NITEAN_STYLE").unwrap_or(preset);
+    let short = short_owned.as_str();
     let scenes = [
         ("the developer sits at a desk writing code on a laptop, a phone beside the laptop shows an app",
          vec![("developer", "stick figure with a small blue cap and an orange hoodie")], None, Shot::Medium),

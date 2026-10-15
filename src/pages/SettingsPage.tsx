@@ -6,6 +6,7 @@ import { Button, IconButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorPanel } from "../components/ErrorPanel";
 import { ImageSettingsSection } from "../components/ImageSettingsSection";
+import { LocalImagesSection } from "../components/LocalImagesSection";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { RetryStatus } from "../components/RetryStatus";
@@ -31,9 +32,11 @@ interface Props {
   settings: Settings;
   onSave: (s: Settings) => Promise<Settings>;
   onKeyChanged: () => Promise<void>;
+  /** Re-read settings.json (Rust changed it, e.g. after installing a local model). */
+  onReload: () => Promise<void>;
 }
 
-export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
+export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props) {
   const { t } = useI18n();
   const toast = useToast();
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -205,7 +208,10 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
 
         <VoiceSettingsSection settings={settings} onSave={onSave} />
 
-        <ImageSettingsSection settings={settings} onSave={onSave} />
+        {/* Remount when Rust changed the image settings (local install selects the provider). */}
+        <ImageSettingsSection key={JSON.stringify(settings.image)} settings={settings} onSave={onSave} />
+
+        <LocalImagesSection settings={settings} onSave={onSave} onReload={onReload} />
 
         <VideoSettingsSection settings={settings} onSave={onSave} />
 

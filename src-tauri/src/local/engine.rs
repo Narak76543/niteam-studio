@@ -85,7 +85,11 @@ pub fn device_for(devices: &[(String, String)], gpu_name: &str) -> Option<String
 pub struct EngineConfig {
     /// `…/sdcpp/sd-server.exe` (its DLLs sit next to it).
     pub exe: PathBuf,
-    pub model: PathBuf,
+    /// (flag, file): `-m model.safetensors`, or `--diffusion-model` + `--vae` + `--clip_l` +
+    /// `--t5xxl` for FLUX.
+    pub files: Vec<(String, PathBuf)>,
+    /// Extra start flags from the profile.
+    pub args: Vec<String>,
     /// Folder with the profile's LoRA files.
     pub lora_dir: PathBuf,
     /// Vulkan device name from `--list-devices` (e.g. `Vulkan1`).
@@ -212,12 +216,14 @@ impl SdServer {
             .arg("127.0.0.1")
             .arg("--listen-port")
             .arg(port.to_string())
-            .arg("-m")
-            .arg(&cfg.model)
+            .args(&cfg.args)
             .arg("--lora-model-dir")
             .arg(&cfg.lora_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        for (flag, path) in &cfg.files {
+            cmd.arg(flag).arg(path);
+        }
         if let Some(dev) = &cfg.device {
             cmd.arg("--backend").arg(dev);
         }

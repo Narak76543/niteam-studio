@@ -39,6 +39,15 @@ pub fn model_for(provider: ProviderId, s: &ImageSnapshot) -> String {
     }
 }
 
+/// "sd15" or "flux" for the selected local profile (shipped manifest); FLUX takes the same
+/// long prompt as Cloudflare (its T5 encoder reads it all), SD 1.5 the short one.
+fn local_prompt_style(s: &ImageSnapshot) -> String {
+    s.local_profile
+        .as_deref()
+        .and_then(|id| crate::local::manifest::shipped().profile(id).map(|p| p.prompt_style.clone()))
+        .unwrap_or_else(|| "sd15".into())
+}
+
 /// Short style for SD 1.5 (08 §7): the preset's `short_style` while the Look & feel style is
 /// the preset's, else the first 12 words of the edited style.
 fn short_style(project: &Project, style: &str) -> String {
@@ -95,7 +104,7 @@ fn own_plan(project: &Project, scene: &Scene) -> ScenePlan {
         culture_notes: culture,
         square: provider == ProviderId::CloudflareFlux,
     };
-    let prompt = if provider == ProviderId::LocalSdcpp {
+    let prompt = if provider == ProviderId::LocalSdcpp && local_prompt_style(snap) == "sd15" {
         build_prompt_sd15(&parts, &short_style(project, style))
     } else {
         build_prompt(&parts)

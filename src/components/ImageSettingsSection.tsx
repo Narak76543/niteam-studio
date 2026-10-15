@@ -11,7 +11,7 @@ import { useI18n } from "../i18n/context";
 import { api, errorMessage } from "../lib/api";
 import type { ImageCatalog, ImageSettings, ProviderId, Settings } from "../lib/types";
 
-const PROVIDERS: ProviderId[] = ["cloudflare_flux", "gemini_nano_banana"];
+const PROVIDERS: ProviderId[] = ["cloudflare_flux", "gemini_nano_banana", "local_sdcpp"];
 const CLOUDFLARE_TOKEN_URL = "https://dash.cloudflare.com/profile/api-tokens";
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
 
@@ -27,7 +27,7 @@ interface Props {
 }
 
 function toProvider(v: string): ProviderId {
-  return v === "gemini_nano_banana" ? "gemini_nano_banana" : "cloudflare_flux";
+  return PROVIDERS.find((p) => p === v) ?? "cloudflare_flux";
 }
 
 /** Settings → Images (docs/07-image-generation.md §1): provider, Cloudflare credentials, steps, models. */
@@ -40,8 +40,14 @@ export function ImageSettingsSection({ settings, onSave }: Props) {
   const [tokenInput, setTokenInput] = useState("");
   const [test, setTest] = useState<TestState>({ kind: "idle" });
   const [confirmClear, setConfirmClear] = useState(false);
+  /** A local model profile is installed and selected (Settings → Local images). */
+  const [localReady, setLocalReady] = useState(false);
 
   useEffect(() => {
+    api
+      .localStatus()
+      .then((s) => setLocalReady(s.profiles.some((p) => p.installed && p.id === s.selected)))
+      .catch(() => setLocalReady(false));
     api
       .imagesCatalog()
       .then(setCatalog)
@@ -133,7 +139,7 @@ export function ImageSettingsSection({ settings, onSave }: Props) {
               <span className="t-small">{t("settings.images.provider")}</span>
               <select className="select" value={image.provider} onChange={(e) => set({ provider: toProvider(e.target.value) })}>
                 {PROVIDERS.map((p) => (
-                  <option key={p} value={p}>
+                  <option key={p} value={p} disabled={p === "local_sdcpp" && !localReady}>
                     {t(`provider.${p}`)}
                   </option>
                 ))}
@@ -148,7 +154,7 @@ export function ImageSettingsSection({ settings, onSave }: Props) {
               >
                 <option value="">{t("settings.images.keySceneSame")}</option>
                 {PROVIDERS.map((p) => (
-                  <option key={p} value={p}>
+                  <option key={p} value={p} disabled={p === "local_sdcpp" && !localReady}>
                     {t(`provider.${p}`)}
                   </option>
                 ))}
@@ -156,6 +162,7 @@ export function ImageSettingsSection({ settings, onSave }: Props) {
             </label>
           </div>
           <span className="t-small">{t("settings.images.keySceneHint")}</span>
+          {!localReady && <span className="t-small t-muted">{t("settings.images.localHint")}</span>}
 
           {usesCloudflare && (
             <div className="models-grid">

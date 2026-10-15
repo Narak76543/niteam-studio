@@ -5,6 +5,7 @@ import { ProjectStatusBadge } from "../components/Badge";
 import { Button, IconButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EmptyState } from "../components/EmptyState";
+import { LocalOfferCard } from "../components/LocalOfferCard";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { PresetIcon } from "../components/PresetIcon";
@@ -99,6 +100,8 @@ export function ProjectsPage({ projects, hasKey, navigate, onChanged, searchToke
           {t("projects.noKey")}
         </Notice>
       )}
+
+      <LocalOfferCard onInstall={() => navigate({ name: "settings" })} />
 
       {projects.length === 0 ? (
         <EmptyState

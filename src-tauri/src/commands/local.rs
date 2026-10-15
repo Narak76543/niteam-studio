@@ -203,16 +203,14 @@ pub async fn local_provider(state: &AppState, settings: &Settings) -> CmdResult<
     if !install::installed(&models, &profile) {
         return Ok(None);
     }
-    let Some(model) = profile.model() else {
-        return Ok(None);
-    };
     let exe = state.paths.engine_exe();
     let device = match &settings.gpu {
         Some(g) => device_for(&list_devices(&exe).await.unwrap_or_default(), &g.name),
         None => None,
     };
     let dir = install::profile_dir(&models, &profile);
-    let engine = EngineConfig { exe, model: dir.join(&model.name), lora_dir: dir, device };
+    let files = profile.loaded().map(|(flag, f)| (flag.to_owned(), dir.join(&f.name))).collect();
+    let engine = EngineConfig { exe, files, args: profile.engine_args.clone(), lora_dir: dir, device };
     let cooldown = Cooldown { every: settings.local.cooldown_every, seconds: settings.local.cooldown_seconds };
     Ok(Some(Arc::new(LocalSdCpp::new(engine, profile, cooldown, state.ffmpeg_lock.clone()))))
 }

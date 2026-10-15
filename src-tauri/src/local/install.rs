@@ -194,6 +194,7 @@ mod tests {
                 lora_multiplier: 1.0,
             },
             prompt_style: "sd15".into(),
+            engine_args: vec![],
         }
     }
 

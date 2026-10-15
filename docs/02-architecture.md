@@ -63,7 +63,7 @@ needs them. Phase 1 modules:
 - `storage/atomic.rs` — `.tmp` + rename writes used for every JSON file
 - `storage/log.rs` — append-only text logs with secret redaction and rotation
 - `gemini/transport.rs` — HTTP behind a `Transport` trait (reqwest in the app, a scripted
-  mock in unit tests for retry / fallback)
+  mock in unit tests for retry / model chain)
 - `commands/retry_events.rs` — turns retry notices into `gemini-retry` events + log lines
 
 **Toolchain note:** the dev machine currently builds with `x86_64-pc-windows-gnu` (MinGW).
@@ -171,7 +171,7 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 ## Events (Rust → UI)
 
 `script-progress` `{project_id, stage: outline|chapter|done|failed|cancelled, chapters_done, chapters_total, error, error_kind}`
-`gemini-retry` `{scope: script|key_test, project_id?, model, reason: busy|rate_limited|network|fallback, attempt, max_attempts, delay_ms, status?, error}`
+`gemini-retry` `{scope: script|key_test, project_id?, model, previous_model?, reason: busy|rate_limited|network|next_model, attempt, max_attempts, delay_ms, status?, error}`
 `scene-progress` `{project_id, scene_id, asset, status, error?}`
 `generate-progress` `{project_id, done, total}`
 `render-progress` `{project_id, stage, scene_index, total, percent, eta_seconds}`

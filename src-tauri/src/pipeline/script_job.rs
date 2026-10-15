@@ -13,7 +13,7 @@ use super::hashing::{normalize, normalize_spoken};
 use super::presets;
 use super::project::{Outline, OutlineChapter, Project, ProjectStatus, Scene};
 use super::store::ProjectStore;
-use crate::gemini::client::TextModels;
+use crate::gemini::client::ModelChain;
 use crate::gemini::retry::RetryHooks;
 use crate::gemini::script::{
     self, ChapterContext, ChapterReply, MOODS, OutlineReply, SceneReply, ScriptBrief,
@@ -100,7 +100,8 @@ pub struct ScriptJob<'a> {
     pub store: &'a ProjectStore,
     pub client: &'a GeminiClient,
     pub key: &'a ApiKey,
-    pub models: &'a TextModels,
+    /// Text model chain (`settings.models.text_chain`).
+    pub models: &'a ModelChain,
     /// Cancellation + retry notices (the caller turns them into `gemini-retry` events).
     pub hooks: &'a RetryHooks,
     pub log: &'a LogFile,
@@ -110,9 +111,8 @@ impl ScriptJob<'_> {
     /// Runs to completion, reporting each step through `emit`.
     pub async fn run(&self, project_id: &str, emit: impl Fn(ScriptProgress)) {
         self.log.info(&format!(
-            "script generation started (model {}, fallback {})",
-            self.models.primary,
-            self.models.fallback.as_deref().unwrap_or("none")
+            "script generation started (model chain: {})",
+            self.models.models().join(" → ")
         ));
         let result = self.run_inner(project_id, &emit).await;
         let (stage, error, error_kind) = match result {
@@ -125,11 +125,14 @@ impl ScriptJob<'_> {
                 (ScriptStage::Cancelled, None, None)
             }
             Err(e) => {
-                self.log
-                    .error(&format!("script generation failed [{}]: {e}", e.kind()));
+                self.log.error(&format!(
+                    "script generation failed [{}]: {}",
+                    e.kind(),
+                    e.detail()
+                ));
                 (
                     ScriptStage::Failed,
-                    Some(e.to_string()),
+                    Some(e.detail()),
                     Some(e.kind().to_owned()),
                 )
             }
@@ -164,7 +167,7 @@ impl ScriptJob<'_> {
             let plan = plan_scenes(project.target_minutes);
             let brief = brief(&project, style_label);
             let total_scenes: u32 = plan.iter().sum();
-            let reply: OutlineReply = script::request_json(
+            let (reply, model): (OutlineReply, String) = script::request_json(
                 self.client,
                 self.key,
                 self.models,
@@ -173,6 +176,7 @@ impl ScriptJob<'_> {
                 self.hooks,
             )
             .await?;
+            self.log.info(&format!("outline written by {model}"));
             let outline = build_outline(reply, &plan);
             project = self
                 .store
@@ -217,7 +221,7 @@ impl ScriptJob<'_> {
                 previous_narration: previous.as_deref(),
             };
             let brief = brief(&project, style_label);
-            let reply: ChapterReply = script::request_json(
+            let (reply, model): (ChapterReply, String) = script::request_json(
                 self.client,
                 self.key,
                 self.models,
@@ -226,6 +230,11 @@ impl ScriptJob<'_> {
                 self.hooks,
             )
             .await?;
+            self.log.info(&format!(
+                "chapter {}/{total} ({} scenes) written by {model}",
+                index + 1,
+                reply.scenes.len()
+            ));
             project = self
                 .store
                 .update(id, |p| {
@@ -418,5 +427,104 @@ mod tests {
         assert!(t.is_cancelled());
         jobs.finish("a");
         assert!(!jobs.is_running("a"));
+    }
+
+    /// Live end-to-end check against the real Gemini API with the key from Windows
+    /// Credential Manager. Not run by default (costs a few requests):
+    /// `cargo test --manifest-path src-tauri/Cargo.toml live_khmer -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore = "calls the real Gemini API"]
+    async fn live_khmer_one_minute_script() {
+        use std::sync::Arc;
+
+        use crate::gemini::retry::RetryNotice;
+        use crate::pipeline::editing::{NewProjectInput, new_project};
+        use crate::pipeline::project::Language;
+        use crate::storage::settings::Settings;
+        use crate::storage::{AppPaths, secrets};
+
+        let key = secrets::get_api_key()
+            .expect("keyring")
+            .expect("no API key saved in Settings");
+        let settings = Settings::default();
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::new(dir.path().to_path_buf());
+        let store = ProjectStore::new(paths.clone());
+        let client = GeminiClient::new(&settings.concurrency).unwrap();
+        let chain = ModelChain::new(&settings.models.text_chain);
+
+        let project = new_project(
+            &NewProjectInput {
+                topic: "How was Angkor Wat built?".into(),
+                language: Language::Km,
+                target_minutes: 1,
+                style_preset: "storybook_watercolor".into(),
+            },
+            &settings.models.tts,
+        )
+        .unwrap();
+        store.insert(&project).await.unwrap();
+
+        let log = LogFile::new(paths.project_log(&project.id)).redacting(key.expose());
+        let hooks = RetryHooks::new(
+            Default::default(),
+            Arc::new(|n: &RetryNotice| {
+                eprintln!(
+                    "[retry] {:?} model={} attempt={}/{} delay={}ms :: {}",
+                    n.reason, n.model, n.attempt, n.max_attempts, n.delay_ms, n.error
+                )
+            }),
+        );
+        let job = ScriptJob {
+            store: &store,
+            client: &client,
+            key: &key,
+            models: &chain,
+            hooks: &hooks,
+            log: &log,
+        };
+        let last = std::sync::Mutex::new(None);
+        job.run(&project.id, |p| {
+            eprintln!(
+                "[progress] {:?} {}/{}",
+                p.stage, p.chapters_done, p.chapters_total
+            );
+            *last.lock().unwrap() = Some(p);
+        })
+        .await;
+
+        let log_text = std::fs::read_to_string(paths.project_log(&project.id)).unwrap_or_default();
+        eprintln!(
+            "---- pipeline.log ----
+{log_text}"
+        );
+        assert!(!log_text.contains(key.expose()), "key leaked into the log");
+
+        let p = store.get(&project.id).await.unwrap();
+        eprintln!("---- title: {} ----", p.title);
+        for s in &p.scenes {
+            eprintln!(
+                "{} [ch{}] {}
+      spoken: {}
+      image: {}",
+                s.id,
+                s.chapter + 1,
+                s.narration,
+                s.spoken_text,
+                s.image_prompt
+            );
+        }
+        let last = last.lock().unwrap().take().expect("no progress event");
+        assert!(
+            matches!(last.stage, ScriptStage::Done),
+            "failed: {:?}",
+            last.error
+        );
+        assert!(p.script_complete());
+        assert!(
+            p.scenes.len() >= 6,
+            "expected ~9 scenes, got {}",
+            p.scenes.len()
+        );
     }
 }

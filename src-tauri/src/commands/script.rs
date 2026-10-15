@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter, State};
 use super::retry_events::retry_hooks;
 use crate::error::{CmdResult, to_cmd};
 use crate::gemini::GeminiError;
-use crate::gemini::client::TextModels;
+use crate::gemini::client::ModelChain;
 use crate::pipeline::ProjectError;
 use crate::pipeline::editing::{self, SceneEdit};
 use crate::pipeline::project::{Project, ProjectStatus};
@@ -53,10 +53,7 @@ pub async fn script_generate(
     let store = state.store.clone();
     let jobs = state.script_jobs.clone();
     let client = state.gemini.clone();
-    let models = {
-        let settings = state.settings.read().await;
-        TextModels::new(&settings.models.text, &settings.models.text_fallback)
-    };
+    let models = ModelChain::new(&state.settings.read().await.models.text_chain);
     let log = LogFile::new(state.paths.project_log(&project_id)).redacting(key.expose());
     let hooks = retry_hooks(
         app.clone(),

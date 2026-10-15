@@ -58,7 +58,7 @@ impl KeyTestOutcome {
             model: None,
             display_name: None,
             error_kind: Some(e.kind().to_owned()),
-            error: Some(e.to_string()),
+            error: Some(e.detail()),
         }
     }
 }
@@ -70,7 +70,17 @@ pub async fn api_key_test(app: AppHandle, state: State<'_, AppState>) -> CmdResu
     let Some(key) = secrets::get_api_key().map_err(to_cmd)? else {
         return Ok(KeyTestOutcome::failed(&GeminiError::MissingKey));
     };
-    let model = state.settings.read().await.models.text.clone();
+    let first = state
+        .settings
+        .read()
+        .await
+        .models
+        .text_chain
+        .first()
+        .cloned();
+    let Some(model) = first else {
+        return Ok(KeyTestOutcome::failed(&GeminiError::NoTextModel));
+    };
     let log = LogFile::new(state.paths.app_log()).redacting(key.expose());
     let hooks = retry_hooks(app, "key_test", None, CancellationToken::new(), log.clone());
     match state.gemini.get_model(&key, &model, &hooks).await {
@@ -85,7 +95,11 @@ pub async fn api_key_test(app: AppHandle, state: State<'_, AppState>) -> CmdResu
             })
         }
         Err(e) => {
-            log.error(&format!("API key test failed [{}]: {e}", e.kind()));
+            log.error(&format!(
+                "API key test failed [{}]: {}",
+                e.kind(),
+                e.detail()
+            ));
             Ok(KeyTestOutcome::failed(&e))
         }
     }

@@ -40,4 +40,12 @@ impl ProjectError {
             _ => "other",
         }
     }
+
+    /// Technical description (exact HTTP status + body for Gemini errors).
+    pub fn detail(&self) -> String {
+        match self {
+            Self::Gemini(e) => e.detail(),
+            other => other.to_string(),
+        }
+    }
 }

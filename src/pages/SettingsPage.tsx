@@ -1,8 +1,8 @@
-import { ExternalLink, FolderOpen, KeyRound } from "lucide-react";
+import { ArrowDown, ArrowUp, ExternalLink, FolderOpen, KeyRound, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Badge } from "../components/Badge";
-import { Button } from "../components/Button";
+import { Button, IconButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorPanel } from "../components/ErrorPanel";
 import { Notice } from "../components/Notice";
@@ -14,7 +14,8 @@ import { api, errorMessage, onGeminiRetry } from "../lib/api";
 import type { GeminiRetry, Language, ModelSettings, Settings } from "../lib/types";
 
 const AI_STUDIO_KEY_URL = "https://aistudio.google.com/apikey";
-const MODEL_FIELDS: (keyof ModelSettings)[] = ["text", "text_fallback", "tts", "tts_lite", "image"];
+const SINGLE_MODEL_FIELDS = ["tts", "tts_lite", "image"] as const;
+const MAX_TEXT_CHAIN = 6;
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
 
 type TestState =
@@ -122,7 +123,18 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
     { value: "en", label: "English" },
   ];
 
-  const modelsDirty = MODEL_FIELDS.some((f) => models[f] !== settings.models[f]);
+  const chain = models.text_chain;
+  const modelsDirty =
+    SINGLE_MODEL_FIELDS.some((f) => models[f] !== settings.models[f]) ||
+    JSON.stringify(chain) !== JSON.stringify(settings.models.text_chain);
+  const setChain = (next: string[]) => setModels({ ...models, text_chain: next });
+  const moveModel = (i: number, delta: number) => {
+    const next = [...chain];
+    const [m] = next.splice(i, 1);
+    if (m === undefined) return;
+    next.splice(i + delta, 0, m);
+    setChain(next);
+  };
 
   return (
     <div className="page">
@@ -242,11 +254,57 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
             className="settings-row__control"
             onSubmit={(e) => {
               e.preventDefault();
-              void persist({ ...settings, models });
+              const text_chain = chain.map((m) => m.trim()).filter(Boolean);
+              void persist({ ...settings, models: { ...models, text_chain } });
             }}
           >
+            <div className="field">
+              <span className="t-small">{t("settings.models.textChain")}</span>
+              {chain.map((m, i) => (
+                <div key={i} className="row chain-row">
+                  <span className="chain-row__num t-small">{i + 1}</span>
+                  <input
+                    className="input input--grow"
+                    lang="en"
+                    spellCheck={false}
+                    aria-label={`${t("settings.models.textChain")} ${i + 1}`}
+                    value={m}
+                    onChange={(e) => setChain(chain.map((x, j) => (j === i ? e.target.value.trim() : x)))}
+                  />
+                  <IconButton
+                    label={t("settings.models.moveUp")}
+                    icon={<ArrowUp {...ICON} />}
+                    disabled={i === 0}
+                    onClick={() => moveModel(i, -1)}
+                  />
+                  <IconButton
+                    label={t("settings.models.moveDown")}
+                    icon={<ArrowDown {...ICON} />}
+                    disabled={i === chain.length - 1}
+                    onClick={() => moveModel(i, 1)}
+                  />
+                  <IconButton
+                    label={t("settings.models.removeModel")}
+                    icon={<X {...ICON} />}
+                    disabled={chain.length <= 1}
+                    onClick={() => setChain(chain.filter((_, j) => j !== i))}
+                  />
+                </div>
+              ))}
+              <div className="row">
+                <Button
+                  variant="pill"
+                  icon={<Plus size={12} strokeWidth={1.5} />}
+                  disabled={chain.length >= MAX_TEXT_CHAIN}
+                  onClick={() => setChain([...chain, ""])}
+                >
+                  {t("settings.models.addModel")}
+                </Button>
+              </div>
+              <p className="t-small">{t("settings.models.textChainHint")}</p>
+            </div>
             <div className="models-grid">
-              {MODEL_FIELDS.map((f) => (
+              {SINGLE_MODEL_FIELDS.map((f) => (
                 <label key={f} className="field">
                   <span className="t-small">{t(`settings.models.${f}`)}</span>
                   <input
@@ -259,7 +317,6 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
                 </label>
               ))}
             </div>
-            <p className="t-small">{t("settings.models.fallbackHint")}</p>
             <div className="row">
               <Button type="submit" disabled={!modelsDirty}>
                 {t("common.save")}

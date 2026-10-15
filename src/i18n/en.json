@@ -1,7 +1,6 @@
 {
   "app.name": "Nitean Studio",
   "app.tagline": "Narrated explainer videos",
-
   "nav.essentials": "Essentials",
   "nav.projects": "Projects",
   "nav.newProject": "New project",
@@ -9,7 +8,6 @@
   "nav.recent": "Recent",
   "nav.search": "Search projects",
   "nav.language": "Interface language",
-
   "common.cancel": "Cancel",
   "common.delete": "Delete",
   "common.back": "Back",
@@ -22,11 +20,9 @@
   "common.scenes": "{n} scenes",
   "common.loading": "Loading…",
   "common.error": "Something went wrong",
-
   "lang.km": "Khmer",
   "lang.en": "English",
   "lang.auto": "Same as Windows",
-
   "status.script_draft": "Script draft",
   "status.generating": "Approved",
   "status.review": "Review",
@@ -37,11 +33,9 @@
   "asset.done": "Done",
   "asset.failed": "Failed",
   "asset.stale": "Outdated",
-
   "preset.storybook_watercolor": "Storybook watercolor",
   "preset.cinematic_realistic": "Cinematic realistic",
   "preset.flat_2d": "Flat 2D",
-
   "mood.curious": "Curious",
   "mood.dramatic": "Dramatic",
   "mood.calm": "Calm",
@@ -51,7 +45,6 @@
   "mood.somber": "Somber",
   "mood.awe": "Awe",
   "mood.playful": "Playful",
-
   "projects.title": "Projects",
   "projects.breadcrumb": "Workspace",
   "projects.searchPlaceholder": "Search projects",
@@ -68,7 +61,6 @@
   "projects.updated": "Edited {date}",
   "projects.noKey": "Add your Gemini API key in Settings before generating a script.",
   "projects.openSettings": "Open Settings",
-
   "wizard.title": "New project",
   "wizard.step.topic": "Topic",
   "wizard.step.format": "Language & length",
@@ -88,7 +80,6 @@
   "wizard.createOnly": "Create project",
   "wizard.noKey": "No API key yet — the project will be created, and you can generate the script after adding a key in Settings.",
   "wizard.creating": "Creating…",
-
   "script.breadcrumb": "Projects",
   "script.generate": "Generate script",
   "script.regenerate": "Regenerate",
@@ -130,7 +121,6 @@
   "script.emptyField": "Empty",
   "script.hook": "Hook",
   "script.length": "{minutes} min · {scenes} scenes · {lang}",
-
   "settings.title": "Settings",
   "settings.key.title": "Gemini API key",
   "settings.key.body": "Your own key from Google AI Studio. It is stored only in Windows Credential Manager — never in project files or logs.",
@@ -156,18 +146,15 @@
   "settings.output.reset": "Reset",
   "settings.models.title": "Models",
   "settings.models.body": "Gemini model IDs. Change only if a model is renamed or retired.",
-  "settings.models.text": "Script (text)",
   "settings.models.tts": "Voice",
   "settings.models.tts_lite": "Voice (lite)",
   "settings.models.image": "Images",
-
   "common.details": "Details",
   "common.tryAgain": "Try again",
-  "retry.busy": "Google is busy, retrying (attempt {attempt}/{max}) in {seconds} s…",
-  "retry.rate_limited": "Too many requests to Google, retrying (attempt {attempt}/{max}) in {seconds} s…",
-  "retry.network": "Connection problem, retrying (attempt {attempt}/{max}) in {seconds} s…",
-  "retry.fallback": "Google is still busy — switching to the backup model {model}…",
-  "retry.now": "Google is busy, retrying (attempt {attempt}/{max})…",
+  "retry.busy": "Google is busy, retrying… (model {model}, attempt {attempt}/{max}, in {seconds} s)",
+  "retry.rate_limited": "Too many requests, retrying… (model {model}, attempt {attempt}/{max}, in {seconds} s)",
+  "retry.network": "Connection problem, retrying… (model {model}, attempt {attempt}/{max}, in {seconds} s)",
+  "retry.now": "Google is busy, retrying… (model {model}, attempt {attempt}/{max})",
   "error.missing_key.title": "No API key yet",
   "error.missing_key.body": "Add your Gemini API key in Settings, then try again.",
   "error.invalid_key.title": "Gemini didn't accept your API key",
@@ -190,6 +177,11 @@
   "error.cancelled.body": "The request was cancelled.",
   "error.other.title": "Something went wrong",
   "error.other.body": "Try again. The details below can help if it keeps happening.",
-  "settings.models.text_fallback": "Script fallback",
-  "settings.models.fallbackHint": "Used when the script model stays busy (503) after 5 attempts. Leave empty to turn off."
+  "retry.next_model": "{previous} is unavailable — trying {model}…",
+  "settings.models.textChain": "Script models (in order)",
+  "settings.models.textChainHint": "When Google is busy, each model gets 3 tries, then the next one in the list is used.",
+  "settings.models.addModel": "Add model",
+  "settings.models.removeModel": "Remove model",
+  "settings.models.moveUp": "Move up",
+  "settings.models.moveDown": "Move down"
 }

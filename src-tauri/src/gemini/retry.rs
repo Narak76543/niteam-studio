@@ -1,7 +1,8 @@
 //! Backoff rules from `docs/03-pipeline.md`: retry 408 / 429 / 5xx / timeouts / network
-//! errors with 2 s, 4 s, 8 s, 16 s (+ jitter) between attempts, honor `Retry-After`,
-//! at most 5 attempts. Each wait is reported through [`RetryHooks::on_retry`] so the UI
-//! can show "Google is busy, retrying (attempt 2/5)…".
+//! errors with 2 s, 4 s, 8 s, … (+ jitter) between attempts, honor `Retry-After`.
+//! The attempt limit is per call: [`MAX_ATTEMPTS`] by default, [`TEXT_CHAIN_ATTEMPTS`] per
+//! model of the text fallback chain. Each wait is reported through [`RetryHooks::on_retry`]
+//! so the UI can show "Google is busy, retrying… (model X, attempt 2/3)".
 
 use std::future::Future;
 use std::sync::Arc;
@@ -13,7 +14,10 @@ use tokio_util::sync::CancellationToken;
 
 use super::GeminiError;
 
+/// Default attempts for a single-model call (key test, later TTS / images).
 pub const MAX_ATTEMPTS: u32 = 5;
+/// Attempts per model in the text fallback chain before moving to the next model.
+pub const TEXT_CHAIN_ATTEMPTS: u32 = 3;
 const BASE_DELAY: Duration = Duration::from_secs(2);
 const MAX_JITTER_MS: u64 = 1_000;
 /// Upper bound for a server-provided `Retry-After`, so a bad header can't hang a job.
@@ -29,13 +33,15 @@ pub enum RetryReason {
     RateLimited,
     /// Timeout, connection problem or 408.
     Network,
-    /// Primary model stayed busy; switching to the fallback model.
-    Fallback,
+    /// The previous model of the text chain failed; switching to `model`.
+    NextModel,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RetryNotice {
     pub model: String,
+    /// For `NextModel`: the model that just gave up.
+    pub previous_model: Option<String>,
     pub reason: RetryReason,
     /// The attempt that will run after the wait (2..=MAX_ATTEMPTS).
     pub attempt: u32,
@@ -43,7 +49,7 @@ pub struct RetryNotice {
     pub delay_ms: u64,
     /// HTTP status of the failed attempt, if any.
     pub status: Option<u16>,
-    /// Raw error of the failed attempt (for logs / "Details").
+    /// Exact error of the failed attempt: HTTP status + raw body (for logs / "Details").
     pub error: String,
 }
 
@@ -103,6 +109,7 @@ fn reason_for(err: &GeminiError) -> RetryReason {
 pub async fn with_retry<T, F, Fut>(
     hooks: &RetryHooks,
     model: &str,
+    max_attempts: u32,
     mut op: F,
 ) -> Result<T, GeminiError>
 where
@@ -121,16 +128,17 @@ where
         };
         match result {
             Ok(v) => return Ok(v),
-            Err(e) if e.is_retryable() && attempt < MAX_ATTEMPTS => {
+            Err(e) if e.is_retryable() && attempt < max_attempts => {
                 let delay = backoff_delay(attempt, e.retry_after(), random_jitter());
                 hooks.notify(&RetryNotice {
                     model: model.to_owned(),
+                    previous_model: None,
                     reason: reason_for(&e),
                     attempt: attempt + 1,
-                    max_attempts: MAX_ATTEMPTS,
+                    max_attempts,
                     delay_ms: u64::try_from(delay.as_millis()).unwrap_or(u64::MAX),
                     status: e.status(),
-                    error: e.to_string(),
+                    error: e.detail(),
                 });
                 tokio::select! {
                     _ = tokio::time::sleep(delay) => {}
@@ -153,6 +161,7 @@ mod tests {
         GeminiError::Api {
             status,
             message: "x".into(),
+            body: String::new(),
             retry_after: None,
         }
     }
@@ -200,7 +209,7 @@ mod tests {
             Arc::new(move |r: &RetryNotice| n.lock().unwrap().push(r.clone())),
         );
         let c = calls.clone();
-        let r: Result<(), _> = with_retry(&hooks, "m", || {
+        let r: Result<(), _> = with_retry(&hooks, "m", MAX_ATTEMPTS, || {
             c.fetch_add(1, Ordering::SeqCst);
             async { Err(api(503)) }
         })
@@ -217,7 +226,7 @@ mod tests {
     async fn does_not_retry_client_errors() {
         let calls = Arc::new(AtomicU32::new(0));
         let c = calls.clone();
-        let r: Result<(), _> = with_retry(&RetryHooks::default(), "m", || {
+        let r: Result<(), _> = with_retry(&RetryHooks::default(), "m", MAX_ATTEMPTS, || {
             c.fetch_add(1, Ordering::SeqCst);
             async { Err(api(400)) }
         })
@@ -230,7 +239,8 @@ mod tests {
     async fn cancel_stops_waiting() {
         let hooks = RetryHooks::default();
         hooks.cancel.cancel();
-        let r: Result<(), _> = with_retry(&hooks, "m", || async { Err(api(429)) }).await;
+        let r: Result<(), _> =
+            with_retry(&hooks, "m", MAX_ATTEMPTS, || async { Err(api(429)) }).await;
         assert!(matches!(r, Err(GeminiError::Cancelled)));
     }
 }

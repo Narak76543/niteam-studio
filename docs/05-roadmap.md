@@ -92,3 +92,8 @@ _Add one line per finished phase: date — phase — notes._
   (`models.text_fallback`) after a 503 that survives all retries; friendly errors with
   **Try again** + raw **Details**; `pipeline.log` / `app.log`; retry + fallback unit tests
   against a mocked HTTP transport.
+- 2026-10-15 — Phase 1 fix 2 — text model chain (`models.text_chain`, default
+  3.5-flash-lite → 3.1-flash-lite → 3.8-flash; 3 attempts per model, then the next); UI shows
+  model + attempt while retrying; exact HTTP status + body in `pipeline.log`; which model wrote
+  each chapter is logged; Thai/Lao letters in Khmer replies are rejected. Live test: 1-minute
+  Khmer "How was Angkor Wat built?" → 9 scenes / 2 chapters in ~11 s.

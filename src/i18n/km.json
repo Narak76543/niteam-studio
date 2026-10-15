@@ -1,7 +1,6 @@
 {
   "app.name": "Nitean Studio",
   "app.tagline": "វីដេអូពន្យល់មានសំឡេងនិទាន",
-
   "nav.essentials": "មុខងារសំខាន់",
   "nav.projects": "គម្រោង",
   "nav.newProject": "គម្រោងថ្មី",
@@ -9,7 +8,6 @@
   "nav.recent": "ថ្មីៗ",
   "nav.search": "ស្វែងរកគម្រោង",
   "nav.language": "ភាសាកម្មវិធី",
-
   "common.cancel": "បោះបង់",
   "common.delete": "លុប",
   "common.back": "ថយក្រោយ",
@@ -22,11 +20,9 @@
   "common.scenes": "{n} ឈុត",
   "common.loading": "កំពុងផ្ទុក…",
   "common.error": "មានបញ្ហាកើតឡើង",
-
   "lang.km": "ខ្មែរ",
   "lang.en": "អង់គ្លេស",
   "lang.auto": "ដូច Windows",
-
   "status.script_draft": "សេចក្ដីព្រាងស្គ្រីប",
   "status.generating": "បានអនុម័ត",
   "status.review": "ពិនិត្យ",
@@ -37,11 +33,9 @@
   "asset.done": "រួចរាល់",
   "asset.failed": "បរាជ័យ",
   "asset.stale": "ហួសសម័យ",
-
   "preset.storybook_watercolor": "គំនូរទឹកពណ៌បែបសៀវភៅរឿង",
   "preset.cinematic_realistic": "បែបភាពយន្តពិតប្រាកដ",
   "preset.flat_2d": "គំនូរ 2D សាមញ្ញ",
-
   "mood.curious": "ចង់ដឹង",
   "mood.dramatic": "រំភើប",
   "mood.calm": "ស្ងប់ស្ងាត់",
@@ -51,7 +45,6 @@
   "mood.somber": "សោកសៅ",
   "mood.awe": "អស្ចារ្យ",
   "mood.playful": "កំប្លែង",
-
   "projects.title": "គម្រោង",
   "projects.breadcrumb": "កន្លែងធ្វើការ",
   "projects.searchPlaceholder": "ស្វែងរកគម្រោង",
@@ -68,7 +61,6 @@
   "projects.updated": "កែចុងក្រោយ {date}",
   "projects.noKey": "សូមបញ្ចូល Gemini API key ក្នុងការកំណត់ មុនពេលបង្កើតស្គ្រីប។",
   "projects.openSettings": "បើកការកំណត់",
-
   "wizard.title": "គម្រោងថ្មី",
   "wizard.step.topic": "ប្រធានបទ",
   "wizard.step.format": "ភាសា និងរយៈពេល",
@@ -88,7 +80,6 @@
   "wizard.createOnly": "បង្កើតគម្រោង",
   "wizard.noKey": "មិនទាន់មាន API key ទេ — គម្រោងនឹងត្រូវបង្កើត ហើយអ្នកអាចបង្កើតស្គ្រីបបន្ទាប់ពីបញ្ចូល key ក្នុងការកំណត់។",
   "wizard.creating": "កំពុងបង្កើត…",
-
   "script.breadcrumb": "គម្រោង",
   "script.generate": "បង្កើតស្គ្រីប",
   "script.regenerate": "បង្កើតឡើងវិញ",
@@ -130,7 +121,6 @@
   "script.emptyField": "ទទេ",
   "script.hook": "ចំណុចទាក់ទាញ",
   "script.length": "{minutes} នាទី · {scenes} ឈុត · {lang}",
-
   "settings.title": "ការកំណត់",
   "settings.key.title": "Gemini API key",
   "settings.key.body": "key ផ្ទាល់ខ្លួនរបស់អ្នកពី Google AI Studio។ វាត្រូវរក្សាទុកតែក្នុង Windows Credential Manager ប៉ុណ្ណោះ — មិនដែលក្នុងឯកសារគម្រោង ឬកំណត់ហេតុទេ។",
@@ -156,18 +146,15 @@
   "settings.output.reset": "កំណត់ឡើងវិញ",
   "settings.models.title": "ម៉ូដែល",
   "settings.models.body": "លេខសម្គាល់ម៉ូដែល Gemini។ ប្ដូរតែពេលម៉ូដែលត្រូវប្ដូរឈ្មោះ ឬឈប់ប្រើ។",
-  "settings.models.text": "ស្គ្រីប (អត្ថបទ)",
   "settings.models.tts": "សំឡេង",
   "settings.models.tts_lite": "សំឡេង (lite)",
   "settings.models.image": "រូបភាព",
-
   "common.details": "ព័ត៌មានលម្អិត",
   "common.tryAgain": "ព្យាយាមម្ដងទៀត",
-  "retry.busy": "Google កំពុងរវល់ កំពុងព្យាយាមម្ដងទៀត (លើកទី {attempt}/{max}) ក្នុង {seconds} វិនាទី…",
-  "retry.rate_limited": "សំណើទៅ Google ច្រើនពេក កំពុងព្យាយាមម្ដងទៀត (លើកទី {attempt}/{max}) ក្នុង {seconds} វិនាទី…",
-  "retry.network": "មានបញ្ហាការតភ្ជាប់ កំពុងព្យាយាមម្ដងទៀត (លើកទី {attempt}/{max}) ក្នុង {seconds} វិនាទី…",
-  "retry.fallback": "Google នៅតែរវល់ — កំពុងប្ដូរទៅម៉ូដែលបម្រុង {model}…",
-  "retry.now": "Google កំពុងរវល់ កំពុងព្យាយាមម្ដងទៀត (លើកទី {attempt}/{max})…",
+  "retry.busy": "Google កំពុងរវល់ កំពុងព្យាយាមម្ដងទៀត… (ម៉ូដែល {model} លើកទី {attempt}/{max} ក្នុង {seconds} វិនាទី)",
+  "retry.rate_limited": "សំណើច្រើនពេក កំពុងព្យាយាមម្ដងទៀត… (ម៉ូដែល {model} លើកទី {attempt}/{max} ក្នុង {seconds} វិនាទី)",
+  "retry.network": "មានបញ្ហាការតភ្ជាប់ កំពុងព្យាយាមម្ដងទៀត… (ម៉ូដែល {model} លើកទី {attempt}/{max} ក្នុង {seconds} វិនាទី)",
+  "retry.now": "Google កំពុងរវល់ កំពុងព្យាយាមម្ដងទៀត… (ម៉ូដែល {model} លើកទី {attempt}/{max})",
   "error.missing_key.title": "មិនទាន់មាន API key ទេ",
   "error.missing_key.body": "សូមបញ្ចូល Gemini API key ក្នុងការកំណត់ រួចព្យាយាមម្ដងទៀត។",
   "error.invalid_key.title": "Gemini មិនទទួលយក API key របស់អ្នកទេ",
@@ -190,6 +177,11 @@
   "error.cancelled.body": "សំណើត្រូវបានបោះបង់។",
   "error.other.title": "មានបញ្ហាកើតឡើង",
   "error.other.body": "សូមព្យាយាមម្ដងទៀត។ ព័ត៌មានលម្អិតខាងក្រោមអាចជួយ បើវានៅតែកើតឡើង។",
-  "settings.models.text_fallback": "ស្គ្រីប (បម្រុង)",
-  "settings.models.fallbackHint": "ប្រើពេលម៉ូដែលស្គ្រីបនៅតែរវល់ (503) ក្រោយព្យាយាម ៥ ដង។ ទុកទទេដើម្បីបិទ។"
+  "retry.next_model": "{previous} មិនអាចប្រើបាន — កំពុងសាក {model}…",
+  "settings.models.textChain": "ម៉ូដែលស្គ្រីប (តាមលំដាប់)",
+  "settings.models.textChainHint": "ពេល Google រវល់ ម៉ូដែលនីមួយៗត្រូវសាក ៣ ដង បន្ទាប់មកប្រើម៉ូដែលបន្ទាប់ក្នុងបញ្ជី។",
+  "settings.models.addModel": "បន្ថែមម៉ូដែល",
+  "settings.models.removeModel": "ដកម៉ូដែលចេញ",
+  "settings.models.moveUp": "ផ្លាស់ឡើងលើ",
+  "settings.models.moveDown": "ផ្លាស់ចុះក្រោម"
 }

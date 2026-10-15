@@ -3,17 +3,17 @@
 //! - Key goes in the `x-goog-api-key` header (never in the URL, so it can't leak via errors).
 //! - One semaphore per endpoint kind limits concurrent requests; a permit is held per
 //!   HTTP attempt, not during backoff waits.
-//! - Text calls can fall back to a second model when the first stays overloaded (503).
+//! - Text calls walk a model chain: 3 attempts per model, then the next model.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::de::DeserializeOwned;
 use tokio::sync::Semaphore;
 
 use super::GeminiError;
 use super::models::{ErrorEnvelope, GenerateContentRequest, GenerateContentResponse, ModelInfo};
-use super::retry::{self, MAX_ATTEMPTS, RetryHooks, RetryNotice, RetryReason};
+use super::retry::{self, MAX_ATTEMPTS, RetryHooks, RetryNotice, RetryReason, TEXT_CHAIN_ATTEMPTS};
 use super::transport::{
     HttpRequest, HttpResponse, Method, ReqwestTransport, Transport, TransportError,
 };
@@ -21,6 +21,8 @@ use crate::storage::ApiKey;
 use crate::storage::settings::ConcurrencySettings;
 
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
+/// Raw error bodies kept for logs / "Details" are cut to this many characters.
+const MAX_ERROR_BODY_CHARS: usize = 2_000;
 
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)] // Tts (Phase 2) and Image (Phase 3) are used by later pipeline steps.
@@ -30,23 +32,31 @@ pub enum EndpointKind {
     Image,
 }
 
-/// Primary + optional fallback text model for one job. Once the fallback had to be used,
-/// the rest of the job stays on it (no point waiting ~30 s on a busy model per chapter).
-pub struct TextModels {
-    pub primary: String,
-    pub fallback: Option<String>,
-    switched: AtomicBool,
+/// Ordered text models for one job (`settings.models.text_chain`).
+/// Each call starts at the model that last answered, so after a switch the rest of the
+/// job doesn't wait on a busy model again. A new job starts at the first model.
+pub struct ModelChain {
+    models: Vec<String>,
+    current: AtomicUsize,
 }
 
-impl TextModels {
-    pub fn new(primary: &str, fallback: &str) -> Self {
-        let fallback = fallback.trim();
-        let fallback = (!fallback.is_empty() && fallback != primary).then(|| fallback.to_owned());
-        Self {
-            primary: primary.to_owned(),
-            fallback,
-            switched: AtomicBool::new(false),
+impl ModelChain {
+    pub fn new<S: AsRef<str>>(models: &[S]) -> Self {
+        let mut list: Vec<String> = Vec::new();
+        for m in models {
+            let m = m.as_ref().trim();
+            if !m.is_empty() && !list.iter().any(|x| x == m) {
+                list.push(m.to_owned());
+            }
         }
+        Self {
+            models: list,
+            current: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn models(&self) -> &[String] {
+        &self.models
     }
 }
 
@@ -99,10 +109,11 @@ impl GeminiClient {
             api_key: key.clone(),
             body: None,
         };
-        self.call(EndpointKind::Text, model, request, hooks).await
+        self.call(EndpointKind::Text, model, request, hooks, MAX_ATTEMPTS)
+            .await
     }
 
-    /// `POST /models/{model}:generateContent`.
+    /// `POST /models/{model}:generateContent` with up to `max_attempts` tries.
     pub async fn generate_content(
         &self,
         key: &ApiKey,
@@ -110,6 +121,7 @@ impl GeminiClient {
         kind: EndpointKind,
         body: &GenerateContentRequest,
         hooks: &RetryHooks,
+        max_attempts: u32,
     ) -> Result<GenerateContentResponse, GeminiError> {
         let body = serde_json::to_vec(body)
             .map_err(|e| GeminiError::BadResponse(format!("could not encode request: {e}")))?;
@@ -119,47 +131,63 @@ impl GeminiClient {
             api_key: key.clone(),
             body: Some(body),
         };
-        self.call(kind, model, request, hooks).await
+        self.call(kind, model, request, hooks, max_attempts).await
     }
 
-    /// Text generation with the fallback rule: if the primary model is still overloaded
-    /// (503) after all retries, the fallback model is tried once (with the same retry rules).
+    /// Text generation over the model chain: each model gets [`TEXT_CHAIN_ATTEMPTS`] tries
+    /// (429 / 5xx / timeouts are retried with backoff); if it still fails with a transient
+    /// error or 404, the next model is tried. Returns the response and the model that answered.
     pub async fn generate_text(
         &self,
         key: &ApiKey,
-        models: &TextModels,
+        chain: &ModelChain,
         body: &GenerateContentRequest,
         hooks: &RetryHooks,
-    ) -> Result<GenerateContentResponse, GeminiError> {
-        if let Some(fb) = &models.fallback
-            && models.switched.load(Ordering::Relaxed)
-        {
-            return self
-                .generate_content(key, fb, EndpointKind::Text, body, hooks)
-                .await;
-        }
-        match self
-            .generate_content(key, &models.primary, EndpointKind::Text, body, hooks)
-            .await
-        {
-            Err(e) if e.is_overloaded() => {
-                let Some(fb) = &models.fallback else {
-                    return Err(e);
-                };
+    ) -> Result<(GenerateContentResponse, String), GeminiError> {
+        let start = chain.current.load(Ordering::Relaxed);
+        let mut tried: Vec<String> = Vec::new();
+        let mut last: Option<GeminiError> = None;
+        for (i, model) in chain.models.iter().enumerate().skip(start) {
+            if let Some(prev_err) = &last {
                 hooks.notify(&RetryNotice {
-                    model: fb.clone(),
-                    reason: RetryReason::Fallback,
+                    model: model.clone(),
+                    previous_model: tried.last().cloned(),
+                    reason: RetryReason::NextModel,
                     attempt: 1,
-                    max_attempts: MAX_ATTEMPTS,
+                    max_attempts: TEXT_CHAIN_ATTEMPTS,
                     delay_ms: 0,
-                    status: e.status(),
-                    error: e.to_string(),
+                    status: prev_err.status(),
+                    error: prev_err.detail(),
                 });
-                models.switched.store(true, Ordering::Relaxed);
-                self.generate_content(key, fb, EndpointKind::Text, body, hooks)
-                    .await
             }
-            other => other,
+            match self
+                .generate_content(
+                    key,
+                    model,
+                    EndpointKind::Text,
+                    body,
+                    hooks,
+                    TEXT_CHAIN_ATTEMPTS,
+                )
+                .await
+            {
+                Ok(response) => {
+                    chain.current.store(i, Ordering::Relaxed);
+                    return Ok((response, model.clone()));
+                }
+                Err(e) if e.try_next_model() => {
+                    tried.push(model.clone());
+                    last = Some(e);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        match last {
+            Some(last) => Err(GeminiError::ChainExhausted {
+                tried,
+                last: Box::new(last),
+            }),
+            None => Err(GeminiError::NoTextModel),
         }
     }
 
@@ -169,8 +197,9 @@ impl GeminiClient {
         model: &str,
         request: HttpRequest,
         hooks: &RetryHooks,
+        max_attempts: u32,
     ) -> Result<T, GeminiError> {
-        retry::with_retry(hooks, model, || {
+        retry::with_retry(hooks, model, max_attempts, || {
             let request = request.clone();
             async move {
                 let _permit = self
@@ -198,21 +227,40 @@ fn decode<T: DeserializeOwned>(response: HttpResponse) -> Result<T, GeminiError>
     Err(map_status(response.status, &body, response.retry_after))
 }
 
+fn truncate(s: &str, max: usize) -> String {
+    let s = s.trim();
+    if s.chars().count() <= max {
+        return s.to_owned();
+    }
+    let cut: String = s.chars().take(max).collect();
+    format!("{cut}… (truncated)")
+}
+
 fn map_status(status: u16, body: &str, retry_after: Option<std::time::Duration>) -> GeminiError {
     let message = serde_json::from_str::<ErrorEnvelope>(body)
         .map(|e| e.error.message)
         .ok()
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| format!("HTTP {status}"));
+    let raw = if body.trim().is_empty() {
+        "(empty body)".to_owned()
+    } else {
+        truncate(body, MAX_ERROR_BODY_CHARS)
+    };
     let is_key_problem = status == 401
         || status == 403
         || (status == 400 && message.to_lowercase().contains("api key"));
     if is_key_problem {
-        return GeminiError::InvalidKey(message);
+        return GeminiError::InvalidKey {
+            status,
+            message,
+            body: raw,
+        };
     }
     GeminiError::Api {
         status,
         message,
+        body: raw,
         retry_after,
     }
 }
@@ -227,15 +275,15 @@ mod tests {
     use crate::gemini::transport::mock::{MockTransport, status, status_retry_after};
 
     const OK_BODY: &str = r#"{"candidates":[{"content":{"role":"model","parts":[{"text":"hi"}]},"finishReason":"STOP"}]}"#;
-    const BUSY_BODY: &str = r#"{"error":{"code":503,"message":"The model is overloaded. Please try again later.","status":"UNAVAILABLE"}}"#;
+    const BUSY_BODY: &str = r#"{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}"#;
 
     fn key() -> ApiKey {
         ApiKey::parse("AIzaSyTESTTESTTESTTESTTESTTEST123").unwrap()
     }
 
-    fn client(
-        responses: Vec<Result<HttpResponse, TransportError>>,
-    ) -> (GeminiClient, Arc<MockTransport>) {
+    type Responses = Vec<Result<HttpResponse, TransportError>>;
+
+    fn client(responses: Responses) -> (GeminiClient, Arc<MockTransport>) {
         let mock = Arc::new(MockTransport::new(responses));
         let c = GeminiClient::with_transport(mock.clone(), &ConcurrencySettings::default());
         (c, mock)
@@ -262,12 +310,38 @@ mod tests {
         status(503, BUSY_BODY)
     }
 
+    fn busy_n(n: usize) -> Responses {
+        (0..n).map(|_| busy()).collect()
+    }
+
+    fn models_called(mock: &MockTransport) -> Vec<String> {
+        mock.urls()
+            .iter()
+            .map(|u| {
+                u.split("/models/")
+                    .nth(1)
+                    .and_then(|r| r.split(':').next())
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    // ---- single-model retry ----
+
     #[tokio::test(start_paused = true)]
     async fn retries_503_then_succeeds_with_growing_delays() {
         let (c, mock) = client(vec![busy(), status(502, ""), status(200, OK_BODY)]);
         let (hooks, notices) = recording_hooks();
         let r = c
-            .generate_content(&key(), "m1", EndpointKind::Text, &body(), &hooks)
+            .generate_content(
+                &key(),
+                "m1",
+                EndpointKind::Text,
+                &body(),
+                &hooks,
+                MAX_ATTEMPTS,
+            )
             .await
             .unwrap();
         assert_eq!(r.text().unwrap(), "hi");
@@ -286,15 +360,30 @@ mod tests {
             n[1].delay_ms
         );
         assert_eq!(n[0].reason, RetryReason::Busy);
+        // The exact status + raw body is carried for the log.
+        assert!(n[0].error.starts_with("HTTP 503"), "{}", n[0].error);
+        assert!(n[0].error.contains("high demand"));
+        assert!(
+            n[1].error.contains("HTTP 502 — (empty body)"),
+            "{}",
+            n[1].error
+        );
     }
 
     #[tokio::test(start_paused = true)]
     async fn honors_retry_after_on_429() {
         let (c, _) = client(vec![status_retry_after(429, 7), status(200, OK_BODY)]);
         let (hooks, notices) = recording_hooks();
-        c.generate_content(&key(), "m1", EndpointKind::Text, &body(), &hooks)
-            .await
-            .unwrap();
+        c.generate_content(
+            &key(),
+            "m1",
+            EndpointKind::Text,
+            &body(),
+            &hooks,
+            MAX_ATTEMPTS,
+        )
+        .await
+        .unwrap();
         let n = notices.lock().unwrap();
         assert_eq!(n[0].reason, RetryReason::RateLimited);
         assert!(
@@ -312,9 +401,16 @@ mod tests {
             status(200, OK_BODY),
         ]);
         let (hooks, notices) = recording_hooks();
-        c.generate_content(&key(), "m1", EndpointKind::Text, &body(), &hooks)
-            .await
-            .unwrap();
+        c.generate_content(
+            &key(),
+            "m1",
+            EndpointKind::Text,
+            &body(),
+            &hooks,
+            MAX_ATTEMPTS,
+        )
+        .await
+        .unwrap();
         assert_eq!(mock.urls().len(), 3);
         assert!(
             notices
@@ -326,17 +422,21 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn gives_up_after_five_503s() {
-        let (c, mock) = client((0..6).map(|_| busy()).collect());
-        let (hooks, notices) = recording_hooks();
+    async fn gives_up_after_max_attempts() {
+        let (c, mock) = client(busy_n(6));
         let err = c
-            .generate_content(&key(), "m1", EndpointKind::Text, &body(), &hooks)
+            .generate_content(
+                &key(),
+                "m1",
+                EndpointKind::Text,
+                &body(),
+                &RetryHooks::default(),
+                MAX_ATTEMPTS,
+            )
             .await
             .unwrap_err();
-        assert!(err.is_overloaded());
         assert_eq!(err.kind(), "busy");
         assert_eq!(mock.urls().len(), MAX_ATTEMPTS as usize);
-        assert_eq!(notices.lock().unwrap().len(), MAX_ATTEMPTS as usize - 1);
     }
 
     #[tokio::test(start_paused = true)]
@@ -352,6 +452,7 @@ mod tests {
                 EndpointKind::Text,
                 &body(),
                 &RetryHooks::default(),
+                MAX_ATTEMPTS,
             )
             .await
             .unwrap_err();
@@ -359,65 +460,119 @@ mod tests {
         assert_eq!(mock.urls().len(), 1);
     }
 
+    // ---- text model chain ----
+
     #[tokio::test(start_paused = true)]
-    async fn falls_back_after_primary_stays_busy_and_sticks_to_it() {
-        let mut responses: Vec<_> = (0..5).map(|_| busy()).collect();
-        responses.push(status(200, OK_BODY)); // fallback answers
-        responses.push(status(200, OK_BODY)); // next call goes straight to fallback
-        let (c, mock) = client(responses);
+    async fn chain_uses_three_attempts_per_model_then_moves_on_and_sticks() {
+        // a: 3× 503 → b answers; next call starts at b.
+        let mut r = busy_n(3);
+        r.push(status(200, OK_BODY));
+        r.push(status(200, OK_BODY));
+        let (c, mock) = client(r);
         let (hooks, notices) = recording_hooks();
-        let models = TextModels::new("primary-model", "fallback-model");
+        let chain = ModelChain::new(&["a", "b", "c"]);
 
-        c.generate_text(&key(), &models, &body(), &hooks)
+        let (_, used) = c
+            .generate_text(&key(), &chain, &body(), &hooks)
             .await
             .unwrap();
-        c.generate_text(&key(), &models, &body(), &hooks)
+        assert_eq!(used, "b");
+        let (_, used) = c
+            .generate_text(&key(), &chain, &body(), &hooks)
             .await
             .unwrap();
+        assert_eq!(used, "b");
 
-        let urls = mock.urls();
-        assert_eq!(urls.len(), 7);
-        assert!(
-            urls[..5]
-                .iter()
-                .all(|u| u.contains("/models/primary-model:"))
-        );
-        assert!(
-            urls[5..]
-                .iter()
-                .all(|u| u.contains("/models/fallback-model:"))
-        );
+        assert_eq!(models_called(&mock), vec!["a", "a", "a", "b", "b"]);
         let n = notices.lock().unwrap();
-        let fallback: Vec<_> = n
+        let busy: Vec<_> = n.iter().filter(|x| x.reason == RetryReason::Busy).collect();
+        assert_eq!(busy.len(), 2, "3 attempts = 2 waits");
+        assert!(
+            busy.iter()
+                .all(|x| x.max_attempts == TEXT_CHAIN_ATTEMPTS && x.model == "a")
+        );
+        assert!((2_000..=3_000).contains(&busy[0].delay_ms));
+        assert!((4_000..=5_000).contains(&busy[1].delay_ms));
+        let next: Vec<_> = n
             .iter()
-            .filter(|x| x.reason == RetryReason::Fallback)
+            .filter(|x| x.reason == RetryReason::NextModel)
             .collect();
-        assert_eq!(fallback.len(), 1);
-        assert_eq!(fallback[0].model, "fallback-model");
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].model, "b");
+        assert_eq!(next[0].previous_model.as_deref(), Some("a"));
     }
 
     #[tokio::test(start_paused = true)]
-    async fn no_fallback_for_other_errors_or_when_unset() {
-        // 429 exhausted → no fallback (fallback is only for overload).
-        let (c, mock) = client((0..5).map(|_| status_retry_after(429, 1)).collect());
-        let models = TextModels::new("p", "f");
+    async fn chain_exhausted_reports_every_model_and_last_error() {
+        let (c, mock) = client(busy_n(9));
+        let chain = ModelChain::new(&["a", "b", "c"]);
         let err = c
-            .generate_text(&key(), &models, &body(), &RetryHooks::default())
+            .generate_text(&key(), &chain, &body(), &RetryHooks::default())
             .await
             .unwrap_err();
-        assert_eq!(err.kind(), "rate_limited");
-        assert!(mock.urls().iter().all(|u| u.contains("/models/p:")));
+        assert_eq!(mock.urls().len(), 9);
+        assert_eq!(err.kind(), "busy");
+        let detail = err.detail();
+        assert!(detail.contains("a → b → c"), "{detail}");
+        assert!(detail.contains("HTTP 503"), "{detail}");
+    }
 
-        // Fallback disabled (empty) → the 503 is returned.
-        let (c, mock) = client((0..5).map(|_| busy()).collect());
-        let models = TextModels::new("p", "  ");
-        assert!(
-            c.generate_text(&key(), &models, &body(), &RetryHooks::default())
-                .await
-                .unwrap_err()
-                .is_overloaded()
-        );
-        assert_eq!(mock.urls().len(), 5);
+    #[tokio::test(start_paused = true)]
+    async fn chain_moves_on_after_404_and_timeouts_but_not_after_400() {
+        // a: unknown model (404, no retry) → b: timeouts ×3 → c answers.
+        let mut r = vec![status(
+            404,
+            r#"{"error":{"code":404,"message":"models/a is not found"}}"#,
+        )];
+        r.extend((0..3).map(|_| Err(TransportError::Timeout)));
+        r.push(status(200, OK_BODY));
+        let (c, mock) = client(r);
+        let chain = ModelChain::new(&["a", "b", "c"]);
+        let (_, used) = c
+            .generate_text(&key(), &chain, &body(), &RetryHooks::default())
+            .await
+            .unwrap();
+        assert_eq!(used, "c");
+        assert_eq!(models_called(&mock), vec!["a", "b", "b", "b", "c"]);
+
+        // 400 (bad request) is final: another model would get the same request.
+        let (c, mock) = client(vec![status(
+            400,
+            r#"{"error":{"code":400,"message":"bad"}}"#,
+        )]);
+        let err = c
+            .generate_text(
+                &key(),
+                &ModelChain::new(&["a", "b"]),
+                &body(),
+                &RetryHooks::default(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, GeminiError::Api { status: 400, .. }));
+        assert_eq!(mock.urls().len(), 1);
+    }
+
+    #[test]
+    fn chain_drops_blanks_and_duplicates() {
+        let c = ModelChain::new(&[" a ", "", "b", "a"]);
+        assert_eq!(c.models(), ["a", "b"]);
+    }
+
+    #[tokio::test]
+    async fn empty_chain_is_an_error() {
+        let (c, _) = client(vec![]);
+        let empty: [&str; 0] = [];
+        let err = c
+            .generate_text(
+                &key(),
+                &ModelChain::new(&empty),
+                &body(),
+                &RetryHooks::default(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, GeminiError::NoTextModel));
     }
 
     #[tokio::test(start_paused = true)]
@@ -437,18 +592,25 @@ mod tests {
         let body = r#"{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}"#;
         assert!(matches!(
             map_status(400, body, None),
-            GeminiError::InvalidKey(_)
+            GeminiError::InvalidKey { status: 400, .. }
         ));
         assert!(matches!(
             map_status(403, "", None),
-            GeminiError::InvalidKey(_)
+            GeminiError::InvalidKey { .. }
         ));
     }
 
     #[test]
-    fn rate_limit_keeps_retry_after() {
+    fn rate_limit_keeps_retry_after_and_raw_body() {
         let e = map_status(429, "not json", Some(Duration::from_secs(3)));
         assert!(e.is_retryable());
         assert_eq!(e.retry_after(), Some(Duration::from_secs(3)));
+        assert_eq!(e.detail(), "HTTP 429 — not json");
+        let long = "x".repeat(MAX_ERROR_BODY_CHARS + 50);
+        assert!(
+            map_status(500, &long, None)
+                .detail()
+                .ends_with("(truncated)")
+        );
     }
 }

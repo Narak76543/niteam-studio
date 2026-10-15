@@ -19,10 +19,9 @@ pub struct Settings {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ModelSettings {
-    pub text: String,
-    /// Used once per job when `text` is still overloaded (503) after all retries.
-    /// Empty = no fallback.
-    pub text_fallback: String,
+    /// Text models in fallback order. Each gets 3 attempts (429 / 5xx / timeouts retried),
+    /// then the next one is tried. Old `text` / `text_fallback` fields are ignored on load.
+    pub text_chain: Vec<String>,
     pub tts: String,
     pub tts_lite: String,
     pub image: String,
@@ -52,8 +51,11 @@ impl Default for Settings {
 impl Default for ModelSettings {
     fn default() -> Self {
         Self {
-            text: "gemini-3.8-flash".into(),
-            text_fallback: "gemini-3.6-flash".into(),
+            text_chain: vec![
+                "gemini-3.5-flash-lite".into(),
+                "gemini-3.1-flash-lite".into(),
+                "gemini-3.8-flash".into(),
+            ],
             tts: "gemini-3.8-flash-tts".into(),
             tts_lite: "gemini-3.8-flash-lite-tts".into(),
             image: "gemini-3.1-flash-image".into(),
@@ -72,6 +74,7 @@ impl Default for ConcurrencySettings {
 }
 
 const MAX_CONCURRENCY: usize = 8;
+const MAX_TEXT_CHAIN: usize = 6;
 
 fn is_model_id(m: &str) -> bool {
     m.chars()
@@ -89,20 +92,27 @@ impl Settings {
                 "ui_language '{lang}'"
             )));
         }
-        let models = [
-            &self.models.text,
-            &self.models.tts,
-            &self.models.tts_lite,
-            &self.models.image,
-        ];
+        let chain = &self.models.text_chain;
+        if chain.is_empty() || chain.len() > MAX_TEXT_CHAIN {
+            return Err(StorageError::InvalidSetting(format!(
+                "the text model list needs 1–{MAX_TEXT_CHAIN} models"
+            )));
+        }
+        for (i, m) in chain.iter().enumerate() {
+            if chain[..i].contains(m) {
+                return Err(StorageError::InvalidSetting(format!(
+                    "model '{m}' is listed twice"
+                )));
+            }
+        }
+        let models =
+            chain
+                .iter()
+                .chain([&self.models.tts, &self.models.tts_lite, &self.models.image]);
         for m in models {
             if m.is_empty() || !is_model_id(m) {
                 return Err(StorageError::InvalidSetting(format!("model id '{m}'")));
             }
-        }
-        let fb = &self.models.text_fallback;
-        if !fb.is_empty() && !is_model_id(fb) {
-            return Err(StorageError::InvalidSetting(format!("model id '{fb}'")));
         }
         let c = &self.concurrency;
         for n in [c.text, c.tts, c.image] {
@@ -132,24 +142,33 @@ mod tests {
 
     #[test]
     fn missing_fields_fall_back_to_defaults() {
-        let s: Settings = serde_json::from_str(r#"{"ui_language":"km"}"#).unwrap();
+        // Old files with `text` / `text_fallback` load with the new default chain.
+        let s: Settings = serde_json::from_str(
+            r#"{"ui_language":"km","models":{"text":"gemini-3.8-flash","text_fallback":"x"}}"#,
+        )
+        .unwrap();
         assert_eq!(s.ui_language.as_deref(), Some("km"));
         assert_eq!(s.models, ModelSettings::default());
+        assert_eq!(s.models.text_chain[0], "gemini-3.5-flash-lite");
         assert!(s.validate().is_ok());
     }
 
     #[test]
     fn rejects_bad_values() {
         let mut s = Settings::default();
-        s.models.text = "gemini/../x".into();
+        s.models.text_chain[0] = "gemini/../x".into();
         assert!(s.validate().is_err());
         let mut s = Settings::default();
         s.concurrency.tts = 0;
         assert!(s.validate().is_err());
         let mut s = Settings::default();
-        s.models.text_fallback = String::new();
-        assert!(s.validate().is_ok(), "empty fallback = disabled");
-        s.models.text_fallback = "bad id!".into();
+        s.models.text_chain.clear();
+        assert!(s.validate().is_err(), "chain must not be empty");
+        let mut s = Settings::default();
+        s.models.text_chain.push("gemini-3.8-flash".into());
+        assert!(s.validate().is_err(), "duplicates rejected");
+        let mut s = Settings::default();
+        s.models.text_chain[1] = "bad id!".into();
         assert!(s.validate().is_err());
     }
 

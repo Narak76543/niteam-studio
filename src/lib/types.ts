@@ -7,9 +7,8 @@ export type ProjectStatus = "script_draft" | "generating" | "review" | "renderin
 export type AssetStatus = "pending" | "running" | "done" | "failed" | "stale";
 
 export interface ModelSettings {
-  text: string;
-  /** Used when `text` is still overloaded (503) after all retries. "" = disabled. */
-  text_fallback: string;
+  /** Text models in fallback order: 3 tries each, then the next one. */
+  text_chain: string[];
   tts: string;
   tts_lite: string;
   image: string;
@@ -65,13 +64,15 @@ export interface KeyTestOutcome {
   error: string | null;
 }
 
-export type RetryReason = "busy" | "rate_limited" | "network" | "fallback";
+export type RetryReason = "busy" | "rate_limited" | "network" | "next_model";
 
 /** Payload of the `gemini-retry` event. */
 export interface GeminiRetry {
   scope: "script" | "key_test";
   project_id: string | null;
   model: string;
+  /** For `next_model`: the model that just gave up. */
+  previous_model: string | null;
   reason: RetryReason;
   attempt: number;
   max_attempts: number;

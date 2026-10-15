@@ -93,35 +93,50 @@ Every Gemini request (script, key test, and later TTS / images) goes through
 
 - 408 / 429 / 500 / 502 / 503 / 504 / network errors / timeouts → exponential backoff
   (+ up to 1 s jitter), honor `Retry-After` (seconds, capped at 120 s) if present.
-  Max 5 attempts, then `failed`. Waits between attempts: 2 s, 4 s, 8 s, 16 s
-  (5 attempts = 4 waits, ≈ 30 s in total; the formula would give 32 s for a 6th attempt).
+  Waits double: 2 s, 4 s, 8 s, … (n attempts = n − 1 waits).
+  - **Text calls:** 3 attempts per model (waits 2 s, 4 s), then the next model of the chain
+    (see below).
+  - **Other calls** (key test; later TTS / images): 5 attempts (waits 2, 4, 8, 16 s).
 - Before each wait a `gemini-retry` event is emitted (model, reason
-  `busy | rate_limited | network | fallback`, next attempt n/5, delay) and a WARN line is written
-  to the log, so the UI shows "Google is busy, retrying (attempt 2/5) in 4 s…" instead of
-  looking stuck.
+  `busy | rate_limited | network | next_model`, next attempt n/max, delay, exact error) and a
+  WARN line is written to the log, so the UI shows
+  "Google is busy, retrying… (model X, attempt 2/3, in 4 s)" instead of looking stuck.
 - 400 / 401 / 402 / 403 / 404 → no retry; show the message (bad key, no credits, safety block,
   invalid request, unknown model). 401/403 or a 400 mentioning "API key" → "check your key".
-- Error bodies are parsed leniently: only `error.message` is used (`code` is an int in the
-  classic shape and a string in the newer one).
+- Error bodies are parsed leniently: `error.message` is used for the short message (`code` is
+  an int in the classic shape and a string in the newer one). The **exact HTTP status and raw
+  body** (cut at 2,000 characters) are kept as the error's `detail` and written to the log on
+  every failed attempt.
 - Every failure carries a stable `kind` (`busy, rate_limited, network, invalid_key, payment,
   not_found, blocked, bad_response, missing_key, other`). The UI shows a friendly translated
   message for the kind, a **Try again** button, and the raw Gemini error under **Details**;
   the raw error is also written to the log.
 
-### Text fallback model
+### Text model chain (fallback)
 
-- Setting `models.text_fallback` (default `gemini-3.6-flash`, empty = off), editable in Settings.
-- Rule: if a **text** call to `models.text` still fails with **503** after all 5 attempts, the
-  same request is sent to the fallback model once — that one call again uses the normal retry
-  rules. A `gemini-retry` notice with reason `fallback` is emitted first.
-- Once a job had to switch, it stays on the fallback model for the rest of that job (no point
-  waiting ~30 s on a busy model for every chapter). The next job starts on the primary again.
-- Only 503 triggers it — not 429 (quota is per key, another model doesn't help), not 4xx.
-- This is model fallback on the **same key**, never key rotation.
+- Setting `models.text_chain`: ordered list of text models, 1–6 entries, editable in Settings.
+  Default: `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite` → `gemini-3.8-flash`
+  (lighter models first: cheaper and usually less overloaded). Settings files from before
+  this change (`text` / `text_fallback`) load with this default.
+- Rule for every text call (outline or one chapter): try the current model with 3 attempts.
+  If it still fails with a transient error (429 / 5xx / timeout / network) **or 404** (model
+  renamed or retired), emit `gemini-retry` with reason `next_model` and try the next model
+  (3 attempts again). 400 / key errors / safety blocks stop immediately — another model would
+  get the same answer.
+- If every model fails, the call fails with "All text models failed (tried a → b → c)" and
+  the last model's exact error.
+- The model that answered is logged ("chapter 2/5 written by gemini-3.1-flash-lite"). Later
+  calls in the same job start from that model; the next job starts at the top of the list.
+- Calls are per outline / per chapter, so a failure only costs that chapter: finished chapters
+  are saved and **Try again** resumes at the failed one.
+- Same key throughout — model fallback, never key rotation.
+- Khmer guard: chapter replies whose narration or spoken text contain Thai/Lao letters
+  (U+0E00–U+0EFF) are rejected and re-asked once (lite models occasionally mix them in).
 
 ### Logs
 
-`projects/<id>/logs/pipeline.log` (job start/finish, every retry, fallback switch, raw errors)
+`projects/<id>/logs/pipeline.log` (job start with the model chain, every failed attempt with
+exact HTTP status + body, model switches, which model wrote the outline and each chapter)
 and `logs/app.log` (key tests). The API key is redacted before writing; files rotate to `.1`
 at 1 MB.
 - Semaphore per endpoint kind (default 3 concurrent).

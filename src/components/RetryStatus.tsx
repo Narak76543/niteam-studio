@@ -21,10 +21,16 @@ export function RetryStatus({ retry, receivedAt }: Props) {
   }, []);
 
   const seconds = Math.max(0, Math.ceil((receivedAt + retry.delay_ms - now) / 1000));
-  const vars = { attempt: retry.attempt, max: retry.max_attempts, seconds, model: retry.model };
+  const vars = {
+    attempt: retry.attempt,
+    max: retry.max_attempts,
+    seconds,
+    model: retry.model,
+    previous: retry.previous_model ?? "",
+  };
   const text =
-    retry.reason === "fallback"
-      ? t("retry.fallback", vars)
+    retry.reason === "next_model"
+      ? t("retry.next_model", vars)
       : seconds === 0
         ? t("retry.now", vars)
         : t(`retry.${retry.reason}`, vars);

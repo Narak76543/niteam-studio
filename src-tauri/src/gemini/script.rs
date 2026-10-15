@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-use super::client::TextModels;
+use super::client::ModelChain;
 use super::models::{Content, GenerateContentRequest, GenerationConfig};
 use super::retry::RetryHooks;
 use super::{GeminiClient, GeminiError};
@@ -77,12 +77,26 @@ impl Validate for OutlineReply {
     }
 }
 
+/// Thai (U+0E00..U+0E7F) and Lao (U+0E80..U+0EFF) letters never belong in Khmer or English
+/// narration, but lighter models sometimes mix them into Khmer words.
+fn foreign_script(text: &str) -> Option<char> {
+    text.chars().find(|c| ('\u{0E00}'..='\u{0EFF}').contains(c))
+}
+
 impl Validate for ChapterReply {
     fn validate(&self) -> Result<(), String> {
         if self.scenes.is_empty() {
             return Err("scenes must not be empty".into());
         }
         for (i, s) in self.scenes.iter().enumerate() {
+            for (field, text) in [("narration", &s.narration), ("spoken_text", &s.spoken_text)] {
+                if let Some(c) = foreign_script(text) {
+                    return Err(format!(
+                        "scene {} {field} contains a Thai/Lao character '{c}'; write it in Khmer script only",
+                        i + 1
+                    ));
+                }
+            }
             if s.narration.trim().is_empty()
                 || s.spoken_text.trim().is_empty()
                 || s.image_prompt.trim().is_empty()
@@ -262,31 +276,31 @@ fn is_response_format_rejected(err: &GeminiError) -> bool {
     }
 }
 
-/// Sends a JSON-schema request and parses the reply into `T`.
+/// Sends a JSON-schema request over the text model chain and parses the reply into `T`.
 /// On a parse/validation failure, retries once with the error appended.
-/// Transport-level retries and the fallback model are handled by the client.
+/// Returns the value and the model that produced it (for the log).
 pub async fn request_json<T: DeserializeOwned + Validate>(
     client: &GeminiClient,
     key: &ApiKey,
-    models: &TextModels,
+    chain: &ModelChain,
     prompt: String,
     schema: Value,
     hooks: &RetryHooks,
-) -> Result<T, GeminiError> {
+) -> Result<(T, String), GeminiError> {
     let mut contents = vec![Content::user(prompt)];
     let mut last_error = String::new();
     for attempt in 0..2 {
-        let raw = generate_text(client, key, models, &contents, &schema, hooks).await?;
+        let (raw, model) = generate_text(client, key, chain, &contents, &schema, hooks).await?;
         match parse_reply::<T>(&raw) {
-            Ok(v) => return Ok(v),
+            Ok(v) => return Ok((v, model)),
             Err(e) if attempt == 0 => {
-                last_error = e.clone();
+                last_error = format!("{model}: {e}");
                 contents.push(Content::model(raw));
                 contents.push(Content::user(format!(
                     "Your previous reply was invalid: {e}. Reply again with ONLY valid JSON that matches the schema."
                 )));
             }
-            Err(e) => last_error = e,
+            Err(e) => last_error = format!("{model}: {e}"),
         }
     }
     Err(GeminiError::BadResponse(last_error))
@@ -295,30 +309,30 @@ pub async fn request_json<T: DeserializeOwned + Validate>(
 async fn generate_text(
     client: &GeminiClient,
     key: &ApiKey,
-    models: &TextModels,
+    chain: &ModelChain,
     contents: &[Content],
     schema: &Value,
     hooks: &RetryHooks,
-) -> Result<String, GeminiError> {
+) -> Result<(String, String), GeminiError> {
     let build = |legacy: bool| GenerateContentRequest {
         contents: contents.to_vec(),
         system_instruction: Some(Content::system(SYSTEM_PROMPT)),
         generation_config: Some(GenerationConfig::json(schema.clone(), legacy)),
     };
     let legacy = USE_LEGACY_JSON_FIELDS.load(Ordering::Relaxed);
-    let response = match client
-        .generate_text(key, models, &build(legacy), hooks)
+    let (response, model) = match client
+        .generate_text(key, chain, &build(legacy), hooks)
         .await
     {
         Err(e) if !legacy && is_response_format_rejected(&e) => {
             USE_LEGACY_JSON_FIELDS.store(true, Ordering::Relaxed);
             client
-                .generate_text(key, models, &build(true), hooks)
+                .generate_text(key, chain, &build(true), hooks)
                 .await?
         }
         other => other?,
     };
-    response.text()
+    Ok((response.text()?, model))
 }
 
 /// Parses model output, tolerating a ```json fence around it.
@@ -363,6 +377,15 @@ mod tests {
     }
 
     #[test]
+    fn rejects_thai_letters_mixed_into_khmer() {
+        let raw = r#"{"scenes":[{"narration":"ញើសឈាមរបស់บรรพបុរាណ","spoken_text":"x","image_prompt":"y","mood":"calm","fact_note":""}]}"#;
+        let err = parse_reply::<ChapterReply>(raw).unwrap_err();
+        assert!(err.contains("Thai/Lao"), "{err}");
+        let ok = r#"{"scenes":[{"narration":"ញើសឈាមរបស់បុព្វបុរស","spoken_text":"x","image_prompt":"y","mood":"calm","fact_note":""}]}"#;
+        assert!(parse_reply::<ChapterReply>(ok).is_ok());
+    }
+
+    #[test]
     fn khmer_prompt_contains_spoken_rules() {
         let p = outline_prompt(&brief(), 4, 26);
         assert!(p.contains("Khmer"));
@@ -393,6 +416,7 @@ mod tests {
         let e = GeminiError::Api {
             status: 400,
             message: "Invalid JSON payload received. Unknown name \"responseFormat\"".into(),
+            body: String::new(),
             retry_after: None,
         };
         assert!(is_response_format_rejected(&e));

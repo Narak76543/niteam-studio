@@ -32,17 +32,20 @@ pub fn retry_hooks(
         cancel,
         Arc::new(move |notice: &RetryNotice| {
             let line = match notice.reason {
-                RetryReason::Fallback => format!(
-                    "primary model still unavailable ({}); switching to fallback model {}",
-                    notice.error, notice.model
+                RetryReason::NextModel => format!(
+                    "{} gave up after {} attempts ({}); trying next model {}",
+                    notice.previous_model.as_deref().unwrap_or("?"),
+                    notice.max_attempts,
+                    notice.error,
+                    notice.model
                 ),
                 _ => format!(
-                    "{} failed ({}); retrying in {} ms (attempt {}/{})",
+                    "{} attempt {}/{} failed: {}; retrying in {} ms",
                     notice.model,
+                    notice.attempt - 1,
+                    notice.max_attempts,
                     notice.error,
-                    notice.delay_ms,
-                    notice.attempt,
-                    notice.max_attempts
+                    notice.delay_ms
                 ),
             };
             log.warn(&line);

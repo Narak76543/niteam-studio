@@ -1025,3 +1025,13 @@ input[type="range"] {
   max-height: 160px;
   overflow-y: auto;
 }
+
+/* ---------- model chain editor ---------- */
+.chain-row {
+  flex-wrap: nowrap;
+}
+.chain-row__num {
+  width: 16px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

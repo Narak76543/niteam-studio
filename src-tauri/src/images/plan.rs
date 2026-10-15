@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 
 use super::cloudflare;
 use super::prompt::{PromptParts, build_prompt, cache_hash, is_cambodia_related, scene_seed};
+use super::prompt_sd15::build_prompt_sd15;
+use crate::pipeline::presets;
 use super::provider::ProviderId;
 use crate::pipeline::project::{ImageSnapshot, Language, Project, Scene};
 
@@ -33,6 +35,16 @@ pub fn model_for(provider: ProviderId, s: &ImageSnapshot) -> String {
     match provider {
         ProviderId::CloudflareFlux => cloudflare::MODEL.to_owned(),
         ProviderId::GeminiNanoBanana => s.gemini_model.clone(),
+        ProviderId::LocalSdcpp => s.local_profile.clone().unwrap_or_else(|| "none".into()),
+    }
+}
+
+/// Short style for SD 1.5 (08 §7): the preset's `short_style` while the Look & feel style is
+/// the preset's, else the first 12 words of the edited style.
+fn short_style(project: &Project, style: &str) -> String {
+    match presets::find(&project.style.preset) {
+        Some(p) if style.trim() == p.style_prompt.trim() || style.trim().is_empty() => p.short_style.to_owned(),
+        _ => style.split_whitespace().take(12).collect::<Vec<_>>().join(" ").trim_end_matches(',').to_owned(),
     }
 }
 
@@ -74,7 +86,7 @@ fn own_plan(project: &Project, scene: &Scene) -> ScenePlan {
     let culture = bible
         .map(|b| b.culture_notes.as_str())
         .filter(|c| cambodia && !c.trim().is_empty());
-    let prompt = build_prompt(&PromptParts {
+    let parts = PromptParts {
         style,
         shot: scene.shot,
         subject: &scene.image_prompt,
@@ -82,12 +94,17 @@ fn own_plan(project: &Project, scene: &Scene) -> ScenePlan {
         place: place.map(String::as_str),
         culture_notes: culture,
         square: provider == ProviderId::CloudflareFlux,
-    });
+    };
+    let prompt = if provider == ProviderId::LocalSdcpp {
+        build_prompt_sd15(&parts, &short_style(project, style))
+    } else {
+        build_prompt(&parts)
+    };
     let base = bible.map_or_else(|| fallback_seed(&project.id), |b| b.seed);
     let seed = scene_seed(base, &scene.id, scene.image.seed);
     let steps = match provider {
         ProviderId::CloudflareFlux => snap.steps,
-        ProviderId::GeminiNanoBanana => 0,
+        ProviderId::GeminiNanoBanana | ProviderId::LocalSdcpp => 0,
     };
     let hash = cache_hash(provider.as_str(), &model, &prompt, seed, steps);
     ScenePlan {

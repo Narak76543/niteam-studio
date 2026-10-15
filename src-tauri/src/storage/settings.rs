@@ -21,6 +21,22 @@ pub struct Settings {
     pub voice: VoiceDefaults,
     pub image: ImageSettings,
     pub render: RenderPrefs,
+    /// Detected GPU (cached at startup, 08 §2).
+    pub gpu: Option<crate::local::gpu::GpuInfo>,
+    pub local: LocalPrefs,
+}
+
+/// Settings → Local images (08 §8, §9).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct LocalPrefs {
+    /// Pause after every N local images (0 = off).
+    pub cooldown_every: u32,
+    pub cooldown_seconds: u32,
+    /// The one-time "your GPU can make images for free" card was answered.
+    pub offer_dismissed: bool,
+    /// From the benchmark (2 test images); used for time estimates.
+    pub seconds_per_image: Option<f32>,
 }
 
 /// Settings → Video. The detected encoder is cached here (03 "Encoder detection").
@@ -46,6 +62,8 @@ pub struct ImageSettings {
     pub cloudflare_account_id: String,
     /// Cloudflare requests at a time.
     pub cloudflare_concurrency: usize,
+    /// Installed local model profile used by `local_sdcpp` (08 §4).
+    pub local_profile: Option<String>,
 }
 
 impl Default for ImageSettings {
@@ -57,6 +75,7 @@ impl Default for ImageSettings {
             key_scene_provider: None,
             cloudflare_account_id: String::new(),
             cloudflare_concurrency: 2,
+            local_profile: None,
         }
     }
 }
@@ -185,6 +204,8 @@ impl Default for Settings {
             voice: VoiceDefaults::default(),
             image: ImageSettings::default(),
             render: RenderPrefs::default(),
+            gpu: None,
+            local: LocalPrefs::default(),
         }
     }
 }

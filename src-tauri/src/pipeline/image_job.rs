@@ -31,6 +31,7 @@ use crate::storage::{AppPaths, StorageError, atomic};
 pub struct Providers {
     pub cloudflare: Option<Arc<dyn ImageProvider>>,
     pub gemini: Option<Arc<dyn ImageProvider>>,
+    pub local: Option<Arc<dyn ImageProvider>>,
 }
 
 impl Providers {
@@ -38,6 +39,7 @@ impl Providers {
         match id {
             ProviderId::CloudflareFlux => self.cloudflare.as_ref(),
             ProviderId::GeminiNanoBanana => self.gemini.as_ref(),
+            ProviderId::LocalSdcpp => self.local.as_ref(),
         }
     }
 }
@@ -77,6 +79,8 @@ struct Ctx {
     events: Arc<dyn JobEvents>,
     cloudflare_limit: Semaphore,
     gemini_limit: Semaphore,
+    /// One local image at a time (08 §3).
+    local_limit: Semaphore,
     /// Set on quota exhaustion or auth failure: remaining tasks are not started.
     stop: AtomicBool,
     pause_until: Mutex<Option<String>>,
@@ -168,6 +172,7 @@ impl ImageJob {
             events: events.clone(),
             cloudflare_limit: Semaphore::new(self.cloudflare_concurrency.max(1)),
             gemini_limit: Semaphore::new(self.gemini_concurrency.max(1)),
+            local_limit: Semaphore::new(1),
             stop: AtomicBool::new(false),
             pause_until: Mutex::new(None),
             job_error: Mutex::new(None),
@@ -397,6 +402,7 @@ impl Ctx {
         let limit = match task.plan.provider {
             ProviderId::CloudflareFlux => &self.cloudflare_limit,
             ProviderId::GeminiNanoBanana => &self.gemini_limit,
+            ProviderId::LocalSdcpp => &self.local_limit,
         };
         let Ok(_permit) = limit.acquire().await else {
             return Outcome::Skipped;
@@ -467,7 +473,7 @@ impl Ctx {
                     "{} image failed [{}]: {}",
                     task.plan.scene_id, err.1, err.0
                 ));
-                if matches!(e, ImageError::Auth(_)) {
+                if matches!(e, ImageError::Auth(_) | ImageError::Engine(_)) {
                     self.stop.store(true, Ordering::Relaxed);
                     if let Ok(mut slot) = self.job_error.lock() {
                         slot.get_or_insert_with(|| err.clone());
@@ -685,6 +691,7 @@ mod tests {
             providers: Providers {
                 cloudflare: Some(provider),
                 gemini: None,
+                local: None,
             },
             settings: ImageSnapshot::default(),
             hooks: RetryHooks::default(),

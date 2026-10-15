@@ -264,6 +264,9 @@ pub struct ImageSnapshot {
     pub key_scene_provider: Option<ProviderId>,
     /// 1 (default) or 2: consecutive scene pairs share one image (07 §5).
     pub scenes_per_image: u8,
+    /// Local model profile (`local_models.json`) when a provider is `local_sdcpp`.
+    #[serde(default)]
+    pub local_profile: Option<String>,
 }
 
 impl Default for ImageSnapshot {
@@ -274,6 +277,7 @@ impl Default for ImageSnapshot {
             steps: 4,
             key_scene_provider: None,
             scenes_per_image: 1,
+            local_profile: None,
         }
     }
 }

@@ -11,3 +11,6 @@ Thumbs.db
 # FFmpeg sidecar (scripts/fetch-ffmpeg.ps1), ~100 MB
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
+
+# stable-diffusion.cpp engine (scripts/fetch-sdcpp.ps1), ~90 MB
+src-tauri/resources/sdcpp/

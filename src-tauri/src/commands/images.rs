@@ -19,7 +19,7 @@ use crate::images::cloudflare::CloudflareFlux;
 use crate::images::gemini::GeminiNanoBanana;
 use crate::images::plan::{plan_all, source_index};
 use crate::images::postprocess;
-use crate::images::provider::{ImageProvider, ImageRequest};
+use crate::images::provider::{ImageProvider, ImageRequest, ProviderId};
 use crate::net::transport::ReqwestTransport;
 use crate::pipeline::ProjectError;
 use crate::pipeline::editing;
@@ -137,6 +137,7 @@ fn snapshot(settings: &ImageSettings) -> ImageSnapshot {
         steps: settings.steps,
         key_scene_provider: settings.key_scene_provider,
         scenes_per_image: 1,
+        local_profile: settings.local_profile.clone(),
     }
 }
 
@@ -193,9 +194,16 @@ pub async fn start_image_job(
     if project.visual_bible.is_none() {
         generate_bible(state, &project_id).await?;
     }
+    let uses_local = settings.image.provider == ProviderId::LocalSdcpp
+        || settings.image.key_scene_provider == Some(ProviderId::LocalSdcpp);
+    let local = if uses_local { super::local::local_provider(state, &settings).await? } else { None };
+    if uses_local && local.is_none() {
+        return Err("Install a local model in Settings → Local images, or choose Cloudflare Flux in Settings → Images.".into());
+    }
     let providers = Providers {
         cloudflare: cloudflare_provider(&settings.image)?,
         gemini: gemini_provider(&state.gemini, &settings.image)?,
+        local,
     };
     let cancel = state.image_jobs.start(&project_id).map_err(to_cmd)?;
     let mut log = LogFile::new(state.paths.project_log(&project_id));

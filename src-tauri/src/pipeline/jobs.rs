@@ -36,6 +36,12 @@ impl JobRegistry {
         }
     }
 
+    /// Keys of the jobs running now.
+    pub fn running_keys(&self) -> Vec<String> {
+        let map = self.running.lock().unwrap_or_else(|p| p.into_inner());
+        map.keys().cloned().collect()
+    }
+
     pub fn is_running(&self, project_id: &str) -> bool {
         let map = self.running.lock().unwrap_or_else(|p| p.into_inner());
         map.contains_key(project_id)

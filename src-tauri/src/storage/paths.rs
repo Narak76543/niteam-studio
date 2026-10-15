@@ -12,6 +12,10 @@ const APP_DIR_NAME: &str = "NiteanStudio";
 #[derive(Debug, Clone)]
 pub struct AppPaths {
     root: PathBuf,
+    /// `%LOCALAPPDATA%/NiteanStudio` (large files: local models, 08 §5).
+    local_root: PathBuf,
+    /// Bundled stable-diffusion.cpp (`sd-server.exe` + DLLs), from the app resources.
+    engine_dir: PathBuf,
 }
 
 impl AppPaths {
@@ -20,11 +24,34 @@ impl AppPaths {
             .path()
             .data_dir()
             .map_err(|e| StorageError::NoAppDir(e.to_string()))?;
-        Ok(Self::new(data_dir.join(APP_DIR_NAME)))
+        let local = app
+            .path()
+            .local_data_dir()
+            .map_err(|e| StorageError::NoAppDir(e.to_string()))?;
+        let resources = app
+            .path()
+            .resource_dir()
+            .map_err(|e| StorageError::NoAppDir(e.to_string()))?;
+        Ok(Self {
+            root: data_dir.join(APP_DIR_NAME),
+            local_root: local.join(APP_DIR_NAME),
+            engine_dir: resources.join("sdcpp"),
+        })
     }
 
+    /// Everything under one folder (tests).
+    #[cfg(test)]
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self { local_root: root.join("local"), engine_dir: root.join("sdcpp"), root }
+    }
+
+    /// `%LOCALAPPDATA%/NiteanStudio/models`: one folder per model profile.
+    pub fn models_dir(&self) -> PathBuf {
+        self.local_root.join("models")
+    }
+
+    pub fn engine_exe(&self) -> PathBuf {
+        self.engine_dir.join(if cfg!(windows) { "sd-server.exe" } else { "sd-server" })
     }
 
     pub fn root(&self) -> &std::path::Path {

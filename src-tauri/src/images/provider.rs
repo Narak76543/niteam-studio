@@ -14,6 +14,8 @@ pub enum ProviderId {
     #[default]
     CloudflareFlux,
     GeminiNanoBanana,
+    /// stable-diffusion.cpp on the user's GPU (`docs/08-local-gpu.md`).
+    LocalSdcpp,
 }
 
 impl ProviderId {
@@ -21,6 +23,7 @@ impl ProviderId {
         match self {
             Self::CloudflareFlux => "cloudflare_flux",
             Self::GeminiNanoBanana => "gemini_nano_banana",
+            Self::LocalSdcpp => "local_sdcpp",
         }
     }
 }
@@ -34,9 +37,8 @@ pub enum Aspect {
 pub struct ImageRequest {
     /// Fully built prompt (`images::prompt`).
     pub prompt: String,
-    /// Cloudflare Flux rejects a `seed` property (07 §1a) and the Gemini image request has
-    /// none, so no provider sends it today; it stays for providers that accept one.
-    #[cfg_attr(not(test), expect(dead_code, reason = "no current provider accepts a seed"))]
+    /// Used by the local engine (reproducible images). Cloudflare Flux rejects a `seed`
+    /// property (07 §1a) and the Gemini image request has none.
     pub seed: u32,
     pub steps: Option<u8>,
     /// Ignored by providers without reference-image support.
@@ -77,6 +79,9 @@ pub enum ImageError {
     /// Bad token/key or missing billing: stop the job.
     #[error("{0}")]
     Auth(String),
+    /// The local engine is missing or crashed: stop the job (switch to Cloudflare).
+    #[error("{0}")]
+    Engine(String),
     /// 5xx / timeout / network: retry.
     #[error("The image service had a temporary problem: {0}")]
     Transient(String),
@@ -96,6 +101,7 @@ impl ImageError {
             Self::RateLimited { .. } => "rate_limited",
             Self::SafetyBlocked(_) => "blocked",
             Self::Auth(_) => "image_auth",
+            Self::Engine(_) => "local_engine",
             Self::Transient(_) => "busy",
             Self::Other(_) => "other",
         }

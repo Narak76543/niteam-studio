@@ -3,6 +3,7 @@
 
 pub mod generate;
 pub mod images;
+pub mod local;
 pub mod project;
 pub mod proofread;
 pub mod render;

@@ -34,6 +34,8 @@ pub struct ImageEstimate {
     pub images: usize,
     pub cloudflare: usize,
     pub gemini: usize,
+    /// Made on the user's GPU (free, no daily limit).
+    pub local: usize,
     /// Already generated and up to date.
     pub cached: usize,
     pub cloudflare_neurons: f64,
@@ -50,6 +52,7 @@ pub fn estimate(todo: &[&ScenePlan], cached: usize) -> ImageEstimate {
         images: 0,
         cloudflare: 0,
         gemini: 0,
+        local: 0,
         cached,
         cloudflare_neurons: 0.0,
         cloudflare_percent_of_daily: 0.0,
@@ -69,6 +72,7 @@ pub fn estimate(todo: &[&ScenePlan], cached: usize) -> ImageEstimate {
                 e.gemini += 1;
                 e.gemini_cost_usd += gemini_price_usd(&p.model);
             }
+            ProviderId::LocalSdcpp => e.local += 1,
         }
     }
     e.cloudflare_percent_of_daily = (e.cloudflare_neurons / DAILY_FREE_NEURONS * 100.0).round();

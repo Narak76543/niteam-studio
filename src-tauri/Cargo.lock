@@ -2497,6 +2497,7 @@ dependencies = [
  "ulid",
  "unicode-normalization",
  "unicode-segmentation",
+ "windows",
 ]
 
 [[package]]

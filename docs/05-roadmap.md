@@ -82,7 +82,7 @@ Spec: `docs/07-image-generation.md` (§7 quality check and §9 thumbnail are Pha
 in one consistent style (same characters/places look alike); one regenerated with a new seed;
 edit one image prompt → only that image becomes outdated; Look & feel edit → all images outdated.
 
-## Phase 4 — Subtitles + first render  ← **CURRENT**
+## Phase 4 — Subtitles + first render  (built; awaiting the owner's test)
 
 - [x] `lib/subtitles.ts`: Khmer segmentation per `04-khmer.md` + unit tests
 - [x] Canvas PNG rendering, font-loaded check, `subs_save` command
@@ -104,7 +104,7 @@ correctly shaped, no word split across lines, in sync with voice.
 - [ ] Installer via `npm run tauri build`; first-run onboarding
 - [ ] Pipeline log viewer in Settings (no secrets)
 
-## Phase 6 — Local GPU images
+## Phase 6 — Local GPU images  ← **CURRENT** (started before Phase 4 was tested, by the owner's request)
 
 Spec: `docs/08-local-gpu.md`. The model list in `local_models.json` (URLs, sizes, sha256,
 licenses that allow commercial use) needs the owner's approval before it is filled in.

@@ -57,7 +57,9 @@ Evaluate in this order and document the choice in this file:
 3. Fallback: **one `sd-cli` process per image**. Simple and robust; accept the overhead.
 
 Whatever mode: run at **below-normal priority**, one generation at a time, cancellable
-(kill the child / drop the context), and never run at the same time as an FFmpeg render.
+(kill the child / drop the context), and never run at the same time as an FFmpeg render:
+take the app-wide `AppState::ffmpeg_lock` (03 Step 6x) for each image, since the export may
+use NVENC/QSV/AMF on the same GPU.
 
 ## 4. Model profiles
 
@@ -90,8 +92,10 @@ Rules for choosing model files:
 - **License must allow commercial use** (videos will be monetized). Record license name
   and URL per file; show them in Settings → Local models.
 - **Do not use SDXL-Turbo** (non-commercial license).
-- SD 1.5 profile: an SD 1.5 base or fine-tune good at illustration/painterly styles,
-  fp16 `.safetensors`, plus the **LCM-LoRA for SD 1.5** (4–8 steps, low CFG, `lcm` sampler).
+- SD 1.5 profile: an SD 1.5 base or fine-tune that handles **simple line art / doodles on
+  white** well (the default style is **Stickman** since 2026-10-15, 07 §1c) as well as
+  illustration styles, fp16 `.safetensors`, plus the **LCM-LoRA for SD 1.5** (4–8 steps,
+  low CFG, `lcm` sampler). Every candidate is tested with the Stickman prompt before approval.
 - Larger profiles (`sdxl_lightning`, `flux_schnell_gguf`) only after `sd15_lcm` works;
   each must list its own VRAM minimum and license.
 - Human must approve the final model list before release (quality + license check).
@@ -114,7 +118,9 @@ Implements `ImageProvider` from `07-image-generation.md`:
 - `id()` → `"local_sdcpp"`, `supports_reference_images()` → `false`,
   `native_aspect()` → wide (generates 768×448).
 - Generate at the profile's size, **seed** from the scene (07 §3), steps/cfg/sampler
-  from the profile, VAE tiling on for profiles that need it.
+  from the profile, VAE tiling on for profiles that need it. Unlike Cloudflare Flux (which
+  rejects a seed, 07 §1a), stable-diffusion.cpp honours it, so local images are reproducible:
+  the same prompt + seed gives the same picture.
 - Output PNG → post-processing from 07 §4, except: crop 768×448 → **768×432** (16:9)
   instead of the square crop, then Lanczos upscale.
 - Errors:
@@ -130,6 +136,9 @@ ignored. The prompt builder in 07 §3 gets a per-style adapter:
 
 - Order: **style → subject (with bible descriptions, shortened) → shot → place →
   lighting**. Most important words first.
+- Each style preset gets a **short style** (≤ 12 words) for `sd15`, e.g. Stickman:
+  "stick figure doodle, black marker lines, white background, flat colour accents". The full
+  style text (~40 tokens for Stickman) would use half the budget.
 - Short comma-separated phrases, not long sentences.
 - Bible entries get a `short` variant (≤ 12 words) generated with the Visual Bible
   for `sd15` use; fall back to truncation.
@@ -179,3 +188,6 @@ for free with no daily limit. Download the local model (~2 GB)?" → Install / N
 
 **Test:** on a 4 GB GPU laptop, 1-minute Khmer project with local images: all images
 generated without quota, consistent style, no crash, temperatures acceptable.
+(The owner's laptop has an RTX 4050 Laptop GPU with 6 GB — WMI reports 4 GB because its
+field caps at 4 GB, hence DXGI in §2. The 4 GB tier is simulated there by limiting the
+profile to 4 GB.)

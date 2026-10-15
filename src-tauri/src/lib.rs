@@ -2,6 +2,7 @@ mod commands;
 mod error;
 mod gemini;
 mod images;
+mod local;
 mod net;
 mod pipeline;
 mod render;
@@ -24,7 +25,13 @@ fn init_state(app: &tauri::App) -> Result<AppState, String> {
     let paths = AppPaths::from_app(app.handle()).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(paths.projects_dir()).map_err(|e| e.to_string())?;
     // A corrupt settings file must not brick the app: fall back to defaults.
-    let settings = settings::load(&paths).unwrap_or_default();
+    let mut settings = settings::load(&paths).unwrap_or_default();
+    // 08 §2: cache the best GPU (DXGI) so the UI and image jobs know about local mode.
+    let gpu = local::gpu::detect();
+    if settings.gpu != gpu {
+        settings.gpu = gpu;
+        let _ = settings::save(&paths, &settings);
+    }
     let gemini = GeminiClient::new(&settings.concurrency).map_err(|e| e.to_string())?;
     let store = ProjectStore::new(paths.clone());
     // Best effort; a failure here only means stale "running" badges.
@@ -39,6 +46,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, String> {
         image_jobs: Arc::new(JobRegistry::default()),
         render_jobs: Arc::new(JobRegistry::default()),
         proofread_jobs: Arc::new(JobRegistry::default()),
+        install_jobs: Arc::new(JobRegistry::default()),
         ffmpeg_lock: Arc::new(tokio::sync::Mutex::new(())),
     })
 }
@@ -89,6 +97,13 @@ pub fn run() {
             commands::proofread::proofread_dismiss,
             commands::proofread::project_set_keep_terms,
             commands::images::project_set_style,
+            commands::local::local_status,
+            commands::local::local_install,
+            commands::local::local_install_cancel,
+            commands::local::local_verify,
+            commands::local::local_delete,
+            commands::local::local_offer_dismiss,
+            commands::local::local_benchmark,
             commands::render::scene_image_full,
             commands::render::render_set_subtitle_style,
             commands::generate::generate_start,

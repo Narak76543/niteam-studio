@@ -45,6 +45,10 @@ async-trait = "0.1"
 # JPEG/PNG decode + encode, crop, Lanczos3 resize (images/postprocess.rs)
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
+# DXGI adapter list for local GPU detection (docs/08-local-gpu.md §2). Same version Tauri uses.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Graphics_Dxgi", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Power"] }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }
 tempfile = "3"

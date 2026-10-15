@@ -64,17 +64,64 @@ UI only. On every edit, recompute `text_hash` (of `spoken_text` + voice settings
 
 ## Step 3 — Voice (TTS)
 
-**Model:** `gemini-3.8-flash-tts` (quality) or `gemini-3.8-flash-lite-tts` (cheaper,
-faster). Both support Khmer and English. Input limit 8,192 tokens — one scene is far below.
+Two engines behind the `TtsEngine` trait (`src-tauri/src/tts/`), chosen in Settings → Voice:
 
-- One request per scene with `spoken_text`, chosen voice, short style direction
-  ("calm, warm storyteller, medium pace").
-- Save as `voice.wav` (convert from the returned PCM/format per the docs).
-- Measure duration with `ffprobe` → `voice.duration_ms`.
+| Engine | How | Output | Word timings |
+|---|---|---|---|
+| **Edge TTS** (default) | `msedge-tts` crate, Microsoft Edge "Read aloud" WebSocket. **Unofficial** — see CLAUDE.md | MP3 `audio-24khz-48kbitrate-mono-mp3` | yes → `words.json` |
+| **Gemini TTS** | Interactions API `POST /v1beta/interactions` with the user's key; model `gemini-3.8-flash-tts` or `-lite-tts` | WAV (24 kHz mono 16-bit) | no |
+
+**Edge TTS**
+- Voices: Khmer `km-KH-SreymomNeural` (default) / `km-KH-PisethNeural`; English
+  `en-US-AvaNeural` (default) and other `en-US-*` neural voices. Settings expose **rate**
+  (−50…+50 %) and **pitch** (−50…+50 Hz).
+- Text is XML-escaped before it goes into the SSML (the crate inserts it verbatim).
+- Each attempt runs in its own task with a 60 s timeout (3 attempts, 2 s / 4 s apart); release
+  builds use `panic = "unwind"` so a crate bug becomes an error, not a crash.
+- When all attempts fail the error is **"Edge TTS unavailable — switch to Gemini TTS in
+  Settings"** (`error_kind: edge_unavailable`) and the job **stops** (remaining scenes stay
+  `pending`) instead of failing each scene slowly. Engines are never mixed automatically inside
+  one project — the user switches to Gemini TTS and presses Continue.
+- WordBoundary events (100-ns ticks) are saved as `scenes/<id>/words.json`:
+  `[{ "text": "…", "start_ms": 112, "end_ms": 3262 }, …]`. For **Khmer, Edge reports
+  space-separated phrases, not words** (it does not segment Khmer).
+
+**Gemini TTS** (request shape from ai.google.dev/gemini-api/docs/speech-generation)
+```json
+{ "model": "gemini-3.8-flash-tts",
+  "input": [{ "type": "user_input", "content": [{ "type": "text", "text": "<spoken_text>",
+     "annotations": [{ "type": "speech_metadata", "style": "calm, warm storyteller" }] }] }],
+  "response_format": { "type": "audio" },
+  "generation_config": { "speech_config": [{ "voice": "Kore" }] },
+  "store": false }
+```
+Audio = last `steps[type=model_output].content[type=audio].data` (base64 WAV; `audio/l16` is
+wrapped in a WAV header). Same retry rules as all Gemini calls (5 attempts).
+
+**Both engines**
+- One request per scene with `spoken_text` (NFC, zero-width spaces removed; for Khmer the
+  `khmer_numbers` fallback converts any digits left in it).
+- Saved as `scenes/<id>/voice.mp3` (Edge) or `voice.wav` (Gemini); old voice files of the
+  scene are removed first.
+- Duration is measured in Rust from the file (WAV header / MP3 frame count) →
+  `voice.duration_ms`. (ffprobe is not needed for this; it arrives with FFmpeg in Phase 4.)
+- If duration is wildly off (< 40 % or > 250 % of the expected length for the text and rate),
+  the file is kept but the scene is marked `failed` with `error_kind: suspicious_length`, so the
+  user can listen and regenerate.
 - Add 250 ms of silence padding at the end of each scene clip (done at render time,
-  not in the WAV) so scenes don't run into each other.
-- If duration is wildly off (< 40 % or > 250 % of expected for the text length),
-  mark `failed` with reason "suspicious audio length" — TTS sometimes truncates or loops.
+  not in the audio file) so scenes don't run into each other.
+
+**Scheduler** (`pipeline/voice_job.rs`)
+- Starts automatically after **Approve**, or with Generate / Continue on the Scenes page.
+- The Settings voice is resolved for the project language and stored as `project.voice`; it is
+  part of every scene's `text_hash`, so changing voice, rate, pitch or engine makes existing
+  voices `stale`.
+- Scenes whose voice is `done`, hash-current and whose file exists are skipped (resume).
+- Up to `concurrency.tts` scenes in parallel; cancel via `generate_cancel`; scenes interrupted
+  by cancel go back to `pending`. `project.json` is saved after every scene.
+- Events: `scene-progress` per scene, `generate-progress` for the job, `gemini-retry`
+  (scope `voice`) while Gemini TTS / Edge TTS retry.
+- Single scene: `scene_regenerate(project_id, scene_id, "voice")` forces that scene.
 
 ## Step 4 — Images
 
@@ -147,8 +194,13 @@ at 1 MB.
 Done in React because only the browser shapes Khmer reliably. Details in `04-khmer.md`.
 
 1. Split `narration` into display lines (max ~38 Khmer graphemes / ~42 Latin chars, max 2 lines on screen).
-2. Timing: distribute the scene's `duration_ms` across lines proportionally to
-   grapheme count (good enough; word-level timing is a later improvement).
+2. Timing (`src/lib/subtitleTiming.ts`): if `words.json` exists, each line break is placed
+   where the voice reaches that point of the text (inside a phrase, interpolated by grapheme
+   count; at a phrase end, in the pause before the next phrase). Lines come from `narration`
+   and timings from `spoken_text`, so positions are matched as fractions of each text's
+   letter count. Without `words.json` (Gemini TTS), the scene's `duration_ms` is split
+   proportionally to grapheme count. The first line starts at 0, the last ends at the
+   scene duration.
 3. Draw each line on a transparent `<canvas>` (full frame width, ~180 px tall),
    white text, dark outline + soft shadow, bundled Khmer font.
 4. `canvas.toBlob('image/png')` → bytes → `subs_save` command → Rust writes files.

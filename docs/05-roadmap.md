@@ -26,19 +26,19 @@ scenes appear, editable, saved after restart. Key never appears in any file or l
 
 ## Phase 2 — Voice  ← **CURRENT**
 
-- [ ] `tts/` module: `TtsEngine` trait with `EdgeTts` (default) and `GeminiTts`
-- [ ] Gemini TTS per scene, model selectable (flash / flash-lite), voice + direction
-- [ ] Edge TTS: km-KH-PisethNeural / km-KH-SreymomNeural + en-US voices, rate + pitch;
+- [x] `tts/` module: `TtsEngine` trait with `EdgeTts` (default) and `GeminiTts`
+- [x] Gemini TTS per scene, model selectable (flash / flash-lite), voice + direction
+- [x] Edge TTS: km-KH-PisethNeural / km-KH-SreymomNeural + en-US voices, rate + pitch;
       clear "Edge TTS unavailable" error, Gemini TTS stays usable
-- [ ] Settings: voice engine dropdown + voice / rate / pitch / Gemini model & direction
-- [ ] Audio saved per scene (Edge MP3 / Gemini WAV); duration measured in Rust from the
+- [x] Settings: voice engine dropdown + voice / rate / pitch / Gemini model & direction
+- [x] Audio saved per scene (Edge MP3 / Gemini WAV); duration measured in Rust from the
       audio file (ffprobe arrives with the FFmpeg sidecar in Phase 4); suspicious-length check
-- [ ] Edge WordBoundary events saved to `scenes/<id>/words.json`; subtitle timing helper uses
+- [x] Edge WordBoundary events saved to `scenes/<id>/words.json`; subtitle timing helper uses
       them when present (proportional timing otherwise)
-- [ ] Scheduler with semaphore, cancel, `scene-progress` events
-- [ ] Khmer number-to-words fallback (`khmer_numbers.rs`) + unit tests
-- [ ] Scene list shows play button + status per scene; regenerate voice for one scene
-- [ ] Edited text or voice settings → voice marked `stale` → regenerated on next run
+- [x] Scheduler with semaphore, cancel, `scene-progress` events
+- [x] Khmer number-to-words fallback (`khmer_numbers.rs`) + unit tests
+- [x] Scene list shows play button + status per scene; regenerate voice for one scene
+- [x] Edited text or voice settings → voice marked `stale` → regenerated on next run
 
 **Test:** generate voices for the 1-minute Khmer project "How was Angkor Wat built?" with
 Edge TTS and play them back in the scene list; switch to Gemini TTS and regenerate one scene;
@@ -106,3 +106,10 @@ _Add one line per finished phase: date — phase — notes._
   model + attempt while retrying; exact HTTP status + body in `pipeline.log`; which model wrote
   each chapter is logged; Thai/Lao letters in Khmer replies are rejected. Live test: 1-minute
   Khmer "How was Angkor Wat built?" → 9 scenes / 2 chapters in ~11 s.
+- 2026-10-15 — Phase 2 — voices: `TtsEngine` with Edge TTS (default, unofficial, `msedge-tts`)
+  and Gemini TTS (Interactions API); Settings → Voice (engine, km/en voice, rate, pitch, Gemini
+  voice/model/style, preview); per-scene `voice.mp3|wav` + `words.json` (Khmer timings are
+  phrase-level); duration measured in Rust (no ffprobe yet); suspicious-length check; parallel
+  voice job with resume/cancel/events; Edge outage stops the job with a "switch to Gemini TTS"
+  message; Khmer number-to-words fallback; Scenes page with play / regenerate; subtitle timing
+  helper. Live: 1-minute Khmer Angkor Wat project → 9 Edge voices (71 s) in ~10 s.

@@ -69,7 +69,19 @@ Khmer number words reference: មួយ ពីរ បី បួន ប្រា�
 ដប់ (10) · ម្ភៃ (20) · សាមសិប (30) · សែសិប (40) · ហាសិប (50) · ហុកសិប (60) ·
 ចិតសិប (70) · ប៉ែតសិប (80) · កៅសិប (90) · រយ (100) · ពាន់ (1,000) · ម៉ឺន (10,000) ·
 សែន (100,000) · លាន (1,000,000).
+Implemented in `src-tauri/src/pipeline/khmer_numbers.rs` (also handles `1,500`, `3.5` → បីចុចប្រាំ
+and `30%` → សាមសិបភាគរយ); applied to every Khmer scene right before TTS.
 **Have a native speaker verify the converter output before release.**
+
+## 4b. Voices
+
+- **Edge TTS** (default, unofficial): `km-KH-SreymomNeural` (female, default) and
+  `km-KH-PisethNeural` (male). Rate and pitch are adjustable in Settings.
+- **Gemini TTS**: multilingual voices (`Kore`, …); Khmer is detected from the text.
+- Edge's WordBoundary events for Khmer are **phrase-level**: one entry per space-separated chunk
+  (it does not split Khmer words). Subtitle timing therefore snaps line breaks to phrase pauses
+  when a break falls at a phrase end, and interpolates by grapheme count inside a phrase
+  (`src/lib/subtitleTiming.ts`). This is one more reason to keep phrase spaces in `narration`.
 
 ## 5. Script quality
 

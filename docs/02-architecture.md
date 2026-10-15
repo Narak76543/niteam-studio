@@ -47,7 +47,9 @@ nitean-studio/
 │     ├─ error.rs
 │     ├─ commands/   project.rs  script.rs  generate.rs  render.rs  settings.rs
 │     ├─ gemini/     client.rs  transport.rs  retry.rs  script.rs  tts.rs  image.rs  models.rs
+│     ├─ tts/        mod.rs (TtsEngine)  edge.rs  gemini.rs  audio.rs  voices.rs
 │     ├─ pipeline/   project.rs  store.rs  editing.rs  hashing.rs  presets.rs  script_job.rs
+│     │              jobs.rs  voice_job.rs  khmer_numbers.rs
 │     │              scheduler.rs  render.rs  ffmpeg.rs  encoders.rs  audio.rs
 │     └─ storage/    paths.rs  secrets.rs  settings.rs  atomic.rs  log.rs
 └─ package.json  vite.config.ts  tsconfig.json
@@ -79,7 +81,8 @@ harmless; sidecar file names must use the matching target triple.
   - `settings.json` — everything except the API key
   - `projects\<project-id>\`
     - `project.json` — single source of truth (see data model)
-    - `scenes\<scene-id>\voice.wav`, `image.png`, `subs\000.png …`, `clip.mp4`
+    - `scenes\<scene-id>\voice.mp3` (Edge) or `voice.wav` (Gemini), `words.json` (Edge
+      phrase/word timings), `image.png`, `subs\000.png …`, `clip.mp4`
     - `output\final.mp4`, `output\thumbnail.png`
     - `logs\pipeline.log` (no secrets)
   - `logs\app.log` — app-level events such as key tests (no secrets)
@@ -101,7 +104,12 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
     "preset": "storybook_watercolor",
     "style_prompt": "warm watercolor storybook illustration, soft light, …"
   },
-  "voice": { "model": "gemini-3.8-flash-tts", "voice_name": "…", "direction": "calm storyteller" },
+  "voice": {                         // snapshot of Settings → Voice for this language
+    "engine": "edge",                 // "edge" | "gemini"
+    "voice_name": "km-KH-SreymomNeural", // Edge voice ID or Gemini voice name ("Kore")
+    "rate": 0, "pitch": 0,            // Edge only (% / Hz)
+    "model": "gemini-3.8-flash-tts", "direction": "calm storyteller"  // Gemini only
+  },
   "status": "script_draft",           // see state machine
   "created_at": "…", "updated_at": "…",
   "outline": {                        // null until the outline call returns
@@ -118,7 +126,8 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
       "image_prompt": "…",            // English, WITHOUT the style prompt
       "mood": "curious",              // one of gemini::script::MOODS
       "fact_note": null,              // model's "please check this claim" note, or null
-      "voice":   { "status": "pending", "path": null, "duration_ms": null, "error": null, "text_hash": null },
+      "voice":   { "status": "pending", "path": null, "duration_ms": null, "error": null,
+                   "error_kind": null, "text_hash": null, "words_path": null },
       "image":   { "status": "pending", "path": null, "error": null, "prompt_hash": null },
       "subs":    { "status": "pending", "lines": [ { "text": "…", "start_ms": 0, "end_ms": 2400, "path": "subs/000.png" } ] },
       "clip":    { "status": "pending", "path": null }
@@ -162,8 +171,10 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | `scenes_reorder(project_id, scene_ids)`, `scene_add(project_id, after_scene_id?)`, `scene_delete` | script editing |
 | `script_approve(project_id)` | → `generating` (Phase 2 will also start the scheduler) |
 | `script_reopen(project_id)` | "Edit script": back to `script_draft` |
-| `generate_start / generate_cancel(project_id)` | run/cancel voice+image jobs |
-| `scene_regenerate(project_id, scene_id, what: "voice"\|"image")` | single redo |
+| `generate_start / generate_cancel / generate_running(project_id)` | run / cancel / query the voice job (images join in Phase 3) |
+| `scene_regenerate(project_id, scene_id, what: "voice"\|"image")` | single redo (Phase 2: voice) |
+| `scene_voice_audio(project_id, scene_id)` | raw MP3/WAV bytes for playback (only `scenes/…` paths) |
+| `voices_catalog()`, `voice_preview(language, voice)` | voice lists; speak a sample with unsaved settings |
 | `subs_save(project_id, scene_id, lines_with_png_bytes)` | frontend hands rendered subtitle PNGs to Rust |
 | `render_start / render_cancel(project_id, options)` | FFmpeg render |
 | `encoders_detect()` | which H.264 encoders work on this machine |
@@ -172,8 +183,8 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 
 `script-progress` `{project_id, stage: outline|chapter|done|failed|cancelled, chapters_done, chapters_total, error, error_kind}`
 `gemini-retry` `{scope: script|key_test, project_id?, model, previous_model?, reason: busy|rate_limited|network|next_model, attempt, max_attempts, delay_ms, status?, error}`
-`scene-progress` `{project_id, scene_id, asset, status, error?}`
-`generate-progress` `{project_id, done, total}`
+`scene-progress` `{project_id, scene_id, asset, status, duration_ms?, error?, error_kind?}`
+`generate-progress` `{project_id, stage: running|done|cancelled|failed, done, failed, total, error?, error_kind?}`
 `render-progress` `{project_id, stage, scene_index, total, percent, eta_seconds}`
 `log` `{level, message}`
 

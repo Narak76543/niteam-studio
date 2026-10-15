@@ -88,13 +88,42 @@ faster). Both support Khmer and English. Input limit 8,192 tokens — one scene 
 
 ## Retry / rate limits (all Gemini calls)
 
-- 408 / 429 / 5xx / network errors / timeouts → exponential backoff: 2 s, 4 s, 8 s, 16 s
-  (+ up to 1 s jitter; 5 attempts = 4 waits), honor `Retry-After` (seconds, capped at 120 s)
-  if present. Max 5 attempts, then `failed`.
+Every Gemini request (script, key test, and later TTS / images) goes through
+`GeminiClient::call` → `retry::with_retry`; there is no other path to the API.
+
+- 408 / 429 / 500 / 502 / 503 / 504 / network errors / timeouts → exponential backoff
+  (+ up to 1 s jitter), honor `Retry-After` (seconds, capped at 120 s) if present.
+  Max 5 attempts, then `failed`. Waits between attempts: 2 s, 4 s, 8 s, 16 s
+  (5 attempts = 4 waits, ≈ 30 s in total; the formula would give 32 s for a 6th attempt).
+- Before each wait a `gemini-retry` event is emitted (model, reason
+  `busy | rate_limited | network | fallback`, next attempt n/5, delay) and a WARN line is written
+  to the log, so the UI shows "Google is busy, retrying (attempt 2/5) in 4 s…" instead of
+  looking stuck.
 - 400 / 401 / 402 / 403 / 404 → no retry; show the message (bad key, no credits, safety block,
   invalid request, unknown model). 401/403 or a 400 mentioning "API key" → "check your key".
 - Error bodies are parsed leniently: only `error.message` is used (`code` is an int in the
   classic shape and a string in the newer one).
+- Every failure carries a stable `kind` (`busy, rate_limited, network, invalid_key, payment,
+  not_found, blocked, bad_response, missing_key, other`). The UI shows a friendly translated
+  message for the kind, a **Try again** button, and the raw Gemini error under **Details**;
+  the raw error is also written to the log.
+
+### Text fallback model
+
+- Setting `models.text_fallback` (default `gemini-3.6-flash`, empty = off), editable in Settings.
+- Rule: if a **text** call to `models.text` still fails with **503** after all 5 attempts, the
+  same request is sent to the fallback model once — that one call again uses the normal retry
+  rules. A `gemini-retry` notice with reason `fallback` is emitted first.
+- Once a job had to switch, it stays on the fallback model for the rest of that job (no point
+  waiting ~30 s on a busy model for every chapter). The next job starts on the primary again.
+- Only 503 triggers it — not 429 (quota is per key, another model doesn't help), not 4xx.
+- This is model fallback on the **same key**, never key rotation.
+
+### Logs
+
+`projects/<id>/logs/pipeline.log` (job start/finish, every retry, fallback switch, raw errors)
+and `logs/app.log` (key tests). The API key is redacted before writing; files rotate to `.1`
+at 1 MB.
 - Semaphore per endpoint kind (default 3 concurrent).
 - **One API key only. Never rotate keys.**
 

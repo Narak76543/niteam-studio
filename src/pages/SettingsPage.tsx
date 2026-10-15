@@ -4,18 +4,24 @@ import { useEffect, useState } from "react";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ErrorPanel } from "../components/ErrorPanel";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
+import { RetryStatus } from "../components/RetryStatus";
 import { useToast } from "../components/toast";
 import { useI18n } from "../i18n/context";
-import { api, errorMessage } from "../lib/api";
-import type { Language, ModelSettings, Settings } from "../lib/types";
+import { api, errorMessage, onGeminiRetry } from "../lib/api";
+import type { GeminiRetry, Language, ModelSettings, Settings } from "../lib/types";
 
 const AI_STUDIO_KEY_URL = "https://aistudio.google.com/apikey";
-const MODEL_FIELDS: (keyof ModelSettings)[] = ["text", "tts", "tts_lite", "image"];
+const MODEL_FIELDS: (keyof ModelSettings)[] = ["text", "text_fallback", "tts", "tts_lite", "image"];
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
 
-type TestState = { kind: "idle" } | { kind: "testing" } | { kind: "ok"; model: string } | { kind: "error"; message: string };
+type TestState =
+  | { kind: "idle" }
+  | { kind: "testing" }
+  | { kind: "ok"; model: string }
+  | { kind: "error"; errorKind: string | null; details: string | null };
 
 interface Props {
   settings: Settings;
@@ -31,6 +37,16 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
   const [test, setTest] = useState<TestState>({ kind: "idle" });
   const [confirmClear, setConfirmClear] = useState(false);
   const [models, setModels] = useState<ModelSettings>(settings.models);
+  const [retry, setRetry] = useState<{ notice: GeminiRetry; at: number } | null>(null);
+
+  useEffect(() => {
+    const unlisten = onGeminiRetry((r) => {
+      if (r.scope === "key_test") setRetry({ notice: r, at: Date.now() });
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     api
@@ -50,11 +66,18 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
 
   const runTest = async () => {
     setTest({ kind: "testing" });
+    setRetry(null);
     try {
       const r = await api.apiKeyTest();
-      setTest({ kind: "ok", model: r.display_name ?? r.model });
+      setTest(
+        r.ok
+          ? { kind: "ok", model: r.display_name ?? r.model ?? "" }
+          : { kind: "error", errorKind: r.error_kind, details: r.error },
+      );
     } catch (e) {
-      setTest({ kind: "error", message: errorMessage(e) });
+      setTest({ kind: "error", errorKind: "other", details: errorMessage(e) });
+    } finally {
+      setRetry(null);
     }
   };
 
@@ -155,8 +178,13 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
                 {t("settings.key.save")}
               </Button>
             </form>
+            {test.kind === "testing" && retry && (
+              <RetryStatus key={retry.at} retry={retry.notice} receivedAt={retry.at} />
+            )}
             {test.kind === "ok" && <Notice tone="ok">{t("settings.key.ok", { model: test.model })}</Notice>}
-            {test.kind === "error" && <Notice tone="danger">{test.message}</Notice>}
+            {test.kind === "error" && (
+              <ErrorPanel kind={test.errorKind} details={test.details} onRetry={() => void runTest()} />
+            )}
           </div>
         </div>
 
@@ -231,6 +259,7 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
                 </label>
               ))}
             </div>
+            <p className="t-small">{t("settings.models.fallbackHint")}</p>
             <div className="row">
               <Button type="submit" disabled={!modelsDirty}>
                 {t("common.save")}

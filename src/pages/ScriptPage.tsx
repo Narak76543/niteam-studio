@@ -17,14 +17,23 @@ import { ProjectStatusBadge } from "../components/Badge";
 import { Button, IconButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EmptyState } from "../components/EmptyState";
+import { ErrorPanel } from "../components/ErrorPanel";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { ProgressBar } from "../components/ProgressBar";
+import { RetryStatus } from "../components/RetryStatus";
 import { useToast } from "../components/toast";
 import { useI18n } from "../i18n/context";
-import { api, errorMessage, onScriptProgress } from "../lib/api";
+import { api, errorMessage, onGeminiRetry, onScriptProgress } from "../lib/api";
 import type { Navigate } from "../lib/route";
-import { MOODS, type Project, type Scene, type SceneEdit, type ScriptProgress } from "../lib/types";
+import {
+  MOODS,
+  type GeminiRetry,
+  type Project,
+  type Scene,
+  type SceneEdit,
+  type ScriptProgress,
+} from "../lib/types";
 
 const SAVE_DELAY_MS = 600;
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
@@ -32,7 +41,8 @@ const ICON = { size: 16, strokeWidth: 1.5 } as const;
 type Tab = "narration" | "spoken";
 type SaveState = "idle" | "saving" | "saved";
 type Confirm = { kind: "regenerate" } | { kind: "deleteScene"; id: string; order: number } | null;
-type Finished = Pick<ScriptProgress, "stage" | "error"> | null;
+type Finished = Pick<ScriptProgress, "stage" | "error" | "error_kind"> | null;
+type Retry = { notice: GeminiRetry; at: number } | null;
 
 function toEdit(s: Scene): SceneEdit {
   return {
@@ -53,6 +63,7 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<ScriptProgress | null>(null);
   const [finished, setFinished] = useState<Finished>(null);
+  const [retry, setRetry] = useState<Retry>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftState, setDraftState] = useState<SceneEdit | null>(null);
   const [tab, setTab] = useState<Tab>("narration");
@@ -89,12 +100,13 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
     const unlisten = onScriptProgress((p) => {
       if (p.project_id !== projectId) return;
       setProgress(p);
+      setRetry(null);
       if (p.stage === "outline" || p.stage === "chapter") {
         setRunning(true);
         setFinished(null);
       } else {
         setRunning(false);
-        setFinished({ stage: p.stage, error: p.error });
+        setFinished({ stage: p.stage, error: p.error, error_kind: p.error_kind });
       }
       void reload();
     });
@@ -102,6 +114,16 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
       void unlisten.then((fn) => fn());
     };
   }, [projectId, reload]);
+
+  // "Google is busy, retrying (attempt 2/5)…" while the job waits.
+  useEffect(() => {
+    const unlisten = onGeminiRetry((r) => {
+      if (r.scope === "script" && r.project_id === projectId) setRetry({ notice: r, at: Date.now() });
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [projectId]);
 
   // ---- saving ----
   const save = useCallback(
@@ -174,6 +196,7 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
     run(async () => {
       setFinished(null);
       setProgress(null);
+      setRetry(null);
       await api.scriptGenerate(projectId, restart);
       setRunning(true);
       return null;
@@ -322,12 +345,15 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
                   : undefined
               }
             />
+            {retry && <RetryStatus key={retry.at} retry={retry.notice} receivedAt={retry.at} />}
           </>
         )}
         {!running && finished?.stage === "failed" && (
-          <Notice tone="danger">
-            <strong>{t("script.failed")}</strong> — {finished.error}
-          </Notice>
+          <ErrorPanel
+            kind={finished.error_kind}
+            details={finished.error}
+            onRetry={() => void generate(false)}
+          />
         )}
         {!running && incomplete && finished?.stage !== "failed" && (
           <Notice tone="warn">{t("script.stopped", { done: chaptersDone, total: chaptersTotal })}</Notice>

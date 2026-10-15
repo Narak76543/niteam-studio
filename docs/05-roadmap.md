@@ -87,3 +87,8 @@ _Add one line per finished phase: date — phase — notes._
   approve/edit); atomic `project.json`; km/en UI with bundled fonts. `project.json` gained
   `outline`, `scene.chapter`, `scene.fact_note`. Built with the GNU toolchain (see 02 toolchain
   note). Khmer UI strings and prompts still need a native-speaker review.
+- 2026-10-15 — Phase 1 fix — 503 "high demand" handling: retry waits are now visible in the UI
+  ("Google is busy, retrying (attempt 2/5)…") via `gemini-retry`; text fallback model
+  (`models.text_fallback`) after a 503 that survives all retries; friendly errors with
+  **Try again** + raw **Details**; `pipeline.log` / `app.log`; retry + fallback unit tests
+  against a mocked HTTP transport.

@@ -8,6 +8,8 @@ export type AssetStatus = "pending" | "running" | "done" | "failed" | "stale";
 
 export interface ModelSettings {
   text: string;
+  /** Used when `text` is still overloaded (503) after all retries. "" = disabled. */
+  text_fallback: string;
   tts: string;
   tts_lite: string;
   image: string;
@@ -27,9 +29,55 @@ export interface Settings {
   concurrency: ConcurrencySettings;
 }
 
-export interface KeyTestResult {
-  model: string;
+/** Stable error codes from `GeminiError::kind` / `ProjectError::kind`. */
+export type ErrorKind =
+  | "missing_key"
+  | "invalid_key"
+  | "rate_limited"
+  | "payment"
+  | "not_found"
+  | "busy"
+  | "network"
+  | "blocked"
+  | "bad_response"
+  | "cancelled"
+  | "other";
+
+export const ERROR_KINDS: readonly ErrorKind[] = [
+  "missing_key",
+  "invalid_key",
+  "rate_limited",
+  "payment",
+  "not_found",
+  "busy",
+  "network",
+  "blocked",
+  "bad_response",
+  "cancelled",
+  "other",
+];
+
+export interface KeyTestOutcome {
+  ok: boolean;
+  model: string | null;
   display_name: string | null;
+  error_kind: string | null;
+  error: string | null;
+}
+
+export type RetryReason = "busy" | "rate_limited" | "network" | "fallback";
+
+/** Payload of the `gemini-retry` event. */
+export interface GeminiRetry {
+  scope: "script" | "key_test";
+  project_id: string | null;
+  model: string;
+  reason: RetryReason;
+  attempt: number;
+  max_attempts: number;
+  delay_ms: number;
+  status: number | null;
+  error: string;
 }
 
 export interface StylePreset {
@@ -170,7 +218,9 @@ export interface ScriptProgress {
   stage: ScriptStage;
   chapters_done: number;
   chapters_total: number;
+  /** Raw error text (shown under "Details"). */
   error: string | null;
+  error_kind: string | null;
 }
 
 /** Must match `gemini::script::MOODS`. */

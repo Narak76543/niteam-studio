@@ -46,10 +46,10 @@ nitean-studio/
 │     ├─ main.rs  lib.rs  state.rs
 │     ├─ error.rs
 │     ├─ commands/   project.rs  script.rs  generate.rs  render.rs  settings.rs
-│     ├─ gemini/     client.rs  retry.rs  script.rs  tts.rs  image.rs  models.rs
+│     ├─ gemini/     client.rs  transport.rs  retry.rs  script.rs  tts.rs  image.rs  models.rs
 │     ├─ pipeline/   project.rs  store.rs  editing.rs  hashing.rs  presets.rs  script_job.rs
 │     │              scheduler.rs  render.rs  ffmpeg.rs  encoders.rs  audio.rs
-│     └─ storage/    paths.rs  secrets.rs  settings.rs  atomic.rs
+│     └─ storage/    paths.rs  secrets.rs  settings.rs  atomic.rs  log.rs
 └─ package.json  vite.config.ts  tsconfig.json
 ```
 
@@ -61,6 +61,10 @@ needs them. Phase 1 modules:
 - `pipeline/hashing.rs` — NFC normalization, `text_hash` / `prompt_hash`, stale marking
 - `pipeline/script_job.rs` — resumable outline + per-chapter script generation
 - `storage/atomic.rs` — `.tmp` + rename writes used for every JSON file
+- `storage/log.rs` — append-only text logs with secret redaction and rotation
+- `gemini/transport.rs` — HTTP behind a `Transport` trait (reqwest in the app, a scripted
+  mock in unit tests for retry / fallback)
+- `commands/retry_events.rs` — turns retry notices into `gemini-retry` events + log lines
 
 **Toolchain note:** the dev machine currently builds with `x86_64-pc-windows-gnu` (MinGW).
 The lib crate is `rlib`-only (a `cdylib` exceeds ld's export limit), and `build.rs` embeds the
@@ -78,6 +82,7 @@ harmless; sidecar file names must use the matching target triple.
     - `scenes\<scene-id>\voice.wav`, `image.png`, `subs\000.png …`, `clip.mp4`
     - `output\final.mp4`, `output\thumbnail.png`
     - `logs\pipeline.log` (no secrets)
+  - `logs\app.log` — app-level events such as key tests (no secrets)
 - API key: `keyring` crate, service `NiteanStudio`, user `gemini_api_key`.
 
 Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
@@ -148,7 +153,7 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | Command | Purpose |
 |---|---|
 | `settings_get`, `settings_save` | read/write settings.json |
-| `api_key_set`, `api_key_test`, `api_key_clear`, `api_key_exists` | keyring; never return the key itself. `api_key_test` = `models.get` on the text model (no tokens used) |
+| `api_key_set`, `api_key_test`, `api_key_clear`, `api_key_exists` | keyring; never return the key itself. `api_key_test` = `models.get` on the text model (no tokens used); returns `{ok, model, display_name, error_kind, error}` |
 | `presets_list` | built-in style presets |
 | `project_list`, `project_create`, `project_get`, `project_delete` | projects |
 | `script_generate(project_id, restart)` | start/resume the background script job (`restart` clears outline + scenes) |
@@ -165,7 +170,8 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 
 ## Events (Rust → UI)
 
-`script-progress` `{project_id, stage: outline|chapter|done|failed|cancelled, chapters_done, chapters_total, error}`
+`script-progress` `{project_id, stage: outline|chapter|done|failed|cancelled, chapters_done, chapters_total, error, error_kind}`
+`gemini-retry` `{scope: script|key_test, project_id?, model, reason: busy|rate_limited|network|fallback, attempt, max_attempts, delay_ms, status?, error}`
 `scene-progress` `{project_id, scene_id, asset, status, error?}`
 `generate-progress` `{project_id, done, total}`
 `render-progress` `{project_id, stage, scene_index, total, percent, eta_seconds}`

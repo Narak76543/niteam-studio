@@ -8,7 +8,8 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type {
-  KeyTestResult,
+  GeminiRetry,
+  KeyTestOutcome,
   NewProjectInput,
   Project,
   ProjectSummary,
@@ -27,7 +28,7 @@ export const api = {
   apiKeySet: (key: string) => invoke<null>("api_key_set", { key }),
   apiKeyExists: () => invoke<boolean>("api_key_exists"),
   apiKeyClear: () => invoke<null>("api_key_clear"),
-  apiKeyTest: () => invoke<KeyTestResult>("api_key_test"),
+  apiKeyTest: () => invoke<KeyTestOutcome>("api_key_test"),
 
   // projects
   presetsList: () => invoke<StylePreset[]>("presets_list"),
@@ -62,6 +63,11 @@ export const api = {
 
 export function onScriptProgress(cb: (p: ScriptProgress) => void): Promise<UnlistenFn> {
   return listen<ScriptProgress>("script-progress", (e) => cb(e.payload));
+}
+
+/** Retry/fallback notices for any Gemini call (filter by `scope` / `project_id`). */
+export function onGeminiRetry(cb: (r: GeminiRetry) => void): Promise<UnlistenFn> {
+  return listen<GeminiRetry>("gemini-retry", (e) => cb(e.payload));
 }
 
 /** Tauri rejects with the command's error string; normalize anything else. */

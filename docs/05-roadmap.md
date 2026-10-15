@@ -103,6 +103,22 @@ correctly shaped, no word split across lines, in sync with voice.
 - [ ] Installer via `npm run tauri build`; first-run onboarding
 - [ ] Pipeline log viewer in Settings (no secrets)
 
+## Phase 6 — Local GPU images
+
+Spec: `docs/08-local-gpu.md`. The model list in `local_models.json` (URLs, sizes, sha256,
+licenses that allow commercial use) needs the owner's approval before it is filled in.
+
+- [ ] GPU/VRAM detection + settings cache
+- [ ] Bundle stable-diffusion.cpp Vulkan sidecar, pinned version; choose persistent mode (§3)
+- [ ] `local_models.json` + Local models settings page (download, verify, delete)
+- [ ] `LocalSdCpp` provider + OOM fallback
+- [ ] `sd15` prompt adapter + short bible entries
+- [ ] Cool-down, battery warning, speed/ETA, benchmark
+- [ ] Provider auto-selection + one-time install card
+
+**Test:** on a 4 GB GPU laptop, 1-minute Khmer project with local images: all images
+generated without quota, consistent style, no crash, temperatures acceptable.
+
 ## Later / ideas (not scheduled)
 
 - Word-level subtitle timing

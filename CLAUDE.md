@@ -13,6 +13,8 @@ AI-generated illustrations with slow pan motion, burned-in subtitles and backgro
 5. `docs/05-roadmap.md` — phases, acceptance criteria, **current phase**
 6. `docs/07-image-generation.md` — image providers (Cloudflare Flux default, Gemini paid),
    Visual Bible, prompt building, post-processing, quota pause, caching
+7. `docs/08-local-gpu.md` — local GPU images (`local_sdcpp`, stable-diffusion.cpp sidecar,
+   VRAM tiers, model profiles + downloads, SD 1.5 prompt adapter) — **Phase 6 only**
 
 Only work on the phase marked **CURRENT** in `docs/05-roadmap.md`. When it is done,
 stop and ask the human to test. Do not start the next phase on your own.

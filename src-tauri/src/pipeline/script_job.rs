@@ -7,12 +7,14 @@ use serde::Serialize;
 use super::ProjectError;
 use super::hashing::{normalize, normalize_spoken};
 use super::presets;
+use super::project::Shot;
 use super::project::{Outline, OutlineChapter, Project, ProjectStatus, Scene};
 use super::store::ProjectStore;
+use super::visual_bible;
 use crate::gemini::client::ModelChain;
 use crate::gemini::retry::RetryHooks;
 use crate::gemini::script::{
-    self, ChapterContext, ChapterReply, MOODS, OutlineReply, SceneReply, ScriptBrief,
+    self, BibleKeys, ChapterContext, ChapterReply, MOODS, OutlineReply, SceneReply, ScriptBrief,
 };
 use crate::gemini::{GeminiClient, GeminiError};
 use crate::storage::ApiKey;
@@ -151,6 +153,27 @@ impl ScriptJob<'_> {
                 .0;
         }
 
+        // Visual Bible right after the outline, so chapter scenes can refer to its keys.
+        if project.visual_bible.is_none() {
+            emit(progress(id, ScriptStage::Outline, 0, 0));
+            let (bible, model) =
+                visual_bible::generate(self.client, self.key, self.models, &project, self.hooks)
+                    .await?;
+            self.log.info(&format!(
+                "visual bible written by {model}: {} character(s), {} place(s)",
+                bible.characters.len(),
+                bible.places.len()
+            ));
+            project = self
+                .store
+                .update(id, |p| {
+                    p.visual_bible = Some(bible);
+                    Ok(())
+                })
+                .await?
+                .0;
+        }
+
         let total = project.outline.as_ref().map_or(0, |o| o.chapters.len());
         for index in 0..total {
             let Some(outline) = project.outline.as_ref() else {
@@ -180,6 +203,29 @@ impl ScriptJob<'_> {
                 index,
                 scene_count: chapter.scene_count as usize,
                 previous_narration: previous.as_deref(),
+                previous_shots: project
+                    .scenes
+                    .iter()
+                    .filter(|s| s.chapter < index as u32)
+                    .rev()
+                    .take(2)
+                    .map(|s| s.shot.as_str())
+                    .collect(),
+                bible: project
+                    .visual_bible
+                    .as_ref()
+                    .map_or_else(BibleKeys::default, |b| BibleKeys {
+                        characters: b
+                            .characters
+                            .iter()
+                            .map(|(k, d)| (k.as_str(), d.as_str()))
+                            .collect(),
+                        places: b
+                            .places
+                            .iter()
+                            .map(|(k, d)| (k.as_str(), d.as_str()))
+                            .collect(),
+                    }),
             };
             let brief = brief(&project, style_label);
             let (reply, model): (ChapterReply, String) = script::request_json(
@@ -187,7 +233,7 @@ impl ScriptJob<'_> {
                 self.key,
                 self.models,
                 script::chapter_prompt(&brief, &ctx),
-                script::chapter_schema(ctx.scene_count),
+                script::chapter_schema(ctx.scene_count, &ctx.bible),
                 self.hooks,
             )
             .await?;
@@ -288,10 +334,27 @@ fn append_chapter(p: &mut Project, index: usize, replies: Vec<SceneReply>) {
         };
         let note = normalize(&r.fact_note);
         scene.fact_note = (!note.is_empty()).then_some(note);
+        let bible = p.visual_bible.as_ref();
+        scene.characters = r
+            .characters
+            .iter()
+            .map(|k| visual_bible::normalize_key(k))
+            .filter(|k| bible.is_some_and(|b| b.characters.contains_key(k)))
+            .collect();
+        scene.characters.dedup();
+        let place = visual_bible::normalize_key(&r.place);
+        scene.place = bible
+            .filter(|b| b.places.contains_key(&place))
+            .map(|_| place);
+        scene.shot = Shot::parse(&r.shot).unwrap_or_default();
+        scene.key_scene = r.key_scene;
         new_scenes.push(scene);
     }
     p.scenes.splice(insert_at..insert_at, new_scenes);
     p.renumber();
+    // Enforce the 07 §2 rules regardless of what the model marked.
+    visual_bible::apply_key_scenes(p);
+    visual_bible::vary_shots(p);
     if let Some(c) = p.outline.as_mut().and_then(|o| o.chapters.get_mut(index)) {
         c.done = true;
     }
@@ -327,6 +390,10 @@ mod tests {
                 image_prompt: "p".into(),
                 mood: "curious".into(),
                 fact_note: String::new(),
+                characters: vec![],
+                place: String::new(),
+                shot: "wide".into(),
+                key_scene: false,
             })
             .collect()
     }

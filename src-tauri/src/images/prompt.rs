@@ -57,7 +57,10 @@ fn find_word(hay: &str, needle: &str) -> Option<usize> {
     while let Some(rel) = lower.get(from..).and_then(|s| s.find(&needle)) {
         let start = from + rel;
         let end = start + needle.len();
-        let before_ok = lower[..start].chars().next_back().is_none_or(|c| !is_word_char(c));
+        let before_ok = lower[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_word_char(c));
         let after_ok = lower[end..].chars().next().is_none_or(|c| !is_word_char(c));
         if before_ok && after_ok {
             return Some(end);
@@ -140,18 +143,22 @@ pub fn is_cambodia_related(khmer_project: bool, texts: &[&str]) -> bool {
     khmer_project
         || texts.iter().any(|t| {
             let t = t.to_lowercase();
-            ["cambod", "khmer", "angkor", "phnom penh", "mekong", "tonle sap"]
-                .iter()
-                .any(|k| t.contains(k))
+            [
+                "cambod",
+                "khmer",
+                "angkor",
+                "phnom penh",
+                "mekong",
+                "tonle sap",
+            ]
+            .iter()
+            .any(|k| t.contains(k))
         })
 }
 
 /// Scene number from its id (`s012` → 12). Stable when scenes are reordered.
 pub fn scene_number(scene_id: &str) -> u32 {
-    scene_id
-        .trim_start_matches('s')
-        .parse()
-        .unwrap_or(0)
+    scene_id.trim_start_matches('s').parse().unwrap_or(0)
 }
 
 /// `visual_bible.seed + scene number`, unless the scene has a seed from "Regenerate".
@@ -162,7 +169,13 @@ pub fn scene_seed(bible_seed: u32, scene_id: &str, override_seed: Option<u32>) -
 /// `sha256(provider_id + model + final_prompt + seed + steps)` (07 §8).
 pub fn cache_hash(provider_id: &str, model: &str, prompt: &str, seed: u32, steps: u8) -> String {
     let mut h = Sha256::new();
-    for part in [provider_id, model, prompt, &seed.to_string(), &steps.to_string()] {
+    for part in [
+        provider_id,
+        model,
+        prompt,
+        &seed.to_string(),
+        &steps.to_string(),
+    ] {
         h.update(part.as_bytes());
         h.update([0x1F]);
     }
@@ -208,7 +221,9 @@ mod tests {
     #[test]
     fn full_prompt_order_and_phrases() {
         let p = build_prompt(&parts("The farmer plants rice", vec![FARMER]));
-        assert!(p.starts_with("warm watercolor storybook illustration, wide establishing shot, The farmer ("));
+        assert!(p.starts_with(
+            "warm watercolor storybook illustration, wide establishing shot, The farmer ("
+        ));
         assert!(p.contains("Cambodian village of wooden stilt houses, Khmer sampot clothing"));
         assert!(p.contains(SQUARE_COMPOSITION));
         assert!(p.ends_with(NO_LETTERING));

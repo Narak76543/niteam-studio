@@ -8,10 +8,10 @@
 use base64::Engine as _;
 use serde::Serialize;
 
+use super::GeminiError;
 use super::client::{EndpointKind, GeminiClient};
 use super::interactions::{Interaction, Media, last_media, output_text};
 use super::retry::RetryHooks;
-use super::GeminiError;
 use crate::storage::ApiKey;
 
 #[derive(Serialize)]
@@ -43,7 +43,11 @@ pub struct Reference {
     pub bytes: Vec<u8>,
 }
 
-fn build_request<'a>(model: &'a str, prompt: &'a str, refs: &'a [Reference]) -> ImageRequestBody<'a> {
+fn build_request<'a>(
+    model: &'a str,
+    prompt: &'a str,
+    refs: &'a [Reference],
+) -> ImageRequestBody<'a> {
     let mut input = vec![InputBlock::Text { text: prompt }];
     for r in refs {
         input.push(InputBlock::Image {
@@ -109,7 +113,12 @@ mod tests {
             mime_type: "image/jpeg".into(),
             bytes: vec![1, 2, 3],
         }];
-        let v = serde_json::to_value(build_request("gemini-3.1-flash-lite-image", "a leaf", &refs)).unwrap();
+        let v = serde_json::to_value(build_request(
+            "gemini-3.1-flash-lite-image",
+            "a leaf",
+            &refs,
+        ))
+        .unwrap();
         assert_eq!(
             v,
             json!({

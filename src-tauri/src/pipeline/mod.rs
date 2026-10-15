@@ -1,13 +1,16 @@
 //! Project state and generation pipeline.
 
 pub mod editing;
+pub mod events;
 pub mod hashing;
+pub mod image_job;
 pub mod jobs;
 pub mod khmer_numbers;
 pub mod presets;
 pub mod project;
 pub mod script_job;
 pub mod store;
+pub mod visual_bible;
 pub mod voice_job;
 
 pub use store::ProjectStore;

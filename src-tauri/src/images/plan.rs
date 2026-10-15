@@ -135,7 +135,10 @@ mod tests {
         p.topic = "How was Angkor Wat built?".into();
         p.visual_bible = Some(VisualBible {
             style: "warm watercolor".into(),
-            characters: BTreeMap::from([("farmer".to_owned(), "old Khmer farmer in krama".to_owned())]),
+            characters: BTreeMap::from([(
+                "farmer".to_owned(),
+                "old Khmer farmer in krama".to_owned(),
+            )]),
             places: BTreeMap::from([("village".to_owned(), "stilt-house village".to_owned())]),
             culture_notes: "Khmer roof finials".into(),
             seed: 100,
@@ -159,8 +162,13 @@ mod tests {
         assert_eq!(plan.provider, ProviderId::CloudflareFlux);
         assert_eq!(plan.model, cloudflare::MODEL);
         assert_eq!(plan.seed, 102);
-        assert!(plan.prompt.starts_with("warm watercolor, wide establishing shot, the farmer (old Khmer farmer in krama) walks"));
-        assert!(plan.prompt.contains("stilt-house village, Khmer roof finials"));
+        assert!(plan.prompt.starts_with(
+            "warm watercolor, wide establishing shot, the farmer (old Khmer farmer in krama) walks"
+        ));
+        assert!(
+            plan.prompt
+                .contains("stilt-house village, Khmer roof finials")
+        );
         assert!(plan.prompt.contains("center band"));
     }
 
@@ -171,8 +179,14 @@ mod tests {
         p.image_settings.gemini_model = "gemini-3-pro-image".into();
         let key = plan_scene(&p, 0).unwrap();
         assert_eq!(key.provider, ProviderId::GeminiNanoBanana);
-        assert!(!key.prompt.contains("center band"), "16:9 provider: no square composition");
-        assert_eq!(plan_scene(&p, 1).unwrap().provider, ProviderId::CloudflareFlux);
+        assert!(
+            !key.prompt.contains("center band"),
+            "16:9 provider: no square composition"
+        );
+        assert_eq!(
+            plan_scene(&p, 1).unwrap().provider,
+            ProviderId::CloudflareFlux
+        );
 
         p.image_settings.scenes_per_image = 2;
         let second = plan_scene(&p, 1).unwrap();
@@ -199,6 +213,10 @@ mod tests {
         assert_ne!(plan_scene(&q, 1).unwrap().hash, base, "prompt");
         let mut q = p.clone();
         q.scenes.swap(0, 2);
-        assert_eq!(plan_scene(&q, 1).unwrap().hash, base, "reordering keeps the seed");
+        assert_eq!(
+            plan_scene(&q, 1).unwrap().hash,
+            base,
+            "reordering keeps the seed"
+        );
     }
 }

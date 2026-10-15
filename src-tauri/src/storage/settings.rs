@@ -3,9 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::{AppPaths, StorageError, atomic};
+use crate::images::provider::ProviderId;
 use crate::pipeline::editing::DEFAULT_VOICE_DIRECTION;
 use crate::pipeline::project::{Language, VoiceSettings};
-use crate::images::provider::ProviderId;
 use crate::tts::{EngineKind, voices};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -236,10 +236,9 @@ impl Settings {
                 )));
             }
         }
-        let models =
-            chain
-                .iter()
-                .chain([&self.models.tts, &self.models.tts_lite]);
+        let models = chain
+            .iter()
+            .chain([&self.models.tts, &self.models.tts_lite]);
         for m in models {
             if m.is_empty() || !is_model_id(m) {
                 return Err(StorageError::InvalidSetting(format!("model id '{m}'")));
@@ -328,8 +327,10 @@ mod tests {
         assert!(s.validate().is_ok());
         s.steps = 9;
         assert!(s.validate().is_err());
-        let mut s = ImageSettings::default();
-        s.cloudflare_account_id = "0123456789abcdef0123456789abcdef".into();
+        let mut s = ImageSettings {
+            cloudflare_account_id: "0123456789abcdef0123456789abcdef".into(),
+            ..ImageSettings::default()
+        };
         assert!(s.validate().is_ok());
         s.cloudflare_account_id = "not-an-id".into();
         assert!(s.validate().is_err());

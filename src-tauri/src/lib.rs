@@ -35,6 +35,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, String> {
         store: Arc::new(store),
         script_jobs: Arc::new(JobRegistry::default()),
         voice_jobs: Arc::new(JobRegistry::default()),
+        image_jobs: Arc::new(JobRegistry::default()),
     })
 }
 
@@ -76,6 +77,20 @@ pub fn run() {
             commands::generate::scene_voice_audio,
             commands::generate::voices_catalog,
             commands::generate::voice_preview,
+            commands::images::cloudflare_token_set,
+            commands::images::cloudflare_token_exists,
+            commands::images::cloudflare_token_clear,
+            commands::images::cloudflare_test,
+            commands::images::images_estimate,
+            commands::images::images_start,
+            commands::images::images_cancel,
+            commands::images::images_running,
+            commands::images::scene_image_thumb,
+            commands::images::scene_image_prompt_update,
+            commands::images::visual_bible_update,
+            commands::images::visual_bible_generate,
+            commands::images::project_set_scenes_per_image,
+            commands::images::images_catalog,
         ])
         .run(tauri::generate_context!());
     if let Err(e) = result {

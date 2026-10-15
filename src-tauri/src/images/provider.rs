@@ -49,7 +49,14 @@ pub struct GeneratedImage {
 
 impl std::fmt::Debug for GeneratedImage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "GeneratedImage({} {}×{}, {} bytes)", self.mime, self.width, self.height, self.bytes.len())
+        write!(
+            f,
+            "GeneratedImage({} {}×{}, {} bytes)",
+            self.mime,
+            self.width,
+            self.height,
+            self.bytes.len()
+        )
     }
 }
 

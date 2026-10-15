@@ -6,10 +6,11 @@ use super::ProjectError;
 use super::hashing::{self, normalize, normalize_spoken};
 use super::presets;
 use super::project::{
-    ImageSnapshot, Language, Project, ProjectStatus, RenderSettings, SCHEMA_VERSION, Scene, Style,
-    VoiceSettings,
+    ImageSnapshot, Language, Project, ProjectStatus, RenderSettings, SCHEMA_VERSION, Scene, Shot,
+    Style, VisualBible, VoiceSettings,
 };
 use super::store::now;
+use super::visual_bible;
 use crate::gemini::script::MOODS;
 use crate::tts::EngineKind;
 
@@ -34,6 +35,16 @@ pub struct SceneEdit {
     pub spoken_text: String,
     pub image_prompt: String,
     pub mood: String,
+    /// Image fields (07 §2); `None` keeps the current values.
+    #[serde(default)]
+    pub visual: Option<SceneVisualEdit>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SceneVisualEdit {
+    pub characters: Vec<String>,
+    pub place: Option<String>,
+    pub shot: Shot,
 }
 
 fn invalid(msg: &str) -> ProjectError {
@@ -138,6 +149,9 @@ pub fn apply_scene_edit(p: &mut Project, edit: &SceneEdit) -> Result<(), Project
         scene.image_prompt = normalize(&edit.image_prompt);
         scene.mood = mood;
     }
+    if let Some(v) = &edit.visual {
+        apply_visual(p, idx, v);
+    }
     hashing::mark_stale(p, idx);
     Ok(())
 }
@@ -155,6 +169,7 @@ pub fn add_scene(p: &mut Project, after: Option<&str>) -> Result<String, Project
     };
     p.scenes.insert(pos, Scene::new(id.clone(), chapter));
     p.renumber();
+    visual_bible::apply_key_scenes(p);
     Ok(id)
 }
 
@@ -163,6 +178,7 @@ pub fn delete_scene(p: &mut Project, id: &str) -> Result<(), ProjectError> {
     let idx = scene_index(p, id)?;
     p.scenes.remove(idx);
     p.renumber();
+    visual_bible::apply_key_scenes(p);
     Ok(())
 }
 
@@ -183,6 +199,82 @@ pub fn reorder(p: &mut Project, ids: &[String]) -> Result<(), ProjectError> {
     }
     p.scenes = reordered;
     p.renumber();
+    visual_bible::apply_key_scenes(p);
+    Ok(())
+}
+
+fn apply_visual(p: &mut Project, idx: usize, v: &SceneVisualEdit) {
+    let bible = p.visual_bible.clone().unwrap_or_default();
+    if let Some(scene) = p.scenes.get_mut(idx) {
+        scene.characters = v
+            .characters
+            .iter()
+            .filter(|k| bible.characters.contains_key(*k))
+            .cloned()
+            .collect();
+        scene.place = v.place.clone().filter(|k| bible.places.contains_key(k));
+        scene.shot = v.shot;
+    }
+}
+
+fn allows_image_edits(p: &Project) -> Result<(), ProjectError> {
+    if p.status == ProjectStatus::Rendering {
+        Err(ProjectError::WrongState("rendering".into()))
+    } else {
+        Ok(())
+    }
+}
+
+/// Edits one image prompt (also after approval, from the Scenes page). The image becomes
+/// stale if its final prompt changed.
+pub fn update_image_prompt(
+    p: &mut Project,
+    scene_id: &str,
+    image_prompt: &str,
+) -> Result<(), ProjectError> {
+    allows_image_edits(p)?;
+    check_len(image_prompt)?;
+    let idx = scene_index(p, scene_id)?;
+    if let Some(s) = p.scenes.get_mut(idx) {
+        s.image_prompt = normalize(image_prompt);
+    }
+    hashing::mark_all_images_stale(p);
+    Ok(())
+}
+
+/// Replaces the Visual Bible (Look & feel tab). Keys are normalized, scene references to
+/// removed keys are dropped, and images whose prompt changed become stale.
+pub fn update_bible(p: &mut Project, bible: &VisualBible) -> Result<(), ProjectError> {
+    allows_image_edits(p)?;
+    if bible.style.trim().is_empty() {
+        return Err(invalid("The style must not be empty."));
+    }
+    let clean = |m: &std::collections::BTreeMap<String, String>| {
+        m.iter()
+            .map(|(k, d)| (visual_bible::normalize_key(k), normalize(d)))
+            .filter(|(k, d)| !k.is_empty() && !d.is_empty())
+            .collect()
+    };
+    p.visual_bible = Some(VisualBible {
+        style: normalize(&bible.style),
+        characters: clean(&bible.characters),
+        places: clean(&bible.places),
+        culture_notes: normalize(&bible.culture_notes),
+        seed: bible.seed,
+    });
+    visual_bible::prune_scene_keys(p);
+    hashing::mark_all_images_stale(p);
+    Ok(())
+}
+
+/// 07 §5 "Scenes per image": 1 or 2.
+pub fn set_scenes_per_image(p: &mut Project, n: u8) -> Result<(), ProjectError> {
+    allows_image_edits(p)?;
+    if !(1..=2).contains(&n) {
+        return Err(invalid("Scenes per image must be 1 or 2."));
+    }
+    p.image_settings.scenes_per_image = n;
+    hashing::mark_all_images_stale(p);
     Ok(())
 }
 
@@ -300,6 +392,47 @@ mod tests {
     }
 
     #[test]
+    fn bible_edit_normalizes_prunes_and_marks_images_stale() {
+        let mut p = with_scenes(2);
+        p.visual_bible = Some(VisualBible {
+            style: "watercolor".into(),
+            characters: [("farmer".to_owned(), "old".to_owned())].into(),
+            places: Default::default(),
+            culture_notes: String::new(),
+            seed: 1,
+        });
+        p.scenes[0].characters = vec!["farmer".into()];
+        let hash = hashing::prompt_hash(&p, 0).unwrap();
+        p.scenes[0].image.status = crate::pipeline::project::AssetStatus::Done;
+        p.scenes[0].image.prompt_hash = Some(hash);
+        let new = VisualBible {
+            style: " flat 2D ".into(),
+            characters: [("Old Monk".to_owned(), "saffron robe".to_owned())].into(),
+            places: Default::default(),
+            culture_notes: String::new(),
+            seed: 1,
+        };
+        update_bible(&mut p, &new).unwrap();
+        let b = p.visual_bible.as_ref().unwrap();
+        assert_eq!(b.style, "flat 2D");
+        assert!(b.characters.contains_key("old_monk"));
+        assert!(p.scenes[0].characters.is_empty(), "removed key pruned");
+        assert_eq!(
+            p.scenes[0].image.status,
+            crate::pipeline::project::AssetStatus::Stale
+        );
+        assert!(set_scenes_per_image(&mut p, 3).is_err());
+    }
+
+    #[test]
+    fn key_scenes_follow_structure_changes() {
+        let mut p = with_scenes(3);
+        add_scene(&mut p, None).unwrap();
+        let keys: Vec<bool> = p.scenes.iter().map(|s| s.key_scene).collect();
+        assert_eq!(keys, vec![true, false, false, true]);
+    }
+
+    #[test]
     fn edit_normalizes_and_rejects_unknown_mood() {
         let mut p = with_scenes(1);
         apply_scene_edit(
@@ -310,6 +443,7 @@ mod tests {
                 spoken_text: "ស្រូវ\u{200B}".into(),
                 image_prompt: "rice".into(),
                 mood: "weird".into(),
+                visual: None,
             },
         )
         .unwrap();

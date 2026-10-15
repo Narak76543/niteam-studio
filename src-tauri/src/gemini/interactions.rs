@@ -67,7 +67,9 @@ pub fn last_media(i: &Interaction, kind: &str) -> Result<Media, GeminiError> {
     if let Some(status) = &i.status
         && status != "completed"
     {
-        return Err(GeminiError::BadResponse(format!("interaction status '{status}'")));
+        return Err(GeminiError::BadResponse(format!(
+            "interaction status '{status}'"
+        )));
     }
     let block = model_outputs(i)
         .filter(|c| c.kind == kind)
@@ -115,7 +117,8 @@ mod tests {
 
     #[test]
     fn failed_status_is_an_error() {
-        let i: Interaction = serde_json::from_value(json!({"status": "failed", "steps": []})).unwrap();
+        let i: Interaction =
+            serde_json::from_value(json!({"status": "failed", "steps": []})).unwrap();
         assert!(last_media(&i, "image").is_err());
     }
 }

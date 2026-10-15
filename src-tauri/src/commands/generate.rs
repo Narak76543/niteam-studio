@@ -11,8 +11,9 @@ use crate::error::{CmdResult, to_cmd};
 use crate::gemini::GeminiError;
 use crate::gemini::retry::RetryHooks;
 use crate::pipeline::ProjectError;
+use crate::pipeline::events::{GenerateProgress, JobEvents, SceneProgress};
 use crate::pipeline::project::{Language, ProjectStatus};
-use crate::pipeline::voice_job::{GenerateProgress, SceneProgress, VoiceEvents, VoiceJob};
+use crate::pipeline::voice_job::VoiceJob;
 use crate::state::AppState;
 use crate::storage::log::LogFile;
 use crate::storage::secrets;
@@ -25,9 +26,9 @@ use crate::tts::{EngineKind, TtsEngine, TtsRequest};
 pub const SCENE_PROGRESS_EVENT: &str = "scene-progress";
 pub const GENERATE_PROGRESS_EVENT: &str = "generate-progress";
 
-struct TauriVoiceEvents(AppHandle);
+pub struct TauriJobEvents(pub AppHandle);
 
-impl VoiceEvents for TauriVoiceEvents {
+impl JobEvents for TauriJobEvents {
     fn scene(&self, progress: SceneProgress) {
         // Emitting only fails if the window is gone; nothing to do then.
         let _ = self.0.emit(SCENE_PROGRESS_EVENT, progress);
@@ -92,7 +93,7 @@ async fn start_voice_job(
         concurrency: settings.concurrency.tts,
     };
     let jobs = state.voice_jobs.clone();
-    let events: Arc<dyn VoiceEvents> = Arc::new(TauriVoiceEvents(app));
+    let events: Arc<dyn JobEvents> = Arc::new(TauriJobEvents(app));
     tauri::async_runtime::spawn(async move {
         job.run(&project_id, only, events).await;
         jobs.finish(&project_id);
@@ -128,14 +129,15 @@ pub async fn scene_regenerate(
     scene_id: String,
     what: String,
 ) -> CmdResult<()> {
-    if what != "voice" {
-        return Err("Only voices can be regenerated in this version.".into());
+    match what.as_str() {
+        "voice" => start_voice_job(app, &state, project_id, Some(vec![scene_id])).await,
+        "image" => super::images::regenerate_image(app, &state, project_id, scene_id).await,
+        _ => Err(format!("Unknown asset '{what}'.")),
     }
-    start_voice_job(app, &state, project_id, Some(vec![scene_id])).await
 }
 
 /// Only `scenes/<id>/voice.*` paths inside the project folder are served.
-fn is_safe_relative(rel: &str) -> bool {
+pub fn is_safe_relative(rel: &str) -> bool {
     let path = std::path::Path::new(rel);
     rel.starts_with("scenes/") && path.components().all(|c| matches!(c, Component::Normal(_)))
 }

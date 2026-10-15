@@ -55,6 +55,26 @@ pub struct SceneReply {
     pub mood: String,
     #[serde(default)]
     pub fact_note: String,
+    /// Visual Bible character keys in this scene (07 §2).
+    #[serde(default)]
+    pub characters: Vec<String>,
+    /// Visual Bible place key, or "".
+    #[serde(default)]
+    pub place: String,
+    /// wide | medium | close | detail | aerial
+    #[serde(default)]
+    pub shot: String,
+    #[serde(default)]
+    pub key_scene: bool,
+}
+
+pub const SHOTS: &[&str] = &["wide", "medium", "close", "detail", "aerial"];
+
+/// Visual Bible keys the chapter prompt may refer to: (key, description).
+#[derive(Default)]
+pub struct BibleKeys<'a> {
+    pub characters: Vec<(&'a str, &'a str)>,
+    pub places: Vec<(&'a str, &'a str)>,
 }
 
 /// Checks beyond what serde enforces. Errors are fed back to the model.
@@ -135,7 +155,15 @@ pub fn outline_schema(chapter_count: usize) -> Value {
     })
 }
 
-pub fn chapter_schema(scene_count: usize) -> Value {
+pub fn chapter_schema(scene_count: usize, bible: &BibleKeys) -> Value {
+    let character_keys: Vec<&str> = bible.characters.iter().map(|c| c.0).collect();
+    let mut place_keys: Vec<&str> = bible.places.iter().map(|p| p.0).collect();
+    place_keys.push("");
+    let characters = if character_keys.is_empty() {
+        json!({ "type": "array", "items": { "type": "string" } })
+    } else {
+        json!({ "type": "array", "items": { "type": "string", "enum": character_keys } })
+    };
     json!({
         "type": "object",
         "properties": {
@@ -150,9 +178,14 @@ pub fn chapter_schema(scene_count: usize) -> Value {
                         "spoken_text": { "type": "string" },
                         "image_prompt": { "type": "string" },
                         "mood": { "type": "string", "enum": MOODS },
-                        "fact_note": { "type": "string" }
+                        "fact_note": { "type": "string" },
+                        "characters": characters,
+                        "place": { "type": "string", "enum": place_keys },
+                        "shot": { "type": "string", "enum": SHOTS },
+                        "key_scene": { "type": "boolean" }
                     },
-                    "required": ["narration", "spoken_text", "image_prompt", "mood", "fact_note"]
+                    "required": ["narration", "spoken_text", "image_prompt", "mood", "fact_note",
+                                 "characters", "place", "shot", "key_scene"]
                 }
             }
         },
@@ -212,6 +245,24 @@ pub struct ChapterContext<'a> {
     pub scene_count: usize,
     /// Last narration line of the previous chapter, for continuity.
     pub previous_narration: Option<&'a str>,
+    /// Shots of the previous chapter's last two scenes (to keep shots varied).
+    pub previous_shots: Vec<&'a str>,
+    pub bible: BibleKeys<'a>,
+}
+
+fn bible_section(b: &BibleKeys) -> String {
+    let list = |items: &[(&str, &str)]| -> String {
+        if items.is_empty() {
+            "(none)\n".to_owned()
+        } else {
+            items.iter().map(|(k, d)| format!("- {k}: {d}\n")).collect()
+        }
+    };
+    format!(
+        "VISUAL BIBLE (refer to these by key; their look is added to the image automatically):\nCharacters:\n{}Places:\n{}",
+        list(&b.characters),
+        list(&b.places)
+    )
 }
 
 pub fn chapter_prompt(brief: &ScriptBrief, ctx: &ChapterContext) -> String {
@@ -236,6 +287,19 @@ pub fn chapter_prompt(brief: &ScriptBrief, ctx: &ChapterContext) -> String {
             format!("The previous chapter ended with: \"{p}\". Continue naturally from there.\n")
         })
         .unwrap_or_default();
+    let previous_shots = if ctx.previous_shots.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "The previous scenes used these shots: {}.\n",
+            ctx.previous_shots.join(", ")
+        )
+    };
+    let key_rule = if number == total {
+        "true for the FIRST scene of this chapter and for the LAST scene of this chapter (the video's ending); false otherwise"
+    } else {
+        "true for the FIRST scene of this chapter; false otherwise"
+    };
     format!(
         "Write the scenes for chapter {number} of {total} of the video \"{title}\".\n\
 TOPIC: {topic}\n\
@@ -243,15 +307,25 @@ HOOK: {hook}\n\
 FULL OUTLINE:\n{outline}\n\
 CURRENT CHAPTER: {number}. {chapter_title}\n\
 {previous}{position}\n\n\
+{bible}\n\
 {rules}\n\n\
 Write exactly {scenes} scenes. For each scene:\n\
 - `narration`: one or two short sentences (about 6–8 seconds when spoken).\n\
 - `spoken_text`: the narration written for text-to-speech (see language rules).\n\
-- `image_prompt`: in ENGLISH. Describe only what is visible: subject, setting, era, action, composition. \
-No art-style words (no 'watercolor', 'photo', 'cartoon', 'illustration'), no text, letters, signs or captions in the image, \
-no real living people. Describe recurring characters and places the same way every time so the images stay consistent.\n\
+- `image_prompt`: in ENGLISH. Describe only what is visible: subject, action, setting, era, composition. \
+Refer to Visual Bible characters and places by their key word (e.g. \"the farmer\") instead of describing their look again. \
+Use positive phrasing only (say \"clear blue sky\", not \"no birds\"). Never mention text, letters, signs or captions. \
+No art-style words (watercolor, photo, cartoon, illustration). No real living people; \
+historical figures only as statues, carvings or generic figures.\n\
 - `mood`: one of {moods}.\n\
-- `fact_note`: empty, or a short note if the scene makes an uncertain or disputed claim the creator should check.",
+- `fact_note`: empty, or a short note if the scene makes an uncertain or disputed claim the creator should check.\n\
+- `characters`: keys of the Visual Bible characters visible in the scene ([] if none).\n\
+- `place`: the Visual Bible place key where the scene happens, or \"\" if none fits.\n\
+- `shot`: one of {shots}. Vary shots: never more than 2 consecutive scenes with the same shot.\n\
+{previous_shots}\
+- `key_scene`: {key_rule}.",
+        bible = bible_section(&ctx.bible),
+        shots = SHOTS.join(", "),
         title = ctx.title,
         topic = brief.topic,
         hook = ctx.hook,
@@ -402,8 +476,16 @@ mod tests {
             index: 0,
             scene_count: 5,
             previous_narration: None,
+            previous_shots: vec![],
+            bible: BibleKeys {
+                characters: vec![("farmer", "old farmer")],
+                places: vec![],
+            },
         };
-        assert!(chapter_prompt(&brief(), &ctx).contains("FIRST chapter"));
+        let p = chapter_prompt(&brief(), &ctx);
+        assert!(p.contains("FIRST chapter"));
+        assert!(p.contains("- farmer: old farmer"));
+        assert!(p.contains("never more than 2 consecutive scenes"));
         ctx.index = 1;
         ctx.previous_narration = Some("prev");
         let p = chapter_prompt(&brief(), &ctx);

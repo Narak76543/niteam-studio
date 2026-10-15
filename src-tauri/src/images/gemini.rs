@@ -58,14 +58,23 @@ pub fn map_error(e: GeminiError) -> ImageError {
     match e {
         GeminiError::MissingKey | GeminiError::InvalidKey { .. } => ImageError::Auth(e.to_string()),
         GeminiError::Blocked(m) => ImageError::SafetyBlocked(m),
-        GeminiError::Api { status: 429, retry_after, .. } => ImageError::RateLimited { retry_after },
+        GeminiError::Api {
+            status: 429,
+            retry_after,
+            ..
+        } => ImageError::RateLimited { retry_after },
         e if e.is_retryable() => ImageError::Transient(e.detail()),
         e => ImageError::Other(e.detail()),
     }
 }
 
 fn mime_for(path: &std::path::Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).as_deref() {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .as_deref()
+    {
         Some("png") => "image/png",
         _ => "image/jpeg",
     }
@@ -145,7 +154,10 @@ mod tests {
 
     #[test]
     fn free_tier_errors_ask_for_billing() {
-        let e = map_error(api(429, r#"Quota exceeded for metric: generate_content_free_tier_requests, limit: 0"#));
+        let e = map_error(api(
+            429,
+            r#"Quota exceeded for metric: generate_content_free_tier_requests, limit: 0"#,
+        ));
         assert!(matches!(&e, ImageError::Auth(m) if m == NEEDS_BILLING));
         let e = map_error(api(400, "This model requires billing to be enabled"));
         assert!(matches!(&e, ImageError::Auth(m) if m == NEEDS_BILLING));
@@ -153,9 +165,18 @@ mod tests {
 
     #[test]
     fn other_errors_map_by_kind() {
-        assert!(matches!(map_error(api(429, "slow down")), ImageError::RateLimited { .. }));
-        assert!(matches!(map_error(api(503, "busy")), ImageError::Transient(_)));
-        assert!(matches!(map_error(GeminiError::Blocked("SAFETY".into())), ImageError::SafetyBlocked(_)));
+        assert!(matches!(
+            map_error(api(429, "slow down")),
+            ImageError::RateLimited { .. }
+        ));
+        assert!(matches!(
+            map_error(api(503, "busy")),
+            ImageError::Transient(_)
+        ));
+        assert!(matches!(
+            map_error(GeminiError::Blocked("SAFETY".into())),
+            ImageError::SafetyBlocked(_)
+        ));
         assert!(matches!(map_error(api(400, "bad")), ImageError::Other(_)));
     }
 }

@@ -2,6 +2,7 @@
 //! user-readable message; logic lives in `storage/`, `gemini/` and `pipeline/`.
 
 pub mod generate;
+pub mod images;
 pub mod project;
 pub mod retry_events;
 pub mod script;

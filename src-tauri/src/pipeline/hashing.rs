@@ -50,7 +50,11 @@ pub fn mark_all_images_stale(project: &mut Project) {
     for i in 0..project.scenes.len() {
         let hash = prompt_hash(project, i);
         if let (Some(hash), Some(scene)) = (hash, project.scenes.get_mut(i))
-            && is_outdated(scene.image.status, scene.image.prompt_hash.as_deref(), &hash)
+            && is_outdated(
+                scene.image.status,
+                scene.image.prompt_hash.as_deref(),
+                &hash,
+            )
         {
             scene.image.status = AssetStatus::Stale;
             if scene.clip.status == AssetStatus::Done {

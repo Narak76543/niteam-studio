@@ -9,8 +9,8 @@
 use serde::Serialize;
 
 use super::GeminiError;
-use super::interactions::{Interaction, last_media};
 use super::client::{EndpointKind, GeminiClient};
+use super::interactions::{Interaction, last_media};
 use super::retry::{MAX_ATTEMPTS, RetryHooks};
 use crate::storage::ApiKey;
 

@@ -168,6 +168,7 @@ pub async fn script_approve(state: State<'_, AppState>, project_id: String) -> C
 pub async fn script_reopen(state: State<'_, AppState>, project_id: String) -> CmdResult<Project> {
     // Editing the script stops a running voice job; changed scenes become stale.
     state.voice_jobs.cancel(&project_id);
+    state.image_jobs.cancel(&project_id);
     state
         .store
         .update(&project_id, editing::reopen)

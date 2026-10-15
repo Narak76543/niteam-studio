@@ -214,7 +214,13 @@ pub enum Shot {
 }
 
 impl Shot {
-    pub const ALL: [Shot; 5] = [Shot::Wide, Shot::Medium, Shot::Close, Shot::Detail, Shot::Aerial];
+    pub const ALL: [Shot; 5] = [
+        Shot::Wide,
+        Shot::Medium,
+        Shot::Close,
+        Shot::Detail,
+        Shot::Aerial,
+    ];
 
     pub fn parse(s: &str) -> Option<Shot> {
         match s.trim().to_lowercase().as_str() {
@@ -373,6 +379,17 @@ impl Project {
     pub fn renumber(&mut self) {
         for (i, s) in self.scenes.iter_mut().enumerate() {
             s.order = u32::try_from(i + 1).unwrap_or(u32::MAX);
+        }
+    }
+
+    /// generating → review once every scene has its voice and image.
+    pub fn promote_to_review(&mut self) {
+        let all_done = !self.scenes.is_empty()
+            && self.scenes.iter().all(|s| {
+                s.voice.status == AssetStatus::Done && s.image.status == AssetStatus::Done
+            });
+        if self.status == ProjectStatus::Generating && all_done {
+            self.status = ProjectStatus::Review;
         }
     }
 

@@ -121,17 +121,26 @@ mod tests {
         let mut img = RgbImage::new(64, 64);
         // Red band in the vertical center, blue top/bottom (cropped away).
         for (_, y, px) in img.enumerate_pixels_mut() {
-            *px = if (18..46).contains(&y) { Rgb([200, 0, 0]) } else { Rgb([0, 0, 200]) };
+            *px = if (18..46).contains(&y) {
+                Rgb([200, 0, 0])
+            } else {
+                Rgb([0, 0, 200])
+            };
         }
         let mut raw = Cursor::new(Vec::new());
-        DynamicImage::ImageRgb8(img).write_to(&mut raw, ImageFormat::Jpeg).unwrap();
+        DynamicImage::ImageRgb8(img)
+            .write_to(&mut raw, ImageFormat::Jpeg)
+            .unwrap();
         let out = process(raw.get_ref(), "720p").unwrap();
         assert_eq!(out.source, (64, 64));
         assert_eq!(dimensions(&out.pan_png), Some((1434, 806)));
         assert_eq!(dimensions(&out.thumb_jpg), Some(THUMB));
         let pan = image::load_from_memory(&out.pan_png).unwrap().to_rgb8();
         let center = pan.get_pixel(717, 403);
-        assert!(center[0] > 150 && center[2] < 80, "center band kept: {center:?}");
+        assert!(
+            center[0] > 150 && center[2] < 80,
+            "center band kept: {center:?}"
+        );
         assert!(process(b"not an image", "1080p").is_err());
     }
 }

@@ -8,11 +8,11 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use super::ProjectError;
+use super::events::{GenerateProgress, GenerateStage, JobEvents, JobKind, SceneProgress};
 use super::hashing::{normalize_spoken, text_hash};
 use super::khmer_numbers;
 use super::project::{AssetStatus, Language, ProjectStatus, VoiceSettings};
@@ -21,45 +21,6 @@ use crate::gemini::retry::RetryHooks;
 use crate::storage::log::LogFile;
 use crate::storage::{AppPaths, StorageError, atomic};
 use crate::tts::{EngineKind, TtsEngine, TtsError, TtsOutput, TtsRequest, audio};
-
-/// Payload of `scene-progress`.
-#[derive(Debug, Clone, Serialize)]
-pub struct SceneProgress {
-    pub project_id: String,
-    pub scene_id: String,
-    pub asset: &'static str,
-    pub status: AssetStatus,
-    pub duration_ms: Option<u64>,
-    pub error: Option<String>,
-    pub error_kind: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum GenerateStage {
-    Running,
-    Done,
-    Cancelled,
-    Failed,
-}
-
-/// Payload of `generate-progress`.
-#[derive(Debug, Clone, Serialize)]
-pub struct GenerateProgress {
-    pub project_id: String,
-    pub stage: GenerateStage,
-    pub done: usize,
-    pub failed: usize,
-    pub total: usize,
-    /// Job-level error (e.g. Edge TTS unavailable): raw detail + stable kind.
-    pub error: Option<String>,
-    pub error_kind: Option<String>,
-}
-
-pub trait VoiceEvents: Send + Sync {
-    fn scene(&self, progress: SceneProgress);
-    fn progress(&self, progress: GenerateProgress);
-}
 
 struct Task {
     scene_id: String,
@@ -83,7 +44,7 @@ struct Ctx {
     voice: VoiceSettings,
     hooks: RetryHooks,
     log: LogFile,
-    events: Arc<dyn VoiceEvents>,
+    events: Arc<dyn JobEvents>,
     limit: Semaphore,
     /// Set after an engine-level failure (Edge unavailable): remaining scenes are skipped.
     engine_down: AtomicBool,
@@ -106,7 +67,7 @@ impl VoiceJob {
         self,
         project_id: &str,
         only: Option<Vec<String>>,
-        events: Arc<dyn VoiceEvents>,
+        events: Arc<dyn JobEvents>,
     ) {
         let prepared = self.prepare(project_id, only.as_deref()).await;
         let (language, tasks) = match prepared {
@@ -116,6 +77,8 @@ impl VoiceJob {
                     .error(&format!("voice generation could not start: {e}"));
                 events.progress(GenerateProgress {
                     project_id: project_id.to_owned(),
+                    job: JobKind::Voice,
+                    resets_at_utc: None,
                     stage: GenerateStage::Failed,
                     done: 0,
                     failed: 0,
@@ -150,6 +113,8 @@ impl VoiceJob {
             let (error, error_kind) = error.map_or((None, None), |(d, k)| (Some(d), Some(k)));
             events.progress(GenerateProgress {
                 project_id: project_id.to_owned(),
+                job: JobKind::Voice,
+                resets_at_utc: None,
                 stage,
                 done,
                 failed,
@@ -181,6 +146,13 @@ impl VoiceJob {
         } else if engine_error.is_some() {
             GenerateStage::Failed
         } else {
+            let _ = ctx
+                .store
+                .update(project_id, |p| {
+                    p.promote_to_review();
+                    Ok(())
+                })
+                .await;
             GenerateStage::Done
         };
         ctx.log.info(&format!(
@@ -507,7 +479,7 @@ mod tests {
         scenes: StdMutex<Vec<SceneProgress>>,
         progress: StdMutex<Vec<GenerateProgress>>,
     }
-    impl VoiceEvents for Recorder {
+    impl JobEvents for Recorder {
         fn scene(&self, p: SceneProgress) {
             self.scenes.lock().unwrap().push(p);
         }

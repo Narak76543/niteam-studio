@@ -106,8 +106,16 @@ mod tests {
 
     #[test]
     fn doc_example_80_cloudflare_6_gemini() {
-        let mut todo: Vec<ScenePlan> = (0..80).map(|_| plan(ProviderId::CloudflareFlux, "m", false)).collect();
-        todo.extend((0..6).map(|_| plan(ProviderId::GeminiNanoBanana, "gemini-3.1-flash-lite-image", false)));
+        let mut todo: Vec<ScenePlan> = (0..80)
+            .map(|_| plan(ProviderId::CloudflareFlux, "m", false))
+            .collect();
+        todo.extend((0..6).map(|_| {
+            plan(
+                ProviderId::GeminiNanoBanana,
+                "gemini-3.1-flash-lite-image",
+                false,
+            )
+        }));
         todo.push(plan(ProviderId::CloudflareFlux, "m", true));
         let e = estimate(&todo.iter().collect::<Vec<_>>(), 3);
         assert_eq!((e.images, e.cloudflare, e.gemini, e.cached), (86, 80, 6, 3));

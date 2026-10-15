@@ -16,4 +16,5 @@ pub struct AppState {
     pub store: Arc<ProjectStore>,
     pub script_jobs: Arc<JobRegistry>,
     pub voice_jobs: Arc<JobRegistry>,
+    pub image_jobs: Arc<JobRegistry>,
 }

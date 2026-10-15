@@ -1,0 +1,66 @@
+# Nitean Studio — Agent Guide
+
+Nitean Studio (និទាន = "tale") is a Windows desktop app that generates long-form
+(up to 20 min) narrated explainer videos in **Khmer or English**: AI narration over
+AI-generated illustrations with slow pan motion, burned-in subtitles and background music.
+
+**Read these before writing code, in this order:**
+
+1. `docs/01-product.md` — what we build, for whom, user flow
+2. `docs/02-architecture.md` — stack, folder layout, data model, IPC
+3. `docs/03-pipeline.md` — each generation/render step in detail
+4. `docs/04-khmer.md` — Khmer text, TTS and subtitle rules (easy to get wrong)
+5. `docs/05-roadmap.md` — phases, acceptance criteria, **current phase**
+
+Only work on the phase marked **CURRENT** in `docs/05-roadmap.md`. When it is done,
+stop and ask the human to test. Do not start the next phase on your own.
+
+## Hard rules
+
+- **Target hardware is a low-spec Windows laptop** (8 GB RAM, integrated GPU, no CUDA).
+  No Remotion, no Node at runtime, no headless Chrome, no local AI models.
+- **All AI runs through the Gemini API** with the user's own key (BYOK).
+  - Store the key only via the `keyring` crate (Windows Credential Manager).
+  - Never log the key, never write it to project files.
+  - **Never rotate multiple keys/accounts to bypass rate limits** (violates Google's terms).
+    Handle 429 with backoff + a concurrency limit instead.
+- **Check the current Gemini API docs before writing any Gemini request code.**
+  Do not guess request/response field names. Keep model IDs in config, not hard-coded.
+- **Khmer subtitles are rendered as PNGs in the WebView canvas**, never with
+  FFmpeg `drawtext`/libass. See `docs/04-khmer.md`.
+- Every pipeline step must be **resumable**: persist state after each scene step.
+- Keep the UI responsive: long work runs in Rust async tasks, progress goes to the UI
+  via Tauri events.
+
+## Stack
+
+Tauri v2 · Rust (tokio, reqwest, serde, keyring, thiserror/anyhow) ·
+React + TypeScript + Vite · FFmpeg as a Tauri sidecar.
+
+## Commands
+
+```bash
+npm install
+npm run tauri dev      # run app in dev
+npm run tauri build    # Windows installer
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+npm run lint && npm run typecheck
+```
+
+## Conventions
+
+- Rust: `thiserror` for module error types, `anyhow` only at command boundaries.
+  Tauri commands return `Result<T, String>` with user-readable messages.
+- No `unwrap()`/`expect()` outside tests.
+- TypeScript: strict mode, no `any`. All `invoke()` calls go through `src/lib/api.ts`
+  with typed wrappers mirroring Rust command signatures.
+- UI strings go through the i18n files (`src/i18n/km.json`, `src/i18n/en.json`).
+- Small focused modules; one responsibility per file.
+- When you change the data model or a pipeline step, **update the matching doc** in `docs/`.
+
+## Definition of done (every phase)
+
+- Builds on Windows with `npm run tauri dev`, no warnings from clippy/tsc.
+- Acceptance criteria in `docs/05-roadmap.md` met and ticked.
+- Short note added to the "Changelog" section at the bottom of `docs/05-roadmap.md`.

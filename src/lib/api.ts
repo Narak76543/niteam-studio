@@ -13,6 +13,7 @@ import type {
   CueIn,
   ImageCatalog,
   RenderProgress,
+  TimelineScene,
   SubsTask,
   ImageEstimate,
   ImageTestOutcome,
@@ -105,6 +106,12 @@ export const api = {
   subsSave: (projectId: string, sceneId: string, hash: string, cues: CueIn[]) =>
     invoke<null>("subs_save", { projectId, sceneId, hash, cues }),
   encodersDetect: () => invoke<string>("encoders_detect"),
+  renderTimeline: (projectId: string) => invoke<TimelineScene[]>("render_timeline", { projectId }),
+  /** image_1080.png bytes for the editor preview. */
+  sceneImageFull: (projectId: string, sceneId: string) =>
+    invoke<ArrayBuffer>("scene_image_full", { projectId, sceneId }),
+  renderSetSubtitleStyle: (projectId: string, highlight: string | null) =>
+    invoke<Project>("render_set_subtitle_style", { projectId, highlight }),
   renderStart: (projectId: string) => invoke<null>("render_start", { projectId }),
   renderCancel: (projectId: string) => invoke<null>("render_cancel", { projectId }),
   renderRunning: (projectId: string) => invoke<boolean>("render_running", { projectId }),

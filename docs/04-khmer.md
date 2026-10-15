@@ -36,13 +36,22 @@ Assert: no line breaks inside a word, each line ≤ 38 graphemes.
 
 ## 3. Fonts & rendering
 
-- Bundle **Noto Sans Khmer** (default) and **Kantumruy Pro** (both SIL OFL).
+- Bundle **Noto Sans Khmer** and **Kantumruy Pro** (both SIL OFL). **Subtitles use
+  Kantumruy Pro** (owner's choice, 2026-10-15) for Khmer *and* Latin, registered as the family
+  `"Kantumruy Pro Subtitle"` (Khmer + Latin + Latin-ext subsets) so the UI font stack is
+  unchanged.
   Load with `@font-face` and wait for `document.fonts.load(...)` **before** drawing
   to canvas, otherwise the first PNGs render with a fallback font.
 - Khmer needs more vertical space than Latin (subscripts below, vowels above):
   line height ≥ 1.6 × font size; canvas padding top/bottom ≥ 0.4 × font size.
-- Subtitle size: ~56 px at 1080p. White fill, ~6 px dark stroke
+- Subtitle size: ~56 px at 1080p, weight 600. White fill, ~6 px dark stroke
   (`ctx.lineJoin = "round"`), soft shadow.
+- **Word tracker** (CapCut-style): the whole cue (≤ 2 lines) stays on screen and the word
+  being spoken sits on a rounded box in the project's highlight colour (`render.subtitle_highlight`,
+  default `#FFD60A`, `null` = off), dark or white text by contrast. The box height follows the
+  line's real glyph extent so Khmer vowels above and subscripts below stay inside. Word times:
+  Edge phrase timings, interpolated by grapheme count inside a phrase (Edge does not time
+  individual Khmer words), or each word's share of the text without timings.
 - **Never use FFmpeg `drawtext` or ASS/libass for Khmer** — shaping of subscripts
   breaks depending on the FFmpeg build.
 

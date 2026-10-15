@@ -181,3 +181,11 @@ _Add one line per finished phase: date — phase — notes._
   with progress, ETA, cancel, open video / show in folder. Measured on the dev laptop (Intel
   QSV): 9 scenes / 69 s of video in 18 s; re-render with cached clips 1.4 s; audio/video
   durations equal within 30 ms.
+- 2026-10-15 — Phase 4 (owner request) — CapCut-style editor replaces the Render page: live
+  preview drawn in the WebView (image pan identical to the FFmpeg crop, voice-driven clock,
+  subtitles via the same `paintCue` as the export), timeline with thumbnails / subtitle cues /
+  voice blocks / playhead / zoom, right panel, Export dialog. Subtitles now Kantumruy Pro
+  (Khmer + Latin subsets) with a **word tracker**: the spoken word on a coloured box
+  (5 colours or off, per project). Export draws one PNG per word state and FFmpeg reads them as
+  one `track.ffconcat` input with a single overlay (SUBS_VERSION 2, CLIP_VERSION 2). Verified:
+  track timing exact in FFmpeg (states switch at 1.5 s / 3.5 s as listed); 9-scene export 17 s.

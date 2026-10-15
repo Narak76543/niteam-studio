@@ -313,6 +313,16 @@ pub struct RenderSettings {
     pub encoder: Option<String>,
     pub status: String,
     pub output_path: Option<String>,
+    /// Background colour (`#RRGGBB`) behind the word being spoken; `None` = no word tracker.
+    #[serde(default = "default_highlight")]
+    pub subtitle_highlight: Option<String>,
+}
+
+pub const DEFAULT_HIGHLIGHT: &str = "#FFD60A";
+
+#[allow(clippy::unnecessary_wraps)]
+fn default_highlight() -> Option<String> {
+    Some(DEFAULT_HIGHLIGHT.into())
 }
 
 impl Default for RenderSettings {
@@ -324,6 +334,7 @@ impl Default for RenderSettings {
             encoder: None,
             status: "idle".into(),
             output_path: None,
+            subtitle_highlight: default_highlight(),
         }
     }
 }

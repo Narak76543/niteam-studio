@@ -9,11 +9,12 @@ use serde::{Deserialize, Serialize};
 use super::ProjectError;
 use super::hashing::subs_hash;
 use super::project::{AssetStatus, Project, Scene, SubLine, SubsAsset};
+use crate::render::subs_track::{TRACK_FILE, TrackImage, ffconcat};
 use crate::storage::atomic;
 use crate::tts::WordTiming;
 
-/// Sanity limits for what the UI may send for one scene.
-const MAX_CUES: usize = 60;
+/// Sanity limits for what the UI may send for one scene (one image per spoken word).
+const MAX_STATES: usize = 600;
 const MAX_PNG_BYTES: usize = 3 * 1024 * 1024;
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
@@ -29,7 +30,8 @@ pub struct SubsTask {
     pub hash: String,
 }
 
-/// One rendered subtitle cue (up to 2 lines, `\n`-joined).
+/// One rendered subtitle state: a cue (up to 2 lines, `\n`-joined), possibly with the
+/// spoken word highlighted. States are consecutive in time.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CuePng {
     pub text: String,
@@ -47,6 +49,12 @@ pub fn is_fresh(project: &Project, scene: &Scene, dir: &Path) -> bool {
         && scene.subs.hash.as_deref() == Some(hash.as_str())
         && !scene.subs.lines.is_empty()
         && scene.subs.lines.iter().all(|l| dir.join(&l.path).is_file())
+        && dir.join(track_path(&scene.id)).is_file()
+}
+
+/// `scenes/<id>/subs/track.ffconcat`, relative to the project folder.
+pub fn track_path(scene_id: &str) -> String {
+    format!("scenes/{scene_id}/subs/{TRACK_FILE}")
 }
 
 /// Scenes with a finished voice whose subtitles are missing or outdated.
@@ -94,8 +102,11 @@ pub fn write_pngs(
     if subs_hash(project, scene).as_deref() != Some(hash) {
         return Err(invalid("The scene changed while its subtitles were drawn. Try again."));
     }
-    if cues.is_empty() || cues.len() > MAX_CUES {
+    if cues.is_empty() || cues.len() > MAX_STATES {
         return Err(invalid("Unexpected number of subtitle images."));
+    }
+    if cues.windows(2).any(|w| w[1].start_ms < w[0].start_ms) {
+        return Err(invalid("Subtitle images are not in time order."));
     }
     let duration = scene.voice.duration_ms.unwrap_or(0);
     for c in cues {
@@ -113,9 +124,12 @@ pub fn write_pngs(
         std::fs::remove_dir_all(&abs_dir).map_err(|e| ProjectError::Invalid(e.to_string()))?;
     }
     let mut lines = Vec::with_capacity(cues.len());
+    let mut names = Vec::with_capacity(cues.len());
     for (i, c) in cues.iter().enumerate() {
-        let rel = format!("{rel_dir}/{i:03}.png");
+        let name = format!("{i:03}.png");
+        let rel = format!("{rel_dir}/{name}");
         atomic::write_bytes(&dir.join(&rel), &c.png)?;
+        names.push(name);
         lines.push(SubLine {
             text: c.text.clone(),
             start_ms: c.start_ms,
@@ -123,6 +137,12 @@ pub fn write_pngs(
             path: rel,
         });
     }
+    let track: Vec<TrackImage<'_>> = cues
+        .iter()
+        .zip(&names)
+        .map(|(c, name)| TrackImage { file: name, start_ms: c.start_ms, end_ms: c.end_ms })
+        .collect();
+    atomic::write_bytes(&dir.join(track_path(scene_id)), ffconcat(&track).as_bytes())?;
     Ok(SubsAsset {
         status: AssetStatus::Done,
         lines,
@@ -197,6 +217,8 @@ mod tests {
         let hash = plan(&p, dir.path())[0].hash.clone();
         let subs = write_pngs(&p, "s001", &hash, &[cue(0, 1500), cue(1500, 3000)], dir.path()).unwrap();
         assert!(dir.path().join("scenes/s001/subs/001.png").is_file());
+        let track = std::fs::read_to_string(dir.path().join(track_path("s001"))).unwrap();
+        assert!(track.contains("file '000.png'\nduration 1.500"), "{track}");
         apply(&mut p, "s001", subs).unwrap();
         assert!(plan(&p, dir.path()).is_empty());
 
@@ -216,6 +238,7 @@ mod tests {
         assert!(write_pngs(&p, "s001", &hash, &[cue(200, 100)], dir.path()).is_err());
         assert!(write_pngs(&p, "s001", &hash, &[cue(0, 60_000)], dir.path()).is_err());
         assert!(write_pngs(&p, "s001", &hash, &[], dir.path()).is_err());
+        assert!(write_pngs(&p, "s001", &hash, &[cue(500, 900), cue(0, 400)], dir.path()).is_err());
     }
 
     #[test]

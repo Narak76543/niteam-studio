@@ -75,7 +75,7 @@ async fn render_e2e() {
     copy_dir(src, &dir);
     let store = Arc::new(ProjectStore::new(paths.clone()));
 
-    // Stand-in subtitles: two cues per scene.
+    // Stand-in subtitles: two states per scene.
     let project = store.get(&id).await.unwrap();
     for task in subs::plan(&project, &dir) {
         let half = task.duration_ms / 2;

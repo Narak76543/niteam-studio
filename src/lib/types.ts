@@ -346,6 +346,28 @@ export interface RenderSettings {
   encoder: string | null;
   status: string;
   output_path: string | null;
+  /** `#RRGGBB` box behind the spoken word; null = word tracker off. */
+  subtitle_highlight: string | null;
+}
+
+export type PanDir = "lr" | "rl" | "tb" | "bt";
+
+/** `render_timeline`: one scene of the editor preview (same times/pan as the render). */
+export interface TimelineScene {
+  scene_id: string;
+  order: number;
+  start_ms: number;
+  /** Clip length (used voice + 0.25 s pause). */
+  clip_ms: number;
+  /** Voice length used (trailing silence trimmed). */
+  voice_ms: number;
+  /** Full voice file length (subtitle timings run over this). */
+  duration_ms: number;
+  pan: PanDir;
+  voice_ready: boolean;
+  image_ready: boolean;
+  narration: string;
+  words: WordTiming[] | null;
 }
 
 export interface Project {

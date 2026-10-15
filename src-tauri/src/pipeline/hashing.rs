@@ -66,7 +66,8 @@ pub fn mark_all_images_stale(project: &mut Project) {
 
 /// Bump when the subtitle look (`src/lib/subtitleCanvas.ts`) or line breaking
 /// (`src/lib/subtitles.ts`) changes, so existing subtitle PNGs are redrawn.
-pub const SUBS_VERSION: &str = "1";
+/// 2: Kantumruy Pro + spoken-word highlight states.
+pub const SUBS_VERSION: &str = "2";
 
 /// Inputs of a scene's subtitle PNGs: narration, the voice they are timed to, resolution.
 /// `None` while the scene has no finished voice.
@@ -85,6 +86,7 @@ pub fn subs_hash(project: &Project, scene: &Scene) -> Option<String> {
         &duration.to_string(),
         &project.render.resolution,
         language,
+        project.render.subtitle_highlight.as_deref().unwrap_or("none"),
     ]))
 }
 

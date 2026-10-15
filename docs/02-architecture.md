@@ -163,7 +163,8 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
     }
   ],
   "render": { "resolution": "1080p", "music": "default_calm.mp3", "music_volume": 0.12,
-              "encoder": null, "status": "idle", "output_path": null }
+              "encoder": null, "status": "idle", "output_path": null,
+              "subtitle_highlight": "#FFD60A" }   // word-tracker colour, null = off
 }
 ```
 
@@ -219,6 +220,9 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | `subs_save(project_id, scene_id, hash, cues[{text, start_ms, end_ms, png_base64}])` | frontend hands rendered subtitle PNGs to Rust |
 | `render_start / render_cancel / render_running(project_id)` | FFmpeg render job (clips + concat) |
 | `render_open_output(project_id, reveal)` | open the finished MP4 / show it in Explorer |
+| `render_timeline(project_id)` | editor preview: per scene start, clip/voice/file length, pan, readiness, narration, Edge timings |
+| `scene_image_full(project_id, scene_id)` | `image_1080.png` bytes for the editor preview |
+| `render_set_subtitle_style(project_id, highlight)` | word-tracker colour `#RRGGBB` or null |
 | `encoders_detect()` | first working H.264 encoder; cached in `settings.render.encoder` |
 
 ## Events (Rust → UI)

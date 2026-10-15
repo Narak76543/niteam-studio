@@ -161,14 +161,34 @@ function fixOrphans(lines: Token[][], max: number): Token[][] {
   return lines;
 }
 
-/** Display lines for one scene's narration (NFC, ≤ max graphemes, never inside a word). */
-export function splitLines(text: string, lang: Language, max = MAX_GRAPHEMES[lang]): string[] {
+/** One word of a display line (the unit the word tracker highlights). */
+export interface Word {
+  text: string;
+  /** Preceded by a space inside its line. */
+  spaced: boolean;
+}
+
+/** Display lines as words (NFC, ≤ max graphemes, never broken inside a word). */
+export function splitLineWords(text: string, lang: Language, max = MAX_GRAPHEMES[lang]): Word[][] {
   const clean = text.normalize("NFC").replace(/[\r\n\t]+/gu, " ").trim();
   if (!clean) return [];
   const tokens = tokenize(clean, lang);
   return fixOrphans(pack(tokens, max), max)
-    .map((l) => join(l).replace(new RegExp(ZWSP, "gu"), "").trim())
-    .filter((l) => l.length > 0);
+    .map((line) =>
+      line
+        .map((t, i) => ({ text: t.text.replaceAll(ZWSP, ""), spaced: i > 0 && t.spaced }))
+        .filter((w) => w.text.length > 0),
+    )
+    .filter((line) => line.length > 0);
+}
+
+export function lineText(words: Word[]): string {
+  return words.map((w, i) => (i > 0 && w.spaced ? ` ${w.text}` : w.text)).join("");
+}
+
+/** Display lines for one scene's narration (NFC, ≤ max graphemes, never inside a word). */
+export function splitLines(text: string, lang: Language, max = MAX_GRAPHEMES[lang]): string[] {
+  return splitLineWords(text, lang, max).map(lineText);
 }
 
 /** Groups display lines into on-screen cues of at most `LINES_PER_CUE` lines. */

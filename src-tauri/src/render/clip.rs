@@ -78,21 +78,14 @@ impl Pan {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Overlay {
-    /// Relative to the project folder.
-    pub path: String,
-    pub start_ms: u64,
-    pub end_ms: u64,
-}
-
 #[derive(Debug, Clone)]
 pub struct ClipSpec {
     /// Pan-size image (`scenes/<id>/image_1080.png`), relative to the project folder.
     pub image: String,
     pub audio: String,
     pub voice_ms: u64,
-    pub subs: Vec<Overlay>,
+    /// `scenes/<id>/subs/track.ffconcat` (timed subtitle images), relative to the project.
+    pub subs_track: Option<String>,
     pub pan: Pan,
     pub frame: Frame,
     /// `Encoder::args()`.
@@ -119,24 +112,17 @@ pub fn clip_args(spec: &ClipSpec) -> Vec<String> {
 
     push(&mut a, &["-y", "-loop", "1", "-framerate", &FPS.to_string(), "-t", &d, "-i", &spec.image]);
     push(&mut a, &["-i", &spec.audio]);
-    for s in &spec.subs {
-        push(&mut a, &["-i", &s.path]);
+    if let Some(track) = &spec.subs_track {
+        push(&mut a, &["-f", "concat", "-safe", "0", "-i", track]);
     }
 
     let (x, y) = spec.pan.expr(&d);
-    let mut graph = format!("[0:v]crop=w={}:h={}:x='{x}':y='{y}'", f.width, f.height);
-    let mut last = "bg".to_owned();
-    graph.push_str(&format!("[{last}]"));
-    for (i, s) in spec.subs.iter().enumerate() {
-        let next = format!("s{i}");
-        graph.push_str(&format!(
-            ";[{last}][{}:v]overlay=x=0:y={}:enable='between(t,{},{})'[{next}]",
-            i + 2,
-            f.subs_y(),
-            secs(s.start_ms),
-            secs(s.end_ms),
-        ));
-        last = next;
+    let mut graph = format!("[0:v]crop=w={}:h={}:x='{x}':y='{y}'[bg]", f.width, f.height);
+    let mut last = "bg";
+    if spec.subs_track.is_some() {
+        // Each subtitle image stays until the next one; the last one until the clip ends.
+        graph.push_str(&format!(";[bg][2:v]overlay=x=0:y={}:eof_action=repeat[subs]", f.subs_y()));
+        last = "subs";
     }
     graph.push_str(&format!(";[{last}]format=yuv420p[v];[1:a]apad=pad_dur={}[a]", secs(TAIL_PAD_MS)));
 
@@ -152,12 +138,12 @@ pub fn clip_args(spec: &ClipSpec) -> Vec<String> {
 mod tests {
     use super::*;
 
-    fn spec(subs: Vec<Overlay>, pan: Pan) -> ClipSpec {
+    fn spec(subs: bool, pan: Pan) -> ClipSpec {
         ClipSpec {
             image: "scenes/s001/image_1080.png".into(),
             audio: "scenes/s001/voice.mp3".into(),
             voice_ms: 6150,
-            subs,
+            subs_track: subs.then(|| "scenes/s001/subs/track.ffconcat".to_owned()),
             pan,
             frame: Frame::for_resolution("1080p"),
             encoder_args: vec!["-c:v".into(), "libx264".into()],
@@ -172,37 +158,41 @@ mod tests {
 
     #[test]
     fn duration_includes_tail_pad() {
-        let a = clip_args(&spec(vec![], Pan::LeftToRight));
+        let a = clip_args(&spec(false, Pan::LeftToRight));
         assert_eq!(a.iter().filter(|x| *x == "6.400").count(), 2, "input -t and output -t");
         assert!(graph(&a).contains("apad=pad_dur=0.250"));
     }
 
     #[test]
     fn pan_uses_time_based_crop_not_zoompan() {
-        let a = clip_args(&spec(vec![], Pan::RightToLeft));
+        let a = clip_args(&spec(false, Pan::RightToLeft));
         let g = graph(&a);
         assert!(g.contains("crop=w=1920:h=1080:x='(iw-ow)*(1-t/6.400)':y='(ih-oh)/2'"), "{g}");
         assert!(!g.contains("zoompan"));
     }
 
     #[test]
-    fn overlays_chain_with_times_and_band_position() {
-        let subs = vec![
-            Overlay { path: "scenes/s001/subs/000.png".into(), start_ms: 0, end_ms: 2400 },
-            Overlay { path: "scenes/s001/subs/001.png".into(), start_ms: 2400, end_ms: 6150 },
-        ];
-        let a = clip_args(&spec(subs, Pan::TopToBottom));
+    fn subtitle_track_is_one_concat_input_and_one_overlay() {
+        let a = clip_args(&spec(true, Pan::TopToBottom));
         let g = graph(&a);
-        assert!(g.contains("[bg][2:v]overlay=x=0:y=816:enable='between(t,0.000,2.400)'[s0]"), "{g}");
-        assert!(g.contains("[s0][3:v]overlay=x=0:y=816:enable='between(t,2.400,6.150)'[s1]"), "{g}");
-        assert!(g.contains("[s1]format=yuv420p[v]"));
-        let inputs: Vec<_> = a.windows(2).filter(|w| w[0] == "-i").map(|w| w[1].clone()).collect();
-        assert_eq!(inputs.len(), 4);
+        assert!(g.contains("[bg][2:v]overlay=x=0:y=816:eof_action=repeat[subs]"), "{g}");
+        assert!(g.contains("[subs]format=yuv420p[v]"), "{g}");
+        let i = a.iter().position(|x| x == "scenes/s001/subs/track.ffconcat").unwrap();
+        assert_eq!(&a[i - 5..i], ["-f", "concat", "-safe", "0", "-i"]);
+        let inputs = a.iter().filter(|x| *x == "-i").count();
+        assert_eq!(inputs, 3);
+    }
+
+    #[test]
+    fn without_subtitles_the_background_goes_straight_to_the_encoder() {
+        let a = clip_args(&spec(false, Pan::LeftToRight));
+        assert!(graph(&a).contains("[bg]format=yuv420p[v]"));
+        assert_eq!(a.iter().filter(|x| *x == "-i").count(), 2);
     }
 
     #[test]
     fn identical_stream_parameters_for_concat() {
-        let a = clip_args(&spec(vec![], Pan::BottomToTop));
+        let a = clip_args(&spec(false, Pan::BottomToTop));
         for w in [["-c:a", "pcm_s16le"], ["-ar", "48000"], ["-ac", "2"], ["-r", "30"], ["-f", "matroska"]] {
             assert!(a.windows(2).any(|x| x[0] == w[0] && x[1] == w[1]), "{w:?}");
         }

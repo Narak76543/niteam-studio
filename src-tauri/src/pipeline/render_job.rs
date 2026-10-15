@@ -11,11 +11,11 @@ use tokio_util::sync::CancellationToken;
 
 use super::ProjectError;
 use super::hashing::sha;
-use super::project::{AssetStatus, Project, ProjectStatus};
+use super::project::{AssetStatus, Project, ProjectStatus, Scene};
 use super::store::ProjectStore;
 use super::subs;
 use crate::render::RenderError;
-use crate::render::clip::{ClipSpec, Frame, Overlay, Pan, clip_args};
+use crate::render::clip::{ClipSpec, Frame, Pan, TAIL_PAD_MS, clip_args};
 use crate::render::concat::{concat_args, concat_list};
 use crate::render::encoders::Encoder;
 use crate::render::ffmpeg::Ffmpeg;
@@ -24,7 +24,8 @@ use crate::storage::{AppPaths, atomic};
 use crate::tts::WordTiming;
 
 /// Bump when the clip filter graph changes, so existing clips are re-rendered.
-const CLIP_VERSION: &str = "1";
+/// 2: subtitle track (one concat input + one overlay).
+const CLIP_VERSION: &str = "2";
 /// Share of the progress bar for the final concat (clips take the rest).
 const CONCAT_WEIGHT: f64 = 0.1;
 /// Voice kept after the last spoken word. Edge TTS MP3s end with ~0.8 s of silence; without
@@ -144,13 +145,7 @@ pub fn plan_clips(p: &Project, dir: &Path, encoder: Encoder) -> Vec<ClipTask> {
         .enumerate()
         .map(|(i, s)| {
             let pan = Pan::for_index(i);
-            let speech_end = s
-                .voice
-                .words_path
-                .as_ref()
-                .and_then(|w| atomic::read_json::<Vec<WordTiming>>(&dir.join(w)).ok().flatten())
-                .and_then(|w| w.last().map(|w| w.end_ms));
-            let voice_ms = trimmed_voice_ms(s.voice.duration_ms.unwrap_or(0), speech_end);
+            let voice_ms = trimmed_voice_ms(s.voice.duration_ms.unwrap_or(0), speech_end(s, dir));
             let image = s.image.path.clone().unwrap_or_default();
             let hash = sha(&[
                 "clip",
@@ -177,18 +172,78 @@ pub fn plan_clips(p: &Project, dir: &Path, encoder: Encoder) -> Vec<ClipTask> {
                     image,
                     audio: s.voice.path.clone().unwrap_or_default(),
                     voice_ms,
-                    subs: s
-                        .subs
-                        .lines
-                        .iter()
-                        .map(|l| Overlay { path: l.path.clone(), start_ms: l.start_ms, end_ms: l.end_ms })
-                        .collect(),
+                    subs_track: (!s.subs.lines.is_empty()).then(|| subs::track_path(&s.id)),
                     pan,
                     frame,
                     encoder_args: encoder.args(),
                     output: format!("scenes/{}/clip.tmp.mkv", s.id),
                 },
             }
+        })
+        .collect()
+}
+
+fn words(s: &Scene, dir: &Path) -> Option<Vec<WordTiming>> {
+    s.voice
+        .words_path
+        .as_ref()
+        .and_then(|w| atomic::read_json::<Vec<WordTiming>>(&dir.join(w)).ok().flatten())
+}
+
+fn speech_end(s: &Scene, dir: &Path) -> Option<u64> {
+    words(s, dir).and_then(|w| w.last().map(|w| w.end_ms))
+}
+
+/// Placeholder length in the editor timeline for a scene without a voice yet.
+const PLACEHOLDER_MS: u64 = 4000;
+
+/// One scene in the editor timeline: exactly the times and pan the render will use.
+#[derive(Debug, Clone, Serialize)]
+pub struct TimelineScene {
+    pub scene_id: String,
+    pub order: u32,
+    pub start_ms: u64,
+    /// Clip length (used voice + 0.25 s pause).
+    pub clip_ms: u64,
+    /// Voice length used (trailing silence trimmed).
+    pub voice_ms: u64,
+    /// Full voice file length (subtitle timings run over this).
+    pub duration_ms: u64,
+    /// "lr" | "rl" | "tb" | "bt"
+    pub pan: &'static str,
+    pub voice_ready: bool,
+    pub image_ready: bool,
+    pub narration: String,
+    pub words: Option<Vec<WordTiming>>,
+}
+
+/// The editor preview's timeline (same durations and pans as `plan_clips`).
+pub fn timeline(p: &Project, dir: &Path) -> Vec<TimelineScene> {
+    let file = |rel: &Option<String>| rel.as_ref().is_some_and(|r| dir.join(r).is_file());
+    let mut start = 0;
+    p.scenes
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let voice_ready = s.voice.status == AssetStatus::Done && file(&s.voice.path);
+            let duration_ms = if voice_ready { s.voice.duration_ms.unwrap_or(0) } else { 0 };
+            let voice_ms = if voice_ready { trimmed_voice_ms(duration_ms, speech_end(s, dir)) } else { 0 };
+            let clip_ms = if voice_ready { voice_ms + TAIL_PAD_MS } else { PLACEHOLDER_MS };
+            let item = TimelineScene {
+                scene_id: s.id.clone(),
+                order: s.order,
+                start_ms: start,
+                clip_ms,
+                voice_ms,
+                duration_ms,
+                pan: Pan::for_index(i).as_str(),
+                voice_ready,
+                image_ready: s.image.status == AssetStatus::Done && file(&s.image.path),
+                narration: s.narration.clone(),
+                words: if voice_ready { words(s, dir) } else { None },
+            };
+            start += clip_ms;
+            item
         })
         .collect()
 }
@@ -435,7 +490,7 @@ mod tests {
     use super::*;
     use crate::pipeline::hashing::subs_hash;
     use crate::pipeline::project::tests::sample;
-    use crate::pipeline::project::{Scene, SubLine};
+    use crate::pipeline::project::SubLine;
 
     /// Two scenes with voice, image and subtitle files on disk.
     fn ready_project(dir: &Path) -> Project {
@@ -451,7 +506,7 @@ mod tests {
             s.image.path = Some(format!("scenes/{id}/image_1080.png"));
             s.image.prompt_hash = Some("p".into());
             std::fs::create_dir_all(dir.join(format!("scenes/{id}/subs"))).unwrap();
-            for f in ["voice.mp3", "image_1080.png", "subs/000.png"] {
+            for f in ["voice.mp3", "image_1080.png", "subs/000.png", "subs/track.ffconcat"] {
                 std::fs::write(dir.join(format!("scenes/{id}/{f}")), b"x").unwrap();
             }
             p.scenes.push(s);
@@ -520,6 +575,22 @@ mod tests {
         assert_eq!(out, Path::new("D:/Videos").join("How was Angkor Wat built_ _1_2_.mp4"));
         p.title = "  ...  ".into();
         assert!(output_path(&p, dir, Some("D:/Videos")).ends_with("video.mp4"));
+    }
+
+    #[test]
+    fn timeline_matches_the_render_plan() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = ready_project(dir.path());
+        p.scenes.push(Scene::new("s003".into(), 0)); // no voice yet
+        let t = timeline(&p, dir.path());
+        let plan = plan_clips(&p, dir.path(), Encoder::X264);
+        assert_eq!(t[0].start_ms, 0);
+        assert_eq!(t[0].clip_ms, plan[0].spec.duration_ms());
+        assert_eq!(t[1].start_ms, t[0].clip_ms);
+        assert_eq!((t[0].pan, t[1].pan), ("lr", "rl"));
+        assert!(t[0].voice_ready && t[0].image_ready);
+        assert!(!t[2].voice_ready);
+        assert_eq!(t[2].clip_ms, PLACEHOLDER_MS);
     }
 
     #[test]

@@ -4,13 +4,15 @@ use std::sync::Arc;
 
 use base64::Engine as _;
 use serde::Deserialize;
+use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{CmdResult, to_cmd};
 use crate::pipeline::ProjectError;
-use crate::pipeline::render_job::{RenderEvents, RenderJob, RenderProgress};
+use crate::pipeline::project::ProjectStatus;
+use crate::pipeline::render_job::{self, RenderEvents, RenderJob, RenderProgress, TimelineScene};
 use crate::pipeline::subs::{self, CuePng, SubsTask};
 use crate::render::encoders::{self, Encoder};
 use crate::render::ffmpeg::Ffmpeg;
@@ -76,6 +78,63 @@ pub async fn subs_save(
         .update(&project_id, |p| subs::apply(p, &scene_id, asset))
         .await
         .map(|_| ())
+        .map_err(to_cmd)
+}
+
+// ---------- editor preview ----------
+
+/// Scene times, pans, narration and voice timings for the editor preview (same values the
+/// render uses).
+#[tauri::command]
+pub async fn render_timeline(state: State<'_, AppState>, project_id: String) -> CmdResult<Vec<TimelineScene>> {
+    let project = state.store.get(&project_id).await.map_err(to_cmd)?;
+    Ok(render_job::timeline(&project, &state.paths.project_dir(&project_id)))
+}
+
+/// The pan-size image (`image_1080.png`) for the editor preview.
+#[tauri::command]
+pub async fn scene_image_full(state: State<'_, AppState>, project_id: String, scene_id: String) -> CmdResult<Response> {
+    let project = state.store.get(&project_id).await.map_err(to_cmd)?;
+    let rel = project
+        .scenes
+        .iter()
+        .find(|s| s.id == scene_id)
+        .and_then(|s| s.image.path.clone())
+        .ok_or_else(|| "This scene has no image yet.".to_owned())?;
+    if !super::generate::is_safe_relative(&rel) {
+        return Err("Invalid image path.".into());
+    }
+    let bytes = tokio::fs::read(state.paths.project_dir(&project_id).join(&rel))
+        .await
+        .map_err(|e| format!("Could not read the image: {e}"))?;
+    Ok(Response::new(bytes))
+}
+
+fn is_hex_color(s: &str) -> bool {
+    s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Word-tracker colour (`#RRGGBB`) or `None` to turn it off. Subtitles are redrawn on export.
+#[tauri::command]
+pub async fn render_set_subtitle_style(
+    state: State<'_, AppState>,
+    project_id: String,
+    highlight: Option<String>,
+) -> CmdResult<crate::pipeline::project::Project> {
+    if highlight.as_deref().is_some_and(|h| !is_hex_color(h)) {
+        return Err("Invalid colour.".into());
+    }
+    state
+        .store
+        .update(&project_id, |p| {
+            if p.status == ProjectStatus::Rendering {
+                return Err(ProjectError::WrongState("rendering".into()));
+            }
+            p.render.subtitle_highlight = highlight.map(|h| h.to_ascii_uppercase());
+            Ok(())
+        })
+        .await
+        .map(|(p, ())| p)
         .map_err(to_cmd)
 }
 

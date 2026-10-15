@@ -190,7 +190,7 @@ dotted `--border-strong` for comparison, ring markers. Keep to at most one chart
 | New project wizard | Single centered card, max 640 px, 3 steps with a thin stepper | Generate script |
 | Script | Two-column: scene list (left) + editor (right); narration vs spoken text tabs | Approve script |
 | Scenes | Scene card grid + right panel for the selected scene | Generate all / Continue |
-| Render | Settings card (resolution, music, encoder) + progress card with ETA | Render video |
+| Render (editor) | CapCut-style, dark (`data-theme="dark"` on the page): top bar with **Export**; centre live preview (canvas: image pan + voice + subtitles with word tracker, play/pause, prev/next scene, Space / ← →); right panel (subtitle font, word tracker on/off + colour swatches, current scene); bottom timeline (ruler, video thumbnails, subtitle cues, voice blocks, draggable playhead, zoom). Export dialog: settings → progress with % and ETA → Open video / Show in folder | Export |
 | Settings | Grouped form rows, API key field masked with Test/Clear pills | — |
 
 ## 8. Accessibility

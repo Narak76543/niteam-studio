@@ -211,16 +211,24 @@ Done in React because only the browser shapes Khmer reliably. Details in `04-khm
    letter count. Without `words.json` (Gemini TTS), the scene's `duration_ms` is split
    proportionally to grapheme count. The first line starts at 0, the last ends at the
    scene duration.
-3. Draw each cue on a transparent `<canvas>` (`src/lib/subtitleCanvas.ts`): full frame width
-   × 240 px at 1080p (160 px at 720p), 56 px Noto Sans Khmer 600 (Manrope for English), line
-   height 1.6, white fill, ~6 px dark outline + soft shadow, lines bottom-aligned. The font is
-   awaited with `document.fonts.load` and checked before drawing.
+3. **States** (`src/lib/subtitleStates.ts`): with the word tracker on, one state per word
+   (the cue with that word highlighted, from the word's start to the next word's start);
+   off, one state per cue. Word times come from `timeLines` over the words (Edge phrase
+   timings interpolated by grapheme count). States are consecutive and cover the whole voice.
+   Each state is drawn on a transparent `<canvas>` by `paintCue` (`src/lib/subtitleCanvas.ts`):
+   full frame width × 240 px at 1080p (160 px at 720p), 56 px Kantumruy Pro 600, line height
+   1.6, white fill, ~6 px dark outline + soft shadow, highlight box behind the spoken word,
+   lines bottom-aligned. The font is awaited with `document.fonts.load` and checked first.
+   The editor preview draws with the same `paintCue`, so preview and export match.
 4. `subs_plan(project_id)` lists scenes whose subtitles are missing or outdated
    (`subs.hash` ≠ `hashing::subs_hash` = narration + voice hash + duration + resolution +
    language + `SUBS_VERSION`). For each: draw → base64 PNGs → `subs_save(project_id,
    scene_id, hash, cues)`. Rust re-checks the hash (the scene may have changed meanwhile),
-   validates the PNGs and times, writes `scenes/<id>/subs/NNN.png` and marks a done clip
-   stale. Bump `SUBS_VERSION` when the subtitle look or line breaking changes.
+   validates the PNGs and times (≤ 600 states, in time order), writes
+   `scenes/<id>/subs/NNN.png` plus **`subs/track.ffconcat`** (`render/subs_track.rs`: each image
+   with `duration` = next start − its start, last file repeated as the concat demuxer
+   requires), and marks a done clip stale. The subtitle hash includes the highlight colour.
+   Bump `SUBS_VERSION` when the subtitle look or line breaking changes (now 2).
 
 ## Step 6 — Render (FFmpeg)
 
@@ -239,9 +247,11 @@ When `words.json` exists the clip uses the voice only up to **0.15 s after the l
 (`render_job::trimmed_voice_ms`), so scenes are ~0.6 s apart instead of ~1.3 s. Gemini TTS
 voices (no timings) are used whole.
 
-**As implemented** (`render/clip.rs`, pure + unit-tested): the command below, but subtitle
-inputs are single PNGs (overlay repeats the last frame), `format=yuv420p` comes *after* the
-overlays, and clips are **`clip.mkv` with PCM audio** (`-c:a pcm_s16le -ar 48000 -ac 2
+**As implemented** (`render/clip.rs`, pure + unit-tested): the command below, but the
+subtitles are **one input**, the scene's image track (`-f concat -safe 0 -i
+scenes/<id>/subs/track.ffconcat`), drawn by **one** `overlay=x=0:y=816:eof_action=repeat`
+(each image stays until the next; one overlay regardless of how many words), `format=yuv420p`
+comes *after* the overlay, and clips are **`clip.mkv` with PCM audio** (`-c:a pcm_s16le -ar 48000 -ac 2
 -f matroska`). PCM avoids the AAC priming gap at every scene boundary; audio is encoded once,
 at concat. Paths are relative to the project folder (FFmpeg runs with it as working
 directory). Each clip is written to `clip.tmp.mkv` and renamed when complete.

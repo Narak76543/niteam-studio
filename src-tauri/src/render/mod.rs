@@ -5,6 +5,7 @@ pub mod clip;
 pub mod concat;
 pub mod encoders;
 pub mod ffmpeg;
+pub mod subs_track;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {

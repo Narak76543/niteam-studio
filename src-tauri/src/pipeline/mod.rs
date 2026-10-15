@@ -31,3 +31,13 @@ pub enum ProjectError {
     #[error(transparent)]
     Gemini(#[from] GeminiError),
 }
+
+impl ProjectError {
+    /// Stable code for the UI's friendly message (Gemini kinds, else "other").
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Gemini(e) => e.kind(),
+            _ => "other",
+        }
+    }
+}

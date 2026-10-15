@@ -7,10 +7,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
 
+use super::client::TextModels;
 use super::models::{Content, GenerateContentRequest, GenerationConfig};
-use super::{EndpointKind, GeminiClient, GeminiError};
+use super::retry::RetryHooks;
+use super::{GeminiClient, GeminiError};
 use crate::pipeline::project::Language;
 use crate::storage::ApiKey;
 
@@ -263,18 +264,19 @@ fn is_response_format_rejected(err: &GeminiError) -> bool {
 
 /// Sends a JSON-schema request and parses the reply into `T`.
 /// On a parse/validation failure, retries once with the error appended.
+/// Transport-level retries and the fallback model are handled by the client.
 pub async fn request_json<T: DeserializeOwned + Validate>(
     client: &GeminiClient,
     key: &ApiKey,
-    model: &str,
+    models: &TextModels,
     prompt: String,
     schema: Value,
-    cancel: &CancellationToken,
+    hooks: &RetryHooks,
 ) -> Result<T, GeminiError> {
     let mut contents = vec![Content::user(prompt)];
     let mut last_error = String::new();
     for attempt in 0..2 {
-        let raw = generate_text(client, key, model, &contents, &schema, cancel).await?;
+        let raw = generate_text(client, key, models, &contents, &schema, hooks).await?;
         match parse_reply::<T>(&raw) {
             Ok(v) => return Ok(v),
             Err(e) if attempt == 0 => {
@@ -293,10 +295,10 @@ pub async fn request_json<T: DeserializeOwned + Validate>(
 async fn generate_text(
     client: &GeminiClient,
     key: &ApiKey,
-    model: &str,
+    models: &TextModels,
     contents: &[Content],
     schema: &Value,
-    cancel: &CancellationToken,
+    hooks: &RetryHooks,
 ) -> Result<String, GeminiError> {
     let build = |legacy: bool| GenerateContentRequest {
         contents: contents.to_vec(),
@@ -304,14 +306,14 @@ async fn generate_text(
         generation_config: Some(GenerationConfig::json(schema.clone(), legacy)),
     };
     let legacy = USE_LEGACY_JSON_FIELDS.load(Ordering::Relaxed);
-    let result = client
-        .generate_content(key, model, EndpointKind::Text, &build(legacy), cancel)
-        .await;
-    let response = match result {
+    let response = match client
+        .generate_text(key, models, &build(legacy), hooks)
+        .await
+    {
         Err(e) if !legacy && is_response_format_rejected(&e) => {
             USE_LEGACY_JSON_FIELDS.store(true, Ordering::Relaxed);
             client
-                .generate_content(key, model, EndpointKind::Text, &build(true), cancel)
+                .generate_text(key, models, &build(true), hooks)
                 .await?
         }
         other => other?,

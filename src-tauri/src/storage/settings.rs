@@ -20,6 +20,9 @@ pub struct Settings {
 #[serde(default)]
 pub struct ModelSettings {
     pub text: String,
+    /// Used once per job when `text` is still overloaded (503) after all retries.
+    /// Empty = no fallback.
+    pub text_fallback: String,
     pub tts: String,
     pub tts_lite: String,
     pub image: String,
@@ -50,6 +53,7 @@ impl Default for ModelSettings {
     fn default() -> Self {
         Self {
             text: "gemini-3.8-flash".into(),
+            text_fallback: "gemini-3.6-flash".into(),
             tts: "gemini-3.8-flash-tts".into(),
             tts_lite: "gemini-3.8-flash-lite-tts".into(),
             image: "gemini-3.1-flash-image".into(),
@@ -69,6 +73,11 @@ impl Default for ConcurrencySettings {
 
 const MAX_CONCURRENCY: usize = 8;
 
+fn is_model_id(m: &str) -> bool {
+    m.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '_')
+}
+
 impl Settings {
     /// Rejects values that would break requests or overload a weak laptop.
     pub fn validate(&self) -> Result<(), StorageError> {
@@ -87,12 +96,13 @@ impl Settings {
             &self.models.image,
         ];
         for m in models {
-            let ok = !m.is_empty()
-                && m.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '_');
-            if !ok {
+            if m.is_empty() || !is_model_id(m) {
                 return Err(StorageError::InvalidSetting(format!("model id '{m}'")));
             }
+        }
+        let fb = &self.models.text_fallback;
+        if !fb.is_empty() && !is_model_id(fb) {
+            return Err(StorageError::InvalidSetting(format!("model id '{fb}'")));
         }
         let c = &self.concurrency;
         for n in [c.text, c.tts, c.image] {
@@ -135,6 +145,11 @@ mod tests {
         assert!(s.validate().is_err());
         let mut s = Settings::default();
         s.concurrency.tts = 0;
+        assert!(s.validate().is_err());
+        let mut s = Settings::default();
+        s.models.text_fallback = String::new();
+        assert!(s.validate().is_ok(), "empty fallback = disabled");
+        s.models.text_fallback = "bad id!".into();
         assert!(s.validate().is_err());
     }
 

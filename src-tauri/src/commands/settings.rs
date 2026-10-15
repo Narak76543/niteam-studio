@@ -1,11 +1,15 @@
 //! Settings and API key commands. The key itself is never returned to the UI.
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
+use tokio_util::sync::CancellationToken;
+
+use super::retry_events::retry_hooks;
 
 use crate::error::{CmdResult, to_cmd};
 use crate::gemini::GeminiError;
 use crate::state::AppState;
+use crate::storage::log::LogFile;
 use crate::storage::{ApiKey, Settings, secrets, settings};
 
 #[tauri::command]
@@ -36,22 +40,53 @@ pub async fn api_key_clear() -> CmdResult<()> {
     secrets::clear_api_key().map_err(to_cmd)
 }
 
+/// Result of "Test key". Failures are returned as data (not `Err`) so the UI can show a
+/// friendly message for `error_kind` with the raw `error` under "Details".
 #[derive(Debug, Serialize)]
-pub struct KeyTestResult {
-    pub model: String,
+pub struct KeyTestOutcome {
+    pub ok: bool,
+    pub model: Option<String>,
     pub display_name: Option<String>,
+    pub error_kind: Option<String>,
+    pub error: Option<String>,
+}
+
+impl KeyTestOutcome {
+    fn failed(e: &GeminiError) -> Self {
+        Self {
+            ok: false,
+            model: None,
+            display_name: None,
+            error_kind: Some(e.kind().to_owned()),
+            error: Some(e.to_string()),
+        }
+    }
 }
 
 /// Checks the stored key with `models.get` on the configured text model (no tokens used).
+/// Retries like every Gemini call; waits are reported as `gemini-retry` (scope `key_test`).
 #[tauri::command]
-pub async fn api_key_test(state: State<'_, AppState>) -> CmdResult<KeyTestResult> {
-    let key = secrets::get_api_key()
-        .map_err(to_cmd)?
-        .ok_or_else(|| to_cmd(GeminiError::MissingKey))?;
+pub async fn api_key_test(app: AppHandle, state: State<'_, AppState>) -> CmdResult<KeyTestOutcome> {
+    let Some(key) = secrets::get_api_key().map_err(to_cmd)? else {
+        return Ok(KeyTestOutcome::failed(&GeminiError::MissingKey));
+    };
     let model = state.settings.read().await.models.text.clone();
-    let info = state.gemini.get_model(&key, &model).await.map_err(to_cmd)?;
-    Ok(KeyTestResult {
-        model: info.name,
-        display_name: info.display_name,
-    })
+    let log = LogFile::new(state.paths.app_log()).redacting(key.expose());
+    let hooks = retry_hooks(app, "key_test", None, CancellationToken::new(), log.clone());
+    match state.gemini.get_model(&key, &model, &hooks).await {
+        Ok(info) => {
+            log.info(&format!("API key test ok ({model})"));
+            Ok(KeyTestOutcome {
+                ok: true,
+                model: Some(info.name),
+                display_name: info.display_name,
+                error_kind: None,
+                error: None,
+            })
+        }
+        Err(e) => {
+            log.error(&format!("API key test failed [{}]: {e}", e.kind()));
+            Ok(KeyTestOutcome::failed(&e))
+        }
+    }
 }

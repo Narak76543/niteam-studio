@@ -1,6 +1,7 @@
 //! Local storage: app data paths, settings file, OS keyring secrets, atomic writes.
 
 pub mod atomic;
+pub mod log;
 pub mod paths;
 pub mod secrets;
 pub mod settings;

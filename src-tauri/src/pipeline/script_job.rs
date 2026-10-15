@@ -13,11 +13,14 @@ use super::hashing::{normalize, normalize_spoken};
 use super::presets;
 use super::project::{Outline, OutlineChapter, Project, ProjectStatus, Scene};
 use super::store::ProjectStore;
+use crate::gemini::client::TextModels;
+use crate::gemini::retry::RetryHooks;
 use crate::gemini::script::{
     self, ChapterContext, ChapterReply, MOODS, OutlineReply, SceneReply, ScriptBrief,
 };
 use crate::gemini::{GeminiClient, GeminiError};
 use crate::storage::ApiKey;
+use crate::storage::log::LogFile;
 
 /// Seconds of narration per scene (docs/03-pipeline.md: ~6–8 s).
 const SECONDS_PER_SCENE: u32 = 7;
@@ -42,7 +45,10 @@ pub struct ScriptProgress {
     pub stage: ScriptStage,
     pub chapters_done: usize,
     pub chapters_total: usize,
+    /// Raw error text (for the "Details" section and the log).
     pub error: Option<String>,
+    /// Stable code for a friendly, translated message (see `GeminiError::kind`).
+    pub error_kind: Option<String>,
 }
 
 /// Scene count per chapter for a target length.
@@ -94,18 +100,39 @@ pub struct ScriptJob<'a> {
     pub store: &'a ProjectStore,
     pub client: &'a GeminiClient,
     pub key: &'a ApiKey,
-    pub model: &'a str,
-    pub cancel: &'a CancellationToken,
+    pub models: &'a TextModels,
+    /// Cancellation + retry notices (the caller turns them into `gemini-retry` events).
+    pub hooks: &'a RetryHooks,
+    pub log: &'a LogFile,
 }
 
 impl ScriptJob<'_> {
     /// Runs to completion, reporting each step through `emit`.
     pub async fn run(&self, project_id: &str, emit: impl Fn(ScriptProgress)) {
+        self.log.info(&format!(
+            "script generation started (model {}, fallback {})",
+            self.models.primary,
+            self.models.fallback.as_deref().unwrap_or("none")
+        ));
         let result = self.run_inner(project_id, &emit).await;
-        let (stage, error) = match result {
-            Ok(()) => (ScriptStage::Done, None),
-            Err(ProjectError::Gemini(GeminiError::Cancelled)) => (ScriptStage::Cancelled, None),
-            Err(e) => (ScriptStage::Failed, Some(e.to_string())),
+        let (stage, error, error_kind) = match result {
+            Ok(()) => {
+                self.log.info("script generation finished");
+                (ScriptStage::Done, None, None)
+            }
+            Err(ProjectError::Gemini(GeminiError::Cancelled)) => {
+                self.log.info("script generation cancelled");
+                (ScriptStage::Cancelled, None, None)
+            }
+            Err(e) => {
+                self.log
+                    .error(&format!("script generation failed [{}]: {e}", e.kind()));
+                (
+                    ScriptStage::Failed,
+                    Some(e.to_string()),
+                    Some(e.kind().to_owned()),
+                )
+            }
         };
         let (done, total) = match self.store.get(project_id).await {
             Ok(p) => chapter_counts(&p),
@@ -117,6 +144,7 @@ impl ScriptJob<'_> {
             chapters_done: done,
             chapters_total: total,
             error,
+            error_kind,
         });
     }
 
@@ -139,10 +167,10 @@ impl ScriptJob<'_> {
             let reply: OutlineReply = script::request_json(
                 self.client,
                 self.key,
-                self.model,
+                self.models,
                 script::outline_prompt(&brief, plan.len(), total_scenes as usize),
                 script::outline_schema(plan.len()),
-                self.cancel,
+                self.hooks,
             )
             .await?;
             let outline = build_outline(reply, &plan);
@@ -192,10 +220,10 @@ impl ScriptJob<'_> {
             let reply: ChapterReply = script::request_json(
                 self.client,
                 self.key,
-                self.model,
+                self.models,
                 script::chapter_prompt(&brief, &ctx),
                 script::chapter_schema(ctx.scene_count),
-                self.cancel,
+                self.hooks,
             )
             .await?;
             project = self
@@ -218,6 +246,7 @@ fn progress(id: &str, stage: ScriptStage, done: usize, total: usize) -> ScriptPr
         chapters_done: done,
         chapters_total: total,
         error: None,
+        error_kind: None,
     }
 }
 

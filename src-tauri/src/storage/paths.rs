@@ -43,6 +43,16 @@ impl AppPaths {
     pub fn project_file(&self, id: &str) -> PathBuf {
         self.project_dir(id).join("project.json")
     }
+
+    /// `projects/<id>/logs/pipeline.log` (no secrets).
+    pub fn project_log(&self, id: &str) -> PathBuf {
+        self.project_dir(id).join("logs").join("pipeline.log")
+    }
+
+    /// `logs/app.log` for events that don't belong to a project (e.g. key tests).
+    pub fn app_log(&self) -> PathBuf {
+        self.root.join("logs").join("app.log")
+    }
 }
 
 /// Project ids are ULIDs: 26 chars of Crockford base32. Rejecting anything else

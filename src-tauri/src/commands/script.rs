@@ -2,13 +2,16 @@
 
 use tauri::{AppHandle, Emitter, State};
 
+use super::retry_events::retry_hooks;
 use crate::error::{CmdResult, to_cmd};
 use crate::gemini::GeminiError;
+use crate::gemini::client::TextModels;
 use crate::pipeline::ProjectError;
 use crate::pipeline::editing::{self, SceneEdit};
 use crate::pipeline::project::{Project, ProjectStatus};
 use crate::pipeline::script_job::ScriptJob;
 use crate::state::AppState;
+use crate::storage::log::LogFile;
 use crate::storage::secrets;
 
 pub const SCRIPT_PROGRESS_EVENT: &str = "script-progress";
@@ -50,14 +53,26 @@ pub async fn script_generate(
     let store = state.store.clone();
     let jobs = state.script_jobs.clone();
     let client = state.gemini.clone();
-    let model = state.settings.read().await.models.text.clone();
+    let models = {
+        let settings = state.settings.read().await;
+        TextModels::new(&settings.models.text, &settings.models.text_fallback)
+    };
+    let log = LogFile::new(state.paths.project_log(&project_id)).redacting(key.expose());
+    let hooks = retry_hooks(
+        app.clone(),
+        "script",
+        Some(project_id.clone()),
+        cancel,
+        log.clone(),
+    );
     tauri::async_runtime::spawn(async move {
         let job = ScriptJob {
             store: &store,
             client: &client,
             key: &key,
-            model: &model,
-            cancel: &cancel,
+            models: &models,
+            hooks: &hooks,
+            log: &log,
         };
         job.run(&project_id, |p| {
             // Emitting only fails if the window is gone; nothing to do then.

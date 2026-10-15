@@ -10,16 +10,16 @@ After the human confirms, they (or you, if asked) move the **CURRENT** marker.
 
 Goal: create a project and get an editable Khmer/English script from Gemini.
 
-- [ ] Tauri v2 + React + TS + Vite scaffold, strict TS, ESLint, clippy clean
-- [ ] Folder layout as in `02-architecture.md`; error type in `error.rs`
-- [ ] `storage/`: app data paths, `settings.json`, keyring secrets
-- [ ] Settings page: paste key, **Test key** button (cheap Gemini text call), clear key
-- [ ] `gemini/client.rs` + `retry.rs` (backoff rules from `03-pipeline.md`)
-- [ ] Projects list + New Project wizard (topic, language, minutes, style preset)
-- [ ] Script generation: outline call + per-chapter scene calls, JSON validated
-- [ ] Script editor: edit narration / spoken_text / image_prompt, add/delete/reorder, Approve
-- [ ] `project.json` atomic save; reopen app → project still there
-- [ ] i18n km/en with bundled Khmer font in the UI
+- [x] Tauri v2 + React + TS + Vite scaffold, strict TS, ESLint, clippy clean
+- [x] Folder layout as in `02-architecture.md`; error type in `error.rs`
+- [x] `storage/`: app data paths, `settings.json`, keyring secrets
+- [x] Settings page: paste key, **Test key** button (cheap Gemini text call), clear key
+- [x] `gemini/client.rs` + `retry.rs` (backoff rules from `03-pipeline.md`)
+- [x] Projects list + New Project wizard (topic, language, minutes, style preset)
+- [x] Script generation: outline call + per-chapter scene calls, JSON validated
+- [x] Script editor: edit narration / spoken_text / image_prompt, add/delete/reorder, Approve
+- [x] `project.json` atomic save; reopen app → project still there
+- [x] i18n km/en with bundled Khmer font in the UI
 
 **Test:** create a 3-minute Khmer project about "Where did rice come from?" → ~25
 scenes appear, editable, saved after restart. Key never appears in any file or log.
@@ -79,3 +79,11 @@ correctly shaped, no word split across lines, in sync with voice.
 ## Changelog
 
 _Add one line per finished phase: date — phase — notes._
+
+- 2026-10-15 — Phase 1 — Tauri v2 + React/TS scaffold; settings + keyring API key with a
+  token-free key test (`models.get`); Gemini client with retry/backoff and per-kind semaphores;
+  resumable outline + per-chapter script generation (structured JSON via `responseFormat`);
+  script editor (narration / spoken text / image prompt / mood, fact notes, add/delete/reorder,
+  approve/edit); atomic `project.json`; km/en UI with bundled fonts. `project.json` gained
+  `outline`, `scene.chapter`, `scene.fact_note`. Built with the GNU toolchain (see 02 toolchain
+  note). Khmer UI strings and prompts still need a native-speaker review.

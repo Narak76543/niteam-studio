@@ -37,6 +37,26 @@ Prompt rules to include:
 
 Validate the JSON with serde; on parse failure retry once with the error appended.
 
+**Implementation (Phase 1):**
+- Endpoint: `POST /v1beta/models/{text_model}:generateContent`, key in the `x-goog-api-key`
+  header (never in the URL). Structured output via
+  `generationConfig.responseFormat.text = { mimeType: "APPLICATION_JSON", schema }`
+  (the current field; `responseSchema` is deprecated). If the API rejects `responseFormat`
+  with a 400, the client falls back to `responseMimeType: "application/json"` +
+  `responseJsonSchema` for the rest of the session. Parts with `thought: true` are ignored.
+- Scene plan (`script_job::plan_scenes`): `total = round(minutes·60/7)` clamped to 3–200,
+  `chapters = clamp(total/5, 2, 10)`, scenes spread evenly (3 min → 26 scenes / 5 chapters,
+  20 min → 171 / 10). The outline schema asks for exactly that many chapters; each chapter
+  call asks for exactly its scene count.
+- `project.json` is saved after the outline and after each chapter (`chapter.done = true`).
+  Re-running `script_generate` skips the outline and finished chapters. A retried chapter
+  replaces its own scenes, never duplicates them.
+- Each chapter prompt gets the full outline and the previous chapter's last narration line for
+  continuity; chapter 1 must open with the hook, middle chapters end on a cliffhanger, the last
+  one concludes.
+- Moods are an enum (`curious, dramatic, calm, hopeful, tense, joyful, somber, awe, playful`);
+  unknown values become `calm`. `fact_note` holds uncertain claims for the user to check.
+
 ## Step 2 — User review & approve
 
 UI only. On every edit, recompute `text_hash` (of `spoken_text` + voice settings) and
@@ -68,9 +88,13 @@ faster). Both support Khmer and English. Input limit 8,192 tokens — one scene 
 
 ## Retry / rate limits (all Gemini calls)
 
-- 429 / 5xx / timeouts → exponential backoff: 2 s, 4 s, 8 s, 16 s, 32 s (+ jitter),
-  honor `Retry-After` if present. Max 5 attempts, then `failed`.
-- 400 / 403 → no retry; show the message (bad key, safety block, invalid request).
+- 408 / 429 / 5xx / network errors / timeouts → exponential backoff: 2 s, 4 s, 8 s, 16 s
+  (+ up to 1 s jitter; 5 attempts = 4 waits), honor `Retry-After` (seconds, capped at 120 s)
+  if present. Max 5 attempts, then `failed`.
+- 400 / 401 / 402 / 403 / 404 → no retry; show the message (bad key, no credits, safety block,
+  invalid request, unknown model). 401/403 or a 400 mentioning "API key" → "check your key".
+- Error bodies are parsed leniently: only `error.message` is used (`code` is an int in the
+  classic shape and a string in the newer one).
 - Semaphore per endpoint kind (default 3 concurrent).
 - **One API key only. Never rotate keys.**
 

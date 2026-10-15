@@ -104,7 +104,7 @@ correctly shaped, no word split across lines, in sync with voice.
 - [ ] Installer via `npm run tauri build`; first-run onboarding
 - [ ] Pipeline log viewer in Settings (no secrets)
 
-## Phase 6 — Local GPU images  ← **CURRENT** (started before Phase 4 was tested, by the owner's request)
+## Phase 6 — Local GPU images  (paused for this version by the owner: engine + UI built, no model shipped)
 
 Spec: `docs/08-local-gpu.md`. The model list in `local_models.json` (URLs, sizes, sha256,
 licenses that allow commercial use) needs the owner's approval before it is filled in.
@@ -196,3 +196,11 @@ _Add one line per finished phase: date — phase — notes._
   as written**: product/brand/tech names in Latin letters in narration, Khmer pronunciation in
   spoken text, per-project Names list; (4) **grammar & phrasing check** with Gemini: batched,
   resumable suggestions with diff, Accept / Dismiss (all).
+- 2026-10-15 — Phase 6 (paused for this version, owner: "make it stable, no need to implement
+  more") — built and tested: DXGI GPU detection, stable-diffusion.cpp sd-server engine
+  (pinned master-929-3f8527a, Vulkan, correct device on hybrid laptops), local_sdcpp provider,
+  resumable sha256-verified model downloads, Settings → Local images, provider option, speed /
+  battery hints, offer card. `local_models.json` ships with **no profiles**, so the Local GPU
+  option stays disabled and nothing is downloaded. Models tried on the RTX 4050: DreamShaper 8
+  LCM (~7 s/image) and SD 1.5 + LCM-LoRA (~10 s/image) — neither draws stick figures. Next
+  version: the owner-approved Z-Image Turbo profile (08 §13).

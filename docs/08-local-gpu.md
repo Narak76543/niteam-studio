@@ -56,6 +56,22 @@ Evaluate in this order and document the choice in this file:
    load the model once in-process. Only if it builds cleanly on Windows with Vulkan.
 3. Fallback: **one `sd-cli` process per image**. Simple and robust; accept the overhead.
 
+**Chosen (2026-10-15): option 1, `sd-server`.** The pinned release `master-929-3f8527a`
+(2026-09-27, Vulkan Windows build, sha256 `60e6850d…2fd35`) ships `sd-server.exe` with a native
+async API (`examples/server/api.md`): `POST /sdcpp/v1/img_gen` → `{id}` (202), poll
+`GET /sdcpp/v1/jobs/{id}` (`queued|generating|completed|failed|cancelled`, result
+`images[0].b64_json`), cancel with `POST /sdcpp/v1/jobs/{id}/cancel`, readiness =
+`GET /sdcpp/v1/capabilities`. LoRAs only via the request's `lora[]` (`path` relative to
+`--lora-model-dir`; prompt `<lora:…>` tags are ignored by the server). `local/engine.rs` starts
+it once per image job on a free 127.0.0.1 port with the profile's files and keeps it until the
+job ends (`kill_on_drop`). Bundled as an app **resource** (`resources/sdcpp/` → `sdcpp/`, the
+exe needs its DLLs next to it), fetched by `scripts/fetch-sdcpp.ps1`; `sd-cli.exe` is not
+shipped. Licences: `ggml.txt`, `stable-diffusion.cpp.txt` (MIT) ship with it.
+
+**GPU device:** `sd-server --list-devices` prints `Vulkan0	Intel(R) UHD Graphics`,
+`Vulkan1	NVIDIA GeForce RTX 4050 Laptop GPU` on the owner's laptop — hybrid laptops list the
+integrated GPU first, so the app matches the DXGI GPU name and passes `--backend Vulkan1`.
+
 Whatever mode: run at **below-normal priority**, one generation at a time, cancellable
 (kill the child / drop the context), and never run at the same time as an FFmpeg render:
 take the app-wide `AppState::ffmpeg_lock` (03 Step 6x) for each image, since the export may
@@ -63,8 +79,12 @@ use NVENC/QSV/AMF on the same GPU.
 
 ## 4. Model profiles
 
-Defined in `src-tauri/resources/local_models.json` (the app reads it; files are
-downloaded on demand, never bundled in the installer):
+Defined in `src-tauri/resources/local_models.json` (compiled into the app with
+`include_str!`; files are downloaded on demand, never bundled in the installer). File `role`s:
+`model` (full checkpoint, `-m`), `diffusion` (`--diffusion-model`), `vae`, `clip_l`, `t5xxl`,
+`lora` (per request). `prompt_style`: `sd15` (short, ≤ 75 tokens) or `flux` (the full 07 §3
+prompt; T5 reads it). Optional `engine_args` (e.g. `--diffusion-fa`). **The shipped file has
+no profiles until the owner approves the model list.**
 
 ```jsonc
 {
@@ -191,3 +211,46 @@ generated without quota, consistent style, no crash, temperatures acceptable.
 (The owner's laptop has an RTX 4050 Laptop GPU with 6 GB — WMI reports 4 GB because its
 field caps at 4 GB, hence DXGI in §2. The 4 GB tier is simulated there by limiting the
 profile to 4 GB.)
+
+## 12. Implementation notes (Phase 6)
+
+- `local/gpu.rs` (DXGI, cached as `settings.gpu` at startup), `local/manifest.rs`,
+  `local/download.rs` (Range resume, sha256, disk space + 10 %), `local/install.rs` (status,
+  install, verify, delete, power status), `local/engine.rs` (sd-server), `local/provider.rs`
+  (`LocalSdCpp`), `images/prompt_sd15.rs`, `commands/local.rs`.
+- Commands: `local_status`, `local_install(profile_id)` (background, `model-download-progress
+  {profile_id, stage, done_mb, total_mb, error}`), `local_install_cancel`, `local_verify`,
+  `local_delete`, `local_offer_dismiss`, `local_benchmark`.
+- Settings: `image.local_profile`, `gpu`, `local {cooldown_every, cooldown_seconds,
+  offer_dismissed, seconds_per_image}`. The first installed profile becomes
+  `image.local_profile` and switches the provider from Cloudflare to `local_sdcpp` (§9).
+- Errors: engine missing / crashed → `ImageError::Engine` (`local_engine`, stops the job like a
+  bad token); out of memory → one retry at 640×384 with VAE tiling, then a normal failure.
+- Measured on the owner's RTX 4050 Laptop (6 GB, Vulkan): DreamShaper 8 LCM, 768×448,
+  6 steps → ~7 s / image (first image ~35 s incl. shader compilation). Quality for the
+  Stickman style was poor (cartoon people, not stick figures) — see the model proposal.
+
+## 13. Next version: approved profile (not implemented yet)
+
+Owner-approved on 2026-10-15, to replace the SD 1.5 plan (§4, §7 no longer apply):
+
+- **`zimage_turbo`** (default, min VRAM 4 GB): diffusion `leejet/Z-Image-Turbo-GGUF`
+  (`z_image_turbo-Q4_K.gguf`, 3,864,250,304 bytes, sha256 `14b375ab…086fbd`, for ≥ 6 GB —
+  DXGI reports ~5,900 MB on 6 GB cards, so use ≥ 5,500 MB; `z_image_turbo-Q3_K.gguf`,
+  3,143,559,104 bytes, sha256 `4b44bdaa…232980`, for 4–5 GB); LLM text encoder (`--llm`)
+  `unsloth/Qwen3-4B-Instruct-2507-GGUF` `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` (2,497,281,120
+  bytes, sha256 `3605803b…c67e597`); VAE `ae.safetensors` (335,304,388 bytes, sha256
+  `afc8e282…529e38`). All Apache-2.0.
+- Gen: 8 steps, `--cfg-scale 1.0`, `--diffusion-fa`, `--offload-to-cpu`, 1024×576 (16:9 and
+  multiples of 64 → no crop). Sampler: engine default (Z-Image docs set none). All flags
+  confirmed in the pinned `sd-cli` / `sd-server --help`; `docs/z_image.md` read.
+- Prompts: full 07 §3 prompt (Qwen text encoder, no 77-token limit), keep "clean image
+  without any lettering" (Z-Image renders text readily).
+- **Open question for the owner:** the official VAE (`black-forest-labs/FLUX.1-schnell`) is
+  gated — anonymous download returns HTTP 401. Proposed source: the byte-identical copy in
+  `Comfy-Org/Lumina_Image_2.0_Repackaged/split_files/vae/ae.safetensors` (same size and
+  sha256, Apache-2.0, not gated); licence URL stays the Black Forest Labs page.
+- Code needed: `llm` file role, per-file `min_vram_mb` / `max_vram_mb` variants, optional
+  sampler, remove the SD 1.5 adapter; show the final JSON to the owner before downloading.
+- `flux_schnell_gguf` (optional, min 6 GB): after Z-Image works.
+

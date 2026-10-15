@@ -1,0 +1,80 @@
+/* Design tokens — docs/06-ui-design.md §2–3. No raw hex values outside this file. */
+:root {
+  /* surfaces */
+  --bg-app:        #F3EFEA;  /* warm outer background */
+  --bg-shell:      #FFFFFF;  /* main window panel */
+  --bg-sidebar:    #F7F7F6;
+  --bg-subtle:     #FAFAF9;  /* section wells (e.g. Shortcut area) */
+  --bg-hover:      #F2F2F0;
+  --bg-selected:   #FFFFFF;  /* selected nav item = white pill with border */
+
+  /* borders */
+  --border:        #E9E8E5;
+  --border-strong: #D9D8D4;
+
+  /* text */
+  --text:          #141414;
+  --text-muted:    #6B6B6B;
+  --text-faint:    #9A9A97;
+  --text-inverse:  #FFFFFF;
+
+  /* ink (primary buttons, icon tiles) */
+  --ink:           #141414;
+  --ink-hover:     #2B2B2B;
+
+  /* accent — used sparingly: progress, active waveform, focus ring */
+  --accent:        #E8553E;  /* warm coral-red */
+  --accent-soft:   #FDECE8;
+
+  /* status */
+  --ok:     #2F9E5B;  --ok-soft:     #E8F5EC;
+  --warn:   #D98A1A;  --warn-soft:   #FCF3E3;
+  --danger: #D64545;  --danger-soft: #FBEAEA;
+  --info:   #3B6FD8;  --info-soft:   #EAF0FB;
+
+  /* radius */
+  --r-xs: 6px;  --r-sm: 8px;  --r-md: 12px;  --r-lg: 16px;  --r-xl: 22px;  --r-pill: 999px;
+
+  /* spacing (4 px grid) */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px;
+  --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 48px;
+
+  /* shadows — popovers/modals only */
+  --shadow-pop: 0 8px 24px rgba(20,20,20,.08), 0 1px 2px rgba(20,20,20,.06);
+  --backdrop: rgba(20,20,20,.28);
+
+  /* motion */
+  --ease: cubic-bezier(.2,.7,.2,1);
+  --dur: 160ms;
+
+  /* typography */
+  --font-ui: "Manrope", "Kantumruy Pro", "Noto Sans Khmer", system-ui, sans-serif;
+  --font-km: "Kantumruy Pro", "Noto Sans Khmer", "Manrope", sans-serif;
+
+  --fs-display: 40px; --lh-display: 1.1;
+  --fs-h2: 20px;      --lh-h2: 1.3;
+  --fs-h3: 15px;      --lh-h3: 1.35;
+  --fs-body: 14px;    --lh-body: 1.5;
+  --fs-small: 12.5px; --lh-small: 1.45;
+  --fs-micro: 11px;   --lh-micro: 1.3;
+}
+
+/* Khmer needs taller lines (subscripts below, vowels above). */
+:root[lang="km"], [lang="km"] {
+  --lh-display: 1.4;
+  --lh-h2: 1.6;
+  --lh-h3: 1.6;
+  --lh-body: 1.75;
+  --lh-small: 1.7;
+  --lh-micro: 1.5;
+}
+
+/* Dark mode (Phase 5 — keep tokens ready now) */
+:root[data-theme="dark"] {
+  --bg-app: #0E0E0D; --bg-shell: #161615; --bg-sidebar: #121211;
+  --bg-subtle: #1B1B1A; --bg-hover: #222220; --bg-selected: #1F1F1E;
+  --border: #2A2A28; --border-strong: #3A3A37;
+  --text: #F2F1EE; --text-muted: #A3A29E; --text-faint: #6F6E6A;
+  --ink: #F2F1EE; --ink-hover: #FFFFFF; --text-inverse: #141414;
+  --accent-soft: #3A1E19;
+}

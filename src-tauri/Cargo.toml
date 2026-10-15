@@ -1,0 +1,51 @@
+[package]
+name = "nitean-studio"
+version = "0.1.0"
+description = "Nitean Studio — narrated explainer video generator (Khmer / English)"
+authors = ["Nitean Studio"]
+edition = "2024"
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "nitean_studio_lib"
+# Desktop only: no `cdylib` (mobile). With the GNU toolchain a cdylib exceeds the
+# 65 535-export limit of ld ("export ordinal too large").
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "time", "fs", "macros", "rt-multi-thread"] }
+tokio-util = "0.7"
+reqwest = { version = "0.12", features = ["json"] }
+keyring = { version = "3", features = ["windows-native"] }
+thiserror = "2"
+ulid = "1"
+sha2 = "0.10"
+hex = "0.4"
+unicode-normalization = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rand = "0.8"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }
+tempfile = "3"
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

@@ -52,7 +52,10 @@ Settings: `image.provider`, `image.gemini_model`, `image.steps` (4–8, default 
 
 - **Endpoint:** `POST https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell`
 - **Headers:** `Authorization: Bearer {API_TOKEN}`, `Content-Type: application/json`
-- **Body:** `{ "prompt": string (1–2048 chars), "steps": int (max 8, default 4), "seed": int }`
+- **Body:** `{ "prompt": string (1–2048 chars), "steps": int (max 8, default 4) }` — nothing else.
+  The live API rejects extra properties: sending `seed` returns HTTP 400 "Additional or
+  unevaluated properties '/seed' at '/' not allowed" (seen 2026-10-15, although the docs'
+  examples show one). So Flux output is **not** reproducible from a seed.
 - **No width/height parameter** → output is a **square JPEG**.
 - **Response:** JSON; base64 JPEG at `result.image`. Check `success` and `errors[]`.
 - **Credentials:** Account ID (stored in `settings.json`, not secret) and API token
@@ -116,8 +119,10 @@ clean image without any lettering
 - **Never ask for text in the image.** Titles/subtitles are drawn by the app.
 - No real living people. Historical figures only as statues/carvings or generic figures.
 - Truncate to 2,048 chars (Flux limit), dropping `culture_notes` first, then place.
-- **Seed:** `visual_bible.seed + scene_index` (stable across re-runs). "Regenerate"
-  in the UI uses a new random seed and stores it on the scene.
+- **Seed:** `visual_bible.seed + scene_index`. "Regenerate" in the UI uses a new random
+  seed and stores it on the scene. Cloudflare Flux does not accept a seed (§1a): there the
+  seed is used only in the cache hash (§8), so a new seed still forces a fresh image, but
+  the same seed doesn't produce the same picture again.
 
 ## 4. Post-processing (`images/postprocess.rs`, `image` crate)
 

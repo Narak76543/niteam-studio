@@ -1,7 +1,9 @@
 //! Cloudflare Workers AI — `@cf/black-forest-labs/flux-1-schnell` (07 §1a).
 //! Checked against developers.cloudflare.com/workers-ai/models/flux-1-schnell (2026-10-15):
 //! - `POST /client/v4/accounts/{account}/ai/run/@cf/black-forest-labs/flux-1-schnell`
-//! - `Authorization: Bearer <token>`; body `{prompt (1–2048), steps (≤ 8, default 4), seed}`
+//! - `Authorization: Bearer <token>`; body `{prompt (1–2048), steps (≤ 8, default 4)}` only.
+//!   The live API rejects any other property (`seed` → HTTP 400 "Additional or unevaluated
+//!   properties '/seed'"), so the seed is not sent; it only feeds the cache hash (07 §3).
 //! - response `{ result: { image: <base64 JPEG> }, success, errors[], messages[] }`
 //! - errors: HTTP 429 + code 3036 = daily free allocation used up; 3040 = out of capacity.
 
@@ -52,7 +54,6 @@ impl CloudflareFlux {
 struct RunRequest<'a> {
     prompt: &'a str,
     steps: u8,
-    seed: u32,
 }
 
 #[derive(Deserialize, Default)]
@@ -193,7 +194,6 @@ impl ImageProvider for CloudflareFlux {
         let body = RunRequest {
             prompt: &prompt,
             steps: req.steps.unwrap_or(DEFAULT_STEPS).clamp(1, MAX_STEPS),
-            seed: req.seed,
         };
         let body = serde_json::to_vec(&body).map_err(|e| ImageError::Other(e.to_string()))?;
         let request = HttpRequest {
@@ -261,6 +261,16 @@ mod tests {
             steps: Some(1),
             reference_images: vec![],
         }
+    }
+
+    #[test]
+    fn body_has_only_prompt_and_steps() {
+        let body = serde_json::to_value(RunRequest {
+            prompt: "a leaf",
+            steps: 4,
+        })
+        .unwrap();
+        assert_eq!(body, serde_json::json!({ "prompt": "a leaf", "steps": 4 }));
     }
 
     #[tokio::test]

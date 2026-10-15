@@ -278,7 +278,7 @@
   "look.culture": "Culture notes",
   "look.cultureHint": "Clothing, architecture and details that keep the setting accurate.",
   "look.seed": "Seed",
-  "look.seedHint": "Scene images use this number plus the scene number, so re-runs look the same.",
+  "look.seedHint": "Part of each image's cache key: changing it makes all images outdated. Cloudflare Flux ignores it, so a re-run there gives a different picture.",
   "script.picture": "Picture",
   "script.shot": "Shot",
   "script.place": "Place",

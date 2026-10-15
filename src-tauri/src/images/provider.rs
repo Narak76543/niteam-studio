@@ -34,6 +34,9 @@ pub enum Aspect {
 pub struct ImageRequest {
     /// Fully built prompt (`images::prompt`).
     pub prompt: String,
+    /// Cloudflare Flux rejects a `seed` property (07 §1a) and the Gemini image request has
+    /// none, so no provider sends it today; it stays for providers that accept one.
+    #[cfg_attr(not(test), expect(dead_code, reason = "no current provider accepts a seed"))]
     pub seed: u32,
     pub steps: Option<u8>,
     /// Ignored by providers without reference-image support.

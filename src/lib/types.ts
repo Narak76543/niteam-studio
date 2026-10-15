@@ -2,7 +2,13 @@
 
 export type Language = "km" | "en";
 
-export type ProjectStatus = "script_draft" | "generating" | "review" | "rendering" | "done";
+export type ProjectStatus =
+  | "script_draft"
+  | "generating"
+  | "review"
+  | "rendering"
+  | "done"
+  | "paused_quota";
 
 export type AssetStatus = "pending" | "running" | "done" | "failed" | "stale";
 
@@ -11,7 +17,43 @@ export interface ModelSettings {
   text_chain: string[];
   tts: string;
   tts_lite: string;
-  image: string;
+}
+
+export type ProviderId = "cloudflare_flux" | "gemini_nano_banana";
+
+/** Settings → Images (docs/07-image-generation.md §1). */
+export interface ImageSettings {
+  provider: ProviderId;
+  gemini_model: string;
+  /** Flux steps 4–8. */
+  steps: number;
+  key_scene_provider: ProviderId | null;
+  /** Not secret; the API token is in the keyring. */
+  cloudflare_account_id: string;
+  cloudflare_concurrency: number;
+}
+
+export interface ImageCatalog {
+  gemini_models: string[];
+  flux_license_url: string;
+  pan_1080: [number, number];
+}
+
+export interface ImageTestOutcome {
+  ok: boolean;
+  error_kind: string | null;
+  error: string | null;
+}
+
+export interface ImageEstimate {
+  images: number;
+  cloudflare: number;
+  gemini: number;
+  cached: number;
+  cloudflare_neurons: number;
+  cloudflare_percent_of_daily: number;
+  gemini_cost_usd: number;
+  cloudflare_images_per_day: number;
 }
 
 export interface ConcurrencySettings {
@@ -27,10 +69,13 @@ export interface Settings {
   models: ModelSettings;
   concurrency: ConcurrencySettings;
   voice: VoiceDefaults;
+  image: ImageSettings;
 }
 
 /** Stable error codes from `GeminiError::kind` / `ProjectError::kind`. */
 export type ErrorKind =
+  | "quota_daily"
+  | "image_auth"
   | "edge_unavailable"
   | "suspicious_length"
   | "missing_key"
@@ -46,6 +91,8 @@ export type ErrorKind =
   | "other";
 
 export const ERROR_KINDS: readonly ErrorKind[] = [
+  "quota_daily",
+  "image_auth",
   "edge_unavailable",
   "suspicious_length",
   "missing_key",
@@ -73,7 +120,7 @@ export type RetryReason = "busy" | "rate_limited" | "network" | "next_model";
 
 /** Payload of the `gemini-retry` event. */
 export interface GeminiRetry {
-  scope: "script" | "key_test" | "voice";
+  scope: "script" | "key_test" | "voice" | "image";
   project_id: string | null;
   model: string;
   /** For `next_model`: the model that just gave up. */
@@ -168,9 +215,44 @@ export interface VoiceAsset {
 
 export interface ImageAsset {
   status: AssetStatus;
+  /** scenes/<id>/image_1080.png (pan size, 16:9) */
   path: string | null;
+  raw_path: string | null;
+  thumb_path: string | null;
+  provider: string | null;
+  /** Seed from "Regenerate"; null = bible seed + scene number. */
+  seed: number | null;
+  /** Scene whose image this one reuses (2 scenes per image). */
+  shared_from: string | null;
   error: string | null;
+  error_kind: string | null;
   prompt_hash: string | null;
+}
+
+export type Shot = "wide" | "medium" | "close" | "detail" | "aerial";
+export const SHOTS: readonly Shot[] = ["wide", "medium", "close", "detail", "aerial"];
+
+/** docs/07-image-generation.md §2 */
+export interface VisualBible {
+  style: string;
+  characters: Record<string, string>;
+  places: Record<string, string>;
+  culture_notes: string;
+  seed: number;
+}
+
+export interface ImageSnapshot {
+  provider: ProviderId;
+  gemini_model: string;
+  steps: number;
+  key_scene_provider: ProviderId | null;
+  scenes_per_image: number;
+}
+
+export interface ImagePause {
+  resets_at_utc: string;
+  done: number;
+  total: number;
 }
 
 export interface SubLine {
@@ -199,6 +281,10 @@ export interface Scene {
   image_prompt: string;
   mood: string;
   fact_note: string | null;
+  characters: string[];
+  place: string | null;
+  shot: Shot;
+  key_scene: boolean;
   voice: VoiceAsset;
   image: ImageAsset;
   subs: SubsAsset;
@@ -227,6 +313,9 @@ export interface Project {
   created_at: string;
   updated_at: string;
   outline: Outline | null;
+  visual_bible: VisualBible | null;
+  image_settings: ImageSnapshot;
+  image_pause: ImagePause | null;
   scenes: Scene[];
   render: RenderSettings;
 }
@@ -256,6 +345,8 @@ export interface SceneEdit {
   spoken_text: string;
   image_prompt: string;
   mood: string;
+  /** Omit to keep the scene's current image fields. */
+  visual?: { characters: string[]; place: string | null; shot: Shot };
 }
 
 export type ScriptStage = "outline" | "chapter" | "done" | "failed" | "cancelled";
@@ -282,17 +373,20 @@ export interface SceneProgress {
   error_kind: string | null;
 }
 
-export type GenerateStage = "running" | "done" | "cancelled" | "failed";
+export type GenerateStage = "running" | "done" | "cancelled" | "failed" | "paused_quota";
 
 /** Payload of `generate-progress`. */
 export interface GenerateProgress {
   project_id: string;
+  job: "voice" | "image";
   stage: GenerateStage;
   done: number;
   failed: number;
   total: number;
   error: string | null;
   error_kind: string | null;
+  /** paused_quota: when the free allowance resets (RFC 3339 UTC). */
+  resets_at_utc: string | null;
 }
 
 /** Must match `gemini::script::MOODS`. */

@@ -10,6 +10,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   GeminiRetry,
   GenerateProgress,
+  ImageCatalog,
+  ImageEstimate,
+  ImageTestOutcome,
+  VisualBible,
   KeyTestOutcome,
   Language,
   SceneProgress,
@@ -62,7 +66,7 @@ export const api = {
   generateStart: (projectId: string) => invoke<null>("generate_start", { projectId }),
   generateCancel: (projectId: string) => invoke<null>("generate_cancel", { projectId }),
   generateRunning: (projectId: string) => invoke<boolean>("generate_running", { projectId }),
-  sceneRegenerate: (projectId: string, sceneId: string, what: "voice") =>
+  sceneRegenerate: (projectId: string, sceneId: string, what: "voice" | "image") =>
     invoke<null>("scene_regenerate", { projectId, sceneId, what }),
   /** Raw MP3/WAV bytes of a scene's voice. */
   sceneVoiceAudio: (projectId: string, sceneId: string) =>
@@ -71,6 +75,27 @@ export const api = {
   /** Speaks a sample with (possibly unsaved) voice settings; raw audio bytes. */
   voicePreview: (language: Language, voice: VoiceDefaults) =>
     invoke<ArrayBuffer>("voice_preview", { language, voice }),
+
+  // images (Phase 3)
+  cloudflareTokenSet: (token: string) => invoke<null>("cloudflare_token_set", { token }),
+  cloudflareTokenExists: () => invoke<boolean>("cloudflare_token_exists"),
+  cloudflareTokenClear: () => invoke<null>("cloudflare_token_clear"),
+  cloudflareTest: () => invoke<ImageTestOutcome>("cloudflare_test"),
+  imagesCatalog: () => invoke<ImageCatalog>("images_catalog"),
+  imagesEstimate: (projectId: string) => invoke<ImageEstimate>("images_estimate", { projectId }),
+  imagesStart: (projectId: string) => invoke<null>("images_start", { projectId }),
+  imagesCancel: (projectId: string) => invoke<null>("images_cancel", { projectId }),
+  imagesRunning: (projectId: string) => invoke<boolean>("images_running", { projectId }),
+  /** thumb.jpg bytes (384×216). */
+  sceneImageThumb: (projectId: string, sceneId: string) =>
+    invoke<ArrayBuffer>("scene_image_thumb", { projectId, sceneId }),
+  sceneImagePromptUpdate: (projectId: string, sceneId: string, imagePrompt: string) =>
+    invoke<Project>("scene_image_prompt_update", { projectId, sceneId, imagePrompt }),
+  visualBibleUpdate: (projectId: string, bible: VisualBible) =>
+    invoke<Project>("visual_bible_update", { projectId, bible }),
+  visualBibleGenerate: (projectId: string) => invoke<Project>("visual_bible_generate", { projectId }),
+  projectSetScenesPerImage: (projectId: string, n: 1 | 2) =>
+    invoke<Project>("project_set_scenes_per_image", { projectId, n }),
 
   // native helpers
   pickFolder: async (): Promise<string | null> => {

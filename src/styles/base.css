@@ -1074,3 +1074,69 @@ input[type="range"] {
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+/* ---------- images (Phase 3) ---------- */
+.thumb {
+  overflow: hidden;
+}
+.thumb__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.scene-card__status {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+.scene-card__asset {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  color: var(--text-muted);
+}
+.images-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.images-panel__options {
+  gap: var(--s-3);
+}
+.btn--pill[aria-pressed="true"] {
+  border-color: var(--text);
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+.view-tabs {
+  margin-bottom: var(--s-4);
+}
+.look {
+  max-width: 760px;
+  flex: 1;
+  min-height: 0;
+}
+.look .textarea {
+  min-height: 72px;
+}
+.look__seed .input {
+  max-width: 160px;
+}
+.bible-entry {
+  display: grid;
+  grid-template-columns: 160px 1fr auto;
+  gap: var(--s-2);
+  align-items: start;
+}
+.dialog--wide {
+  width: min(640px, calc(100vw - 2 * var(--s-6)));
+}
+.dialog--wide .textarea {
+  min-height: 140px;
+}
+.segmented button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

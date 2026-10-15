@@ -23,22 +23,26 @@ import { PageHeader } from "../components/PageHeader";
 import { ProgressBar } from "../components/ProgressBar";
 import { RetryStatus } from "../components/RetryStatus";
 import { useToast } from "../components/toast";
+import { VisualBibleEditor } from "../components/VisualBibleEditor";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage, onGeminiRetry, onScriptProgress } from "../lib/api";
 import type { Navigate } from "../lib/route";
 import {
   MOODS,
+  SHOTS,
   type GeminiRetry,
   type Project,
   type Scene,
   type SceneEdit,
   type ScriptProgress,
+  type Shot,
 } from "../lib/types";
 
 const SAVE_DELAY_MS = 600;
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
 
 type Tab = "narration" | "spoken";
+type View = "scenes" | "look";
 type SaveState = "idle" | "saving" | "saved";
 type Confirm = { kind: "regenerate" } | { kind: "deleteScene"; id: string; order: number } | null;
 type Finished = Pick<ScriptProgress, "stage" | "error" | "error_kind"> | null;
@@ -51,7 +55,12 @@ function toEdit(s: Scene): SceneEdit {
     spoken_text: s.spoken_text,
     image_prompt: s.image_prompt,
     mood: s.mood,
+    visual: { characters: s.characters, place: s.place, shot: s.shot },
   };
+}
+
+function toShot(v: string): Shot {
+  return SHOTS.find((s) => s === v) ?? "medium";
 }
 
 export function ScriptPage({ projectId, navigate }: { projectId: string; navigate: Navigate }) {
@@ -67,6 +76,7 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftState, setDraftState] = useState<SceneEdit | null>(null);
   const [tab, setTab] = useState<Tab>("narration");
+  const [view, setView] = useState<View>("scenes");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -385,7 +395,28 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
         )}
       </div>
 
-      {!hasScenes ? (
+      {(hasScenes || project.visual_bible) && (
+        <div className="tabs view-tabs" role="tablist">
+          <button role="tab" className="tab" aria-selected={view === "scenes"} onClick={() => setView("scenes")}>
+            {t("script.scenes")}
+          </button>
+          <button
+            role="tab"
+            className="tab"
+            aria-selected={view === "look"}
+            onClick={() => {
+              void flush();
+              setView("look");
+            }}
+          >
+            {t("look.title")}
+          </button>
+        </div>
+      )}
+
+      {view === "look" && (hasScenes || project.visual_bible) ? (
+        <VisualBibleEditor key={project.id} project={project} onChange={setProject} />
+      ) : !hasScenes ? (
         !running && (
           <EmptyState
             icon={<ScrollText size={18} strokeWidth={1.5} />}
@@ -560,6 +591,76 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
                 />
                 <span className="t-small">{t("script.imagePromptHint")}</span>
               </label>
+
+              {project.visual_bible && draft.visual && (
+                <div className="field">
+                  <span className="field__label">{t("script.picture")}</span>
+                  <div className="models-grid">
+                    <label className="field">
+                      <span className="t-small">{t("script.shot")}</span>
+                      <select
+                        className="select"
+                        value={draft.visual.shot}
+                        disabled={!editable}
+                        onChange={(e) => draft.visual && updateDraft({ visual: { ...draft.visual, shot: toShot(e.target.value) } })}
+                      >
+                        {SHOTS.map((sh) => (
+                          <option key={sh} value={sh}>
+                            {t(`shot.${sh}`)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span className="t-small">{t("script.place")}</span>
+                      <select
+                        className="select"
+                        lang="en"
+                        value={draft.visual.place ?? ""}
+                        disabled={!editable}
+                        onChange={(e) =>
+                          draft.visual && updateDraft({ visual: { ...draft.visual, place: e.target.value || null } })
+                        }
+                      >
+                        <option value="">{t("script.noPlace")}</option>
+                        {Object.keys(project.visual_bible.places).map((k) => (
+                          <option key={k} value={k}>
+                            {k}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  {Object.keys(project.visual_bible.characters).length > 0 && (
+                    <div className="row" role="group" aria-label={t("script.characters")}>
+                      <span className="t-small">{t("script.characters")}:</span>
+                      {Object.keys(project.visual_bible.characters).map((k) => {
+                        const on = draft.visual?.characters.includes(k) ?? false;
+                        return (
+                          <button
+                            key={k}
+                            type="button"
+                            className="btn btn--pill"
+                            lang="en"
+                            aria-pressed={on}
+                            disabled={!editable}
+                            onClick={() => {
+                              if (!draft.visual) return;
+                              const characters = on
+                                ? draft.visual.characters.filter((c) => c !== k)
+                                : [...draft.visual.characters, k];
+                              updateDraft({ visual: { ...draft.visual, characters } });
+                            }}
+                          >
+                            {k}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {selected.key_scene && <span className="t-small">{t("script.keyScene")}</span>}
+                </div>
+              )}
 
               <label className="field">
                 <span className="field__label">{t("script.mood")}</span>

@@ -31,7 +31,8 @@ nitean-studio/
 ├─ docs/
 ├─ src/                          # React frontend
 │  ├─ pages/                     # Projects, NewProject, Script, Scenes, Render, Settings
-│  ├─ components/
+│  ├─ components/               # shared UI; Phase 3: ImageSettingsSection, VisualBibleEditor,
+│  │                            #   SceneThumb, ImagesPanel (estimate / pause), ImagePromptDialog
 │  ├─ lib/
 │  │  ├─ api.ts                  # ALL invoke()/listen() calls live here
 │  │  ├─ types.ts                # mirrors Rust serde types

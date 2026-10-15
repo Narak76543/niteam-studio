@@ -5,6 +5,7 @@ import { Badge } from "../components/Badge";
 import { Button, IconButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorPanel } from "../components/ErrorPanel";
+import { ImageSettingsSection } from "../components/ImageSettingsSection";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { RetryStatus } from "../components/RetryStatus";
@@ -15,7 +16,7 @@ import { api, errorMessage, onGeminiRetry } from "../lib/api";
 import type { GeminiRetry, Language, ModelSettings, Settings } from "../lib/types";
 
 const AI_STUDIO_KEY_URL = "https://aistudio.google.com/apikey";
-const SINGLE_MODEL_FIELDS = ["tts", "tts_lite", "image"] as const;
+const SINGLE_MODEL_FIELDS = ["tts", "tts_lite"] as const;
 const MAX_TEXT_CHAIN = 6;
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
 
@@ -202,6 +203,8 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
         </div>
 
         <VoiceSettingsSection settings={settings} onSave={onSave} />
+
+        <ImageSettingsSection settings={settings} onSave={onSave} />
 
         {/* UI language */}
         <div className="settings-row">

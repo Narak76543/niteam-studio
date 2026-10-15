@@ -16,6 +16,7 @@ const PROJECT_TONE: Record<ProjectStatus, Tone> = {
   review: "warn",
   rendering: "info",
   done: "ok",
+  paused_quota: "warn",
 };
 
 export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {

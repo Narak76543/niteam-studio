@@ -49,33 +49,33 @@ finished scenes.
 
 Spec: `docs/07-image-generation.md` (§7 quality check and §9 thumbnail are Phase 5).
 
-- [ ] `images/provider.rs`: `ImageProvider` trait, `ImageRequest`, `GeneratedImage`, `ImageError`
+- [x] `images/provider.rs`: `ImageProvider` trait, `ImageRequest`, `GeneratedImage`, `ImageError`
       (quota / rate limit / safety / auth / transient / other)
-- [ ] Cloudflare Workers AI Flux Schnell provider (default): account ID in settings, API token
+- [x] Cloudflare Workers AI Flux Schnell provider (default): account ID in settings, API token
       in keyring (`cloudflare_api_token`), base64 JPEG from `result.image`, daily-quota error →
       `QuotaExhaustedDaily` (next 00:00 UTC); mocked-HTTP tests (success, auth, quota, 5xx retry)
-- [ ] Gemini Nano Banana provider (paid): 16:9 native, up to 3 reference images,
+- [x] Gemini Nano Banana provider (paid): 16:9 native, up to 3 reference images,
       "Gemini image models need billing. Switch to Cloudflare Flux in Settings." on free tier
-- [ ] Settings → Images: provider, Cloudflare account ID + token (save / clear / **Test
+- [x] Settings → Images: provider, Cloudflare account ID + token (save / clear / **Test
       connection** = 1-step "a small green leaf"), steps 4–8, Gemini model, key-scene provider,
       Cloudflare concurrency (default 2), Flux license link
-- [ ] Visual Bible: generated once per project by the text model, stored as `visual_bible`,
+- [x] Visual Bible: generated once per project by the text model, stored as `visual_bible`,
       editable in the Script page **Look & feel** tab; scenes gain `characters`, `place`,
       `shot`, `key_scene` (shot varied, key scenes = first, chapter starts, last)
-- [ ] `images/prompt.rs` (pure): style, shot phrase, bible inlining, place, culture notes,
+- [x] `images/prompt.rs` (pure): style, shot phrase, bible inlining, place, culture notes,
       square composition phrase, "clean image without any lettering", positive phrasing,
       2,048-char truncation (drop culture notes, then place), seed = bible seed + scene number;
       unit tests
-- [ ] `images/postprocess.rs`: raw saved, square → 16:9 center crop, Lanczos3 upscale to
+- [x] `images/postprocess.rs`: raw saved, square → 16:9 center crop, Lanczos3 upscale to
       2150×1210 (1080p) / 1434×806 (720p), 384×216 `thumb.jpg`; unit tests
-- [ ] Image job: key scenes first, Cloudflare 2 at a time, cache by
+- [x] Image job: key scenes first, Cloudflare 2 at a time, cache by
       `sha256(provider + model + prompt + seed + steps)`, Regenerate = new random seed
-- [ ] Budget: project option **Scenes per image** (1 or 2; pairs share one image) and an
+- [x] Budget: project option **Scenes per image** (1 or 2; pairs share one image) and an
       estimate before generating ("N images · X Cloudflare (~P% of today's allowance) · Y Gemini (~$C)")
-- [ ] Quota pause: `paused_quota` status, progress saved, "Resume after 7:00 AM" in local time,
+- [x] Quota pause: `paused_quota` status, progress saved, "Resume after 7:00 AM" in local time,
       **Resume** button, "Ready to resume" once the reset time has passed; never switch accounts
-- [ ] Safety blocks → `failed` with a readable reason; the user edits the prompt and retries
-- [ ] Scene grid: thumbnail, play audio, regenerate image / voice, edit image prompt;
+- [x] Safety blocks → `failed` with a readable reason; the user edits the prompt and retries
+- [x] Scene grid: thumbnail, play audio, regenerate image / voice, edit image prompt;
       overall progress + per-scene image status
 
 **Test:** 1-minute Khmer project "How was Angkor Wat built?" → ~9 images with Cloudflare Flux
@@ -141,3 +141,13 @@ _Add one line per finished phase: date — phase — notes._
   voice job with resume/cancel/events; Edge outage stops the job with a "switch to Gemini TTS"
   message; Khmer number-to-words fallback; Scenes page with play / regenerate; subtitle timing
   helper. Live: 1-minute Khmer Angkor Wat project → 9 Edge voices (71 s) in ~10 s.
+- 2026-10-15 — Phase 3 — images: `ImageProvider` with Cloudflare Workers AI Flux Schnell
+  (default; account ID in settings, token in keyring) and Gemini Nano Banana (paid, 16:9,
+  references); Visual Bible written after the outline and editable in Script → **Look & feel**;
+  scenes gain characters/place/shot/key_scene (editable under "Picture"); pure prompt builder
+  with 2,048-char truncation; square → 16:9 crop + Lanczos3 upscale + 384×216 thumb; image job
+  (key scenes first, Cloudflare 2 at a time, hash cache, new-seed regenerate, 2 scenes per
+  image); estimate before generating; `paused_quota` with local "Resume after" time and
+  **Resume** / "Ready to resume" (no account switching); Settings → Images with Test
+  connection; Scenes page shows thumbnails, voice + image status, regenerate / edit prompt.
+  Not yet live-tested against Cloudflare (needs the owner's account ID + token).

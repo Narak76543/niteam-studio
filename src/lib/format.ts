@@ -15,3 +15,13 @@ export function formatDate(iso: string, lang: Language): string {
 export function estimateScenes(minutes: number): number {
   return Math.min(200, Math.max(3, Math.round((minutes * 60) / 7)));
 }
+
+/** Local clock time, e.g. "7:00 AM" (en) / "07:00" (km). */
+export function formatTime(iso: string, lang: Language): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat(lang === "km" ? "km-KH" : "en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
+}

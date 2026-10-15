@@ -467,7 +467,7 @@
   "voices.notCapable": "សំឡេងក្នុងម៉ាស៊ីន ត្រូវការកាតក្រាហ្វិកដែលមានអង្គចងចាំយ៉ាងតិច {gb} GB។ សូមប្រើ Edge TTS ឬ Gemini TTS ជំនួសវិញ។",
   "voices.engineMissing": "កម្មវិធីសំឡេងក្នុងម៉ាស៊ីន បាត់ពីការដំឡើងនេះ។ សូមដំឡើង Nitean Studio ឡើងវិញ។",
   "voices.installed": "បានដំឡើងម៉ូដែលសំឡេង។ ឥឡូវបង្កើតសំឡេងដំបូងរបស់អ្នក។",
-  "voices.engine": "កម្មវិធី៖ audio.cpp {version} (Apache-2.0) · ម៉ូដែល៖ VoxCPM2 (Apache-2.0)",
+  "voices.engine": "កម្មវិធី៖ {version} (Apache-2.0) · ម៉ូដែល៖ VoxCPM2 (Apache-2.0)",
   "voices.empty": "មិនទាន់មានសំឡេងនៅឡើយ។ បង្កើតមួយពីការពិពណ៌នា ឬពីការថតសំឡេងផ្ទាល់ខ្លួន។",
   "voices.mode.design": "ពីការពិពណ៌នា",
   "voices.mode.clone": "ការថតសំឡេង",

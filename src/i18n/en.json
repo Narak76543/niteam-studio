@@ -467,7 +467,7 @@
   "voices.notCapable": "Local voices need a graphics card with at least {gb} GB of memory. Use Edge TTS or Gemini TTS instead.",
   "voices.engineMissing": "The local voice engine is missing from this installation. Reinstall Nitean Studio.",
   "voices.installed": "Voice model installed. Now make your first voice.",
-  "voices.engine": "Engine: audio.cpp {version} (Apache-2.0) · Model: VoxCPM2 (Apache-2.0)",
+  "voices.engine": "Engine: {version} (Apache-2.0) · Model: VoxCPM2 (Apache-2.0)",
   "voices.empty": "No voices yet. Make one from a description or from your own recording.",
   "voices.mode.design": "From description",
   "voices.mode.clone": "Recording",

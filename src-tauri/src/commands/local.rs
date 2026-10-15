@@ -15,7 +15,7 @@ use crate::images::provider::{ImageProvider, ImageRequest, ProviderId};
 use crate::local::engine::{EngineConfig, device_for, list_devices};
 use crate::local::gpu::GpuInfo;
 use crate::local::install::{self, Power, ProfileStatus};
-use crate::local::manifest::{self, Manifest, Profile};
+use crate::local::manifest::{self, Manifest, Package, Profile};
 use crate::local::provider::{Cooldown, LocalSdCpp};
 use crate::pipeline::presets;
 use crate::pipeline::project::Shot;
@@ -25,7 +25,7 @@ use crate::storage::settings::{self, LocalPrefs, Settings};
 
 const DOWNLOAD_EVENT: &str = "model-download-progress";
 /// Install jobs are keyed by this (one download at a time).
-const INSTALL_KEY: &str = "local-install";
+pub const INSTALL_KEY: &str = "local-install";
 
 #[derive(Debug, Serialize)]
 pub struct LocalStatus {
@@ -55,7 +55,7 @@ pub async fn local_status(state: State<'_, AppState>) -> CmdResult<LocalStatus> 
     let installing = state.install_jobs.running_keys().into_iter().next();
     Ok(LocalStatus {
         capable: s.gpu.as_ref().is_some_and(GpuInfo::local_capable),
-        profiles: install::status(&m, &state.paths.models_dir(), s.gpu.as_ref().map(|g| g.vram_mb)),
+        profiles: install::status(&m.profiles, &state.paths.models_dir(), s.gpu.as_ref().map(|g| g.vram_mb)),
         engine_version: m.engine_version,
         engine_present: state.paths.engine_exe().is_file(),
         gpu: s.gpu,
@@ -75,7 +75,7 @@ struct DownloadProgress {
     error: Option<String>,
 }
 
-async fn save_settings(state: &AppState, f: impl FnOnce(&mut Settings)) -> CmdResult<Settings> {
+pub async fn save_settings(state: &AppState, f: impl FnOnce(&mut Settings)) -> CmdResult<Settings> {
     let mut s = state.settings.write().await;
     f(&mut s);
     settings::save(&state.paths, &s).map_err(to_cmd)?;
@@ -87,6 +87,29 @@ async fn save_settings(state: &AppState, f: impl FnOnce(&mut Settings)) -> CmdRe
 #[tauri::command]
 pub async fn local_install(app: AppHandle, state: State<'_, AppState>, profile_id: String) -> CmdResult<()> {
     let (_, profile) = manifest_profile(&profile_id)?;
+    spawn_install(app, &state, profile, |s, id| {
+        if s.image.local_profile.is_none() {
+            s.image.local_profile = Some(id.to_owned());
+        }
+        // 08 §9: GPU ≥ 4 GB and a profile installed → local by default.
+        if s.image.provider == ProviderId::CloudflareFlux {
+            s.image.provider = ProviderId::LocalSdcpp;
+        }
+        s.local.offer_dismissed = true;
+    })
+}
+
+/// Downloads any package (image profile or voice model) in the background, one at a time;
+/// `on_done` updates the settings after a complete, verified download.
+pub fn spawn_install<P>(
+    app: AppHandle,
+    state: &AppState,
+    profile: P,
+    on_done: impl FnOnce(&mut Settings, &str) + Send + 'static,
+) -> CmdResult<()>
+where
+    P: Package + Send + Sync + 'static,
+{
     let cancel = state.install_jobs.start(INSTALL_KEY).map_err(to_cmd)?;
     let state_paths = state.paths.clone();
     let jobs = state.install_jobs.clone();
@@ -98,7 +121,7 @@ pub async fn local_install(app: AppHandle, state: State<'_, AppState>, profile_i
             let _ = app.emit(
                 DOWNLOAD_EVENT,
                 DownloadProgress {
-                    profile_id: profile.id.clone(),
+                    profile_id: profile.id().to_owned(),
                     stage,
                     done_mb: done / (1024 * 1024),
                     total_mb: total / (1024 * 1024),
@@ -121,30 +144,21 @@ pub async fn local_install(app: AppHandle, state: State<'_, AppState>, profile_i
             Err(e) => Err(e.clone()),
         };
         let total = profile.total_mb() * 1024 * 1024;
+        let id = profile.id().to_owned();
         match result {
             Ok(()) => {
-                log.info(&format!("local model '{}' installed", profile.id));
+                log.info(&format!("local model '{id}' installed"));
                 if let Some(state) = tauri::Manager::try_state::<AppState>(&settings_handle) {
-                    let _ = save_settings(&state, |s| {
-                        if s.image.local_profile.is_none() {
-                            s.image.local_profile = Some(profile.id.clone());
-                        }
-                        // 08 §9: GPU ≥ 4 GB and a profile installed → local by default.
-                        if s.image.provider == ProviderId::CloudflareFlux {
-                            s.image.provider = ProviderId::LocalSdcpp;
-                        }
-                        s.local.offer_dismissed = true;
-                    })
-                    .await;
+                    let _ = save_settings(&state, |s| on_done(s, &id)).await;
                 }
                 emit("done", total, total, None);
             }
             Err(e) if cancel.is_cancelled() => {
-                log.info(&format!("local model '{}' download paused: {e}", profile.id));
+                log.info(&format!("local model '{id}' download paused: {e}"));
                 emit("cancelled", 0, total, None);
             }
             Err(e) => {
-                log.error(&format!("local model '{}' download failed: {e}", profile.id));
+                log.error(&format!("local model '{id}' download failed: {e}"));
                 emit("failed", 0, total, Some(e));
             }
         }
@@ -203,6 +217,11 @@ pub async fn local_provider(state: &AppState, settings: &Settings) -> CmdResult<
     if !install::installed(&models, &profile) {
         return Ok(None);
     }
+    // One local model on the GPU at a time (09 §6): local voices first finish, then free VRAM.
+    if !state.voice_jobs.running_keys().is_empty() && state.voice_server.is_running().await {
+        return Err("Local voices are being made on the GPU. Wait until they finish, then make the images.".into());
+    }
+    state.voice_server.stop().await;
     let exe = state.paths.engine_exe();
     let device = match &settings.gpu {
         Some(g) => device_for(&list_devices(&exe).await.unwrap_or_default(), &g.name),

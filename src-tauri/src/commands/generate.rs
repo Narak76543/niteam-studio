@@ -12,7 +12,7 @@ use crate::gemini::GeminiError;
 use crate::gemini::retry::RetryHooks;
 use crate::pipeline::ProjectError;
 use crate::pipeline::events::{GenerateProgress, JobEvents, SceneProgress};
-use crate::pipeline::project::{Language, ProjectStatus};
+use crate::pipeline::project::{Language, ProjectStatus, VoiceSettings};
 use crate::pipeline::voice_job::VoiceJob;
 use crate::state::AppState;
 use crate::storage::log::LogFile;
@@ -38,18 +38,30 @@ impl JobEvents for TauriJobEvents {
     }
 }
 
-fn build_engine(
+/// The engine plus the concrete voice for `language`. `profile` overrides the default
+/// VoxCPM2 Voice Profile (per project).
+async fn build_engine(
     state: &AppState,
     settings: &Settings,
     voice: &VoiceDefaults,
-) -> CmdResult<Arc<dyn TtsEngine>> {
+    language: Language,
+    profile: Option<&str>,
+) -> CmdResult<(Arc<dyn TtsEngine>, VoiceSettings)> {
+    let resolved = voice.resolve(language);
     match voice.engine {
-        EngineKind::Edge => Ok(Arc::new(EdgeTts::new(settings.concurrency.tts))),
+        EngineKind::Edge => Ok((Arc::new(EdgeTts::new(settings.concurrency.tts)), resolved)),
         EngineKind::Gemini => {
             let key = secrets::get_api_key()
                 .map_err(to_cmd)?
                 .ok_or_else(|| to_cmd(GeminiError::MissingKey))?;
-            Ok(Arc::new(GeminiTts::new(state.gemini.clone(), key)))
+            Ok((Arc::new(GeminiTts::new(state.gemini.clone(), key)), resolved))
+        }
+        EngineKind::Voxcpm => {
+            // A deleted project voice falls back to the default.
+            let id = profile
+                .filter(|p| super::voices::profile_exists(state, p))
+                .unwrap_or(&resolved.voice_name);
+            super::voices::vox_engine(state, id, language).await
         }
     }
 }
@@ -70,7 +82,19 @@ async fn start_voice_job(
     if project.status == ProjectStatus::ScriptDraft {
         return Err("Approve the script before generating voices.".into());
     }
-    let engine = build_engine(state, &settings, &settings.voice)?;
+    let (engine, voice) = build_engine(
+        state,
+        &settings,
+        &settings.voice,
+        project.language,
+        project.voice_profile.as_deref(),
+    )
+    .await?;
+    // One GPU: local voices are made one scene at a time.
+    let concurrency = match voice.engine {
+        EngineKind::Voxcpm => 1,
+        _ => settings.concurrency.tts,
+    };
     let cancel = state.voice_jobs.start(&project_id).map_err(to_cmd)?;
     let mut log = LogFile::new(state.paths.project_log(&project_id));
     if let Ok(Some(key)) = secrets::get_api_key() {
@@ -87,10 +111,10 @@ async fn start_voice_job(
         store: state.store.clone(),
         paths: state.paths.clone(),
         engine,
-        voice: settings.voice.resolve(project.language),
+        voice,
         hooks,
         log,
-        concurrency: settings.concurrency.tts,
+        concurrency,
     };
     let jobs = state.voice_jobs.clone();
     let events: Arc<dyn JobEvents> = Arc::new(TauriJobEvents(app));
@@ -184,8 +208,7 @@ pub async fn voice_preview(
     let mut check = state.settings.read().await.clone();
     check.voice = voice.clone();
     check.validate().map_err(to_cmd)?;
-    let engine = build_engine(&state, &check, &voice)?;
-    let resolved = voice.resolve(language);
+    let (engine, resolved) = build_engine(&state, &check, &voice, language, None).await?;
     let request = TtsRequest {
         text: match language {
             Language::Km => PREVIEW_KM,

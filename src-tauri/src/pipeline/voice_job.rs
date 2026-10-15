@@ -321,7 +321,7 @@ impl Ctx {
                     "{} voice failed [{}]: {}",
                     task.scene_id, err.1, err.0
                 ));
-                if matches!(e, TtsError::EdgeUnavailable(_)) {
+                if matches!(e, TtsError::EdgeUnavailable(_) | TtsError::LocalUnavailable(_)) {
                     self.engine_down.store(true, Ordering::Relaxed);
                     if let Ok(mut slot) = self.engine_error.lock() {
                         slot.get_or_insert_with(|| err.clone());

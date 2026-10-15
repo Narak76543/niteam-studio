@@ -46,9 +46,10 @@ nitean-studio/
 │  └─ src/
 │     ├─ main.rs  lib.rs  state.rs
 │     ├─ error.rs
-│     ├─ commands/   project.rs  script.rs  generate.rs  render.rs  settings.rs
+│     ├─ commands/   project.rs  script.rs  generate.rs  render.rs  settings.rs  voices.rs
 │     ├─ gemini/     client.rs  transport.rs  retry.rs  script.rs  tts.rs  image.rs  models.rs
 │     ├─ tts/        mod.rs (TtsEngine)  edge.rs  gemini.rs  audio.rs  voices.rs
+│     │              voxcpm.rs  voxcpm_server.rs  chunker.rs  wav.rs  profiles.rs  (09)
 │     ├─ images/     provider.rs (ImageProvider)  cloudflare.rs  gemini.rs  prompt.rs
 │     │              postprocess.rs  budget.rs   (see 07-image-generation.md)
 │     ├─ render/     ffmpeg.rs (sidecar runner)  encoders.rs  clip.rs  concat.rs
@@ -93,6 +94,8 @@ harmless; sidecar file names must use the matching target triple.
     - `concat.txt`, `output\final.mp4` (or `<Settings output folder>\<title>.mp4`),
       `output\thumbnail.png`
     - `logs\pipeline.log` (no secrets)
+  - `voices\<profile-id>\` — local Voice Profiles: `profile.json`, `reference.wav`,
+    `preview.wav` (see `09-voice-profiles.md`)
   - `logs\app.log` — app-level events such as key tests (no secrets)
 - Secrets: `keyring` crate, service `NiteanStudio`:
   - user `gemini_api_key` — Gemini API key
@@ -116,8 +119,9 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
     "style_prompt": "warm watercolor storybook illustration, soft light, …"
   },
   "voice": {                         // snapshot of Settings → Voice for this language
-    "engine": "edge",                 // "edge" | "gemini"
-    "voice_name": "km-KH-SreymomNeural", // Edge voice ID or Gemini voice name ("Kore")
+    "engine": "edge",                 // "edge" | "gemini" | "voxcpm"
+    "voice_name": "km-KH-SreymomNeural", // Edge voice ID, Gemini voice name ("Kore") or Voice Profile id
+    // voxcpm: "model" = "voxcpm2:<profile fingerprint>", "direction" = profile style (09 §4)
     "rate": 0, "pitch": 0,            // Edge only (% / Hz)
     "model": "gemini-3.8-flash-tts", "direction": "calm storyteller"  // Gemini only
   },
@@ -132,6 +136,7 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
     "key_scene_provider": null, "scenes_per_image": 1
   },
   "image_pause": null,
+  "voice_profile": null,             // VoxCPM2 Voice Profile override (null = default, 09 §5)
   "keep_terms": ["React Native"],     // names never translated (04 §4c), Script page → Names                // { "resets_at_utc": "…", "done": 40, "total": 86 } while paused_quota
   "outline": {                        // null until the outline call returns
     "title": "…", "hook": "…",
@@ -230,6 +235,7 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | `proofread_accept / proofread_dismiss(project_id, scene_ids)` | apply / drop suggestions |
 | `project_set_keep_terms(project_id, terms)` | names that stay exactly as written |
 | `project_set_style(project_id, preset)` | switch style preset + rewrite the Visual Bible |
+| `voices_status`, `voices_model_install / _verify / _delete`, `voice_design_samples`, `voice_design_sample_audio`, `voice_profile_create_design / _import / _update / _duplicate / _delete / _preview / _reference_audio / _set_default`, `project_set_voice_profile` | local voices (VoxCPM2) and Voice Profiles — see `09-voice-profiles.md` §7 |
 | `encoders_detect()` | first working H.264 encoder; cached in `settings.render.encoder` |
 
 ## Events (Rust → UI)
@@ -249,6 +255,8 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 - Every `project.json` read-modify-write goes through `ProjectStore::update`, which holds a
   per-project lock, so a background job and UI edits never overwrite each other.
 - Scheduler runs per-scene jobs with `tokio::spawn`, respects a `CancellationToken`.
+- The local voice engine (`AppState.voice_server`, one audiocpp_server process) and local
+  images never use the GPU at the same time (09 §6).
 - Only **one** FFmpeg process at a time (low-spec laptops). Run it with
   below-normal priority on Windows so the UI stays responsive.
 - Memory: never load all images/audio into RAM; work file-to-file.

@@ -9,7 +9,7 @@ import { api, errorMessage } from "../lib/api";
 import { playAudio } from "../lib/audioPlayer";
 import type { EngineKind, Language, Settings, VoiceCatalog, VoiceDefaults } from "../lib/types";
 
-const ENGINES: EngineKind[] = ["edge", "gemini"];
+const ENGINES: EngineKind[] = ["edge", "gemini", "voxcpm"];
 
 interface Props {
   settings: Settings;
@@ -31,14 +31,16 @@ export function VoiceSettingsSection({ settings, onSave }: Props) {
       .catch(() => setCatalog(null));
   }, []);
 
-  const dirty = JSON.stringify(voice) !== JSON.stringify(settings.voice);
+  // The default local voice is chosen in Settings → Local voices, not here.
+  const current: VoiceDefaults = { ...voice, voxcpm_profile: settings.voice.voxcpm_profile };
+  const dirty = JSON.stringify(current) !== JSON.stringify(settings.voice);
   const set = (patch: Partial<VoiceDefaults>) => setVoice({ ...voice, ...patch });
   const edgeVoices = (lang: Language) => catalog?.edge.filter((v) => v.language === lang) ?? [];
   const ttsModels = Array.from(new Set([settings.models.tts, settings.models.tts_lite, voice.gemini_model]));
 
   const save = async () => {
     try {
-      await onSave({ ...settings, voice });
+      await onSave({ ...settings, voice: current });
       toast.show(t("common.saved"), "ok");
     } catch (e) {
       toast.show(errorMessage(e), "danger");
@@ -48,8 +50,8 @@ export function VoiceSettingsSection({ settings, onSave }: Props) {
   const preview = async (language: Language) => {
     setPreviewing(language);
     try {
-      const bytes = await api.voicePreview(language, voice);
-      await playAudio(`preview-${language}`, bytes, voice.engine === "gemini" ? "audio/wav" : "audio/mpeg");
+      const bytes = await api.voicePreview(language, current);
+      await playAudio(`preview-${language}`, bytes, voice.engine === "edge" ? "audio/mpeg" : "audio/wav");
     } catch (e) {
       toast.show(errorMessage(e), "danger");
     } finally {
@@ -75,7 +77,7 @@ export function VoiceSettingsSection({ settings, onSave }: Props) {
           <select
             className="select"
             value={voice.engine}
-            onChange={(e) => set({ engine: e.target.value === "gemini" ? "gemini" : "edge" })}
+            onChange={(e) => set({ engine: ENGINES.find((k) => k === e.target.value) ?? "edge" })}
           >
             {ENGINES.map((k) => (
               <option key={k} value={k}>
@@ -85,7 +87,9 @@ export function VoiceSettingsSection({ settings, onSave }: Props) {
           </select>
         </label>
 
-        {voice.engine === "edge" ? (
+        {voice.engine === "voxcpm" ? (
+          <Notice>{t("settings.voice.voxcpmHint")}</Notice>
+        ) : voice.engine === "edge" ? (
           <>
             <div className="models-grid">
               <label className="field">

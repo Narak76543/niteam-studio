@@ -116,6 +116,8 @@ pub struct VoiceDefaults {
     pub gemini_model: String,
     /// Gemini delivery style.
     pub direction: String,
+    /// Default Voice Profile for VoxCPM2 (last used); projects may override it.
+    pub voxcpm_profile: String,
 }
 
 impl Default for VoiceDefaults {
@@ -129,6 +131,7 @@ impl Default for VoiceDefaults {
             gemini_voice: "Kore".into(),
             gemini_model: ModelSettings::default().tts,
             direction: DEFAULT_VOICE_DIRECTION.into(),
+            voxcpm_profile: String::new(),
         }
     }
 }
@@ -140,6 +143,8 @@ impl VoiceDefaults {
             (EngineKind::Edge, Language::Km) => self.edge_voice_km.clone(),
             (EngineKind::Edge, Language::En) => self.edge_voice_en.clone(),
             (EngineKind::Gemini, _) => self.gemini_voice.clone(),
+            // Replaced by the profile's settings when the engine is built (`commands::voices`).
+            (EngineKind::Voxcpm, _) => self.voxcpm_profile.clone(),
         };
         VoiceSettings {
             engine: self.engine,
@@ -170,6 +175,11 @@ impl VoiceDefaults {
         }
         if self.direction.chars().count() > 300 {
             return bad("voice direction is too long");
+        }
+        if self.voxcpm_profile.len() > 40
+            || !self.voxcpm_profile.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return bad("voice profile");
         }
         Ok(())
     }

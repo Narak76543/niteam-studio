@@ -16,6 +16,8 @@ pub struct AppPaths {
     local_root: PathBuf,
     /// Bundled stable-diffusion.cpp (`sd-server.exe` + DLLs), from the app resources.
     engine_dir: PathBuf,
+    /// Bundled audio.cpp (`audiocpp_server.exe` + DLLs), from the app resources.
+    audiocpp_dir: PathBuf,
 }
 
 impl AppPaths {
@@ -36,13 +38,14 @@ impl AppPaths {
             root: data_dir.join(APP_DIR_NAME),
             local_root: local.join(APP_DIR_NAME),
             engine_dir: resources.join("sdcpp"),
+            audiocpp_dir: resources.join("audiocpp"),
         })
     }
 
     /// Everything under one folder (tests).
     #[cfg(test)]
     pub fn new(root: PathBuf) -> Self {
-        Self { local_root: root.join("local"), engine_dir: root.join("sdcpp"), root }
+        Self { local_root: root.join("local"), engine_dir: root.join("sdcpp"), audiocpp_dir: root.join("audiocpp"), root }
     }
 
     /// `%LOCALAPPDATA%/NiteanStudio/models`: one folder per model profile.
@@ -52,6 +55,20 @@ impl AppPaths {
 
     pub fn engine_exe(&self) -> PathBuf {
         self.engine_dir.join(if cfg!(windows) { "sd-server.exe" } else { "sd-server" })
+    }
+
+    pub fn audiocpp_exe(&self) -> PathBuf {
+        self.audiocpp_dir.join(if cfg!(windows) { "audiocpp_server.exe" } else { "audiocpp_server" })
+    }
+
+    /// Server config + log of the local voice engine.
+    pub fn audiocpp_work_dir(&self) -> PathBuf {
+        self.local_root.join("audiocpp")
+    }
+
+    /// Voice Profiles (`docs/09-voice-profiles.md`): one folder per profile.
+    pub fn voices_dir(&self) -> PathBuf {
+        self.root.join("voices")
     }
 
     pub fn root(&self) -> &std::path::Path {

@@ -8,3 +8,4 @@ pub mod gpu;
 pub mod install;
 pub mod manifest;
 pub mod provider;
+pub mod tts_manifest;

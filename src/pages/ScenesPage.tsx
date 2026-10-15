@@ -10,6 +10,7 @@ import { ImagesPanel } from "../components/ImagesPanel";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { ProgressBar } from "../components/ProgressBar";
+import { ProjectVoicePicker } from "../components/ProjectVoicePicker";
 import { RetryStatus } from "../components/RetryStatus";
 import { SceneThumb } from "../components/SceneThumb";
 import { useToast } from "../components/toast";
@@ -241,7 +242,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
 
   const lang = project.language;
   const voice = project.voice;
-  const engineLabel = voice.engine === "gemini" ? t("engine.gemini") : t("engine.edge");
+  const engineLabel = t(`engine.${voice.engine}`);
   const anyRunning = jobs.voice.running || jobs.image.running;
   const paused = project.status === "paused_quota";
   const perImage = project.image_settings.scenes_per_image;
@@ -300,9 +301,10 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
               {t("images.progress", { done: images.done, total: scenes.length })}
               {failedTotal > 0 && ` · ${t("scenes.progressFailed", { failed: failedTotal })}`}
             </span>
-            {voice.voice_name && (
+            {voice.voice_name && voice.engine !== "voxcpm" && (
               <span className="t-small">· {t("scenes.voiceSummary", { engine: engineLabel, voice: voice.voice_name })}</span>
             )}
+            <ProjectVoicePicker project={project} disabled={anyRunning} onChange={setProject} />
           </div>
         }
         actions={

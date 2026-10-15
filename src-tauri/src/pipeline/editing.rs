@@ -93,6 +93,7 @@ pub fn new_project(input: &NewProjectInput, tts_model: &str) -> Result<Project, 
         image_settings: ImageSnapshot::default(),
         image_pause: None,
         keep_terms: Vec::new(),
+        voice_profile: None,
         scenes: vec![],
         render: RenderSettings::default(),
     })

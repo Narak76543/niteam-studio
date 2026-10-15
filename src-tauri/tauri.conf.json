@@ -37,7 +37,8 @@
       "binaries/ffmpeg"
     ],
     "resources": {
-      "resources/sdcpp/": "sdcpp/"
+      "resources/sdcpp/": "sdcpp/",
+      "resources/audiocpp/": "audiocpp/"
     }
   }
 }

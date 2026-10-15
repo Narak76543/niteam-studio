@@ -15,6 +15,8 @@ AI-generated illustrations with slow pan motion, burned-in subtitles and backgro
    Visual Bible, prompt building, post-processing, quota pause, caching
 7. `docs/08-local-gpu.md` — local GPU images (`local_sdcpp`, stable-diffusion.cpp sidecar,
    VRAM tiers, model profiles + downloads, SD 1.5 prompt adapter) — **Phase 6 only**
+8. `docs/09-voice-profiles.md` — local VoxCPM2 voices (audio.cpp server), Voice Profiles,
+   design / clone / import, sentence chunking, timings, GPU sharing
 
 Only work on the phase marked **CURRENT** in `docs/05-roadmap.md`. When it is done,
 stop and ask the human to test. Do not start the next phase on your own.
@@ -39,6 +41,10 @@ stop and ask the human to test. Do not start the next phase on your own.
   bundled as a sidecar) and on-demand downloaded model files whose licenses allow commercial
   use (owner-approved list in `local_models.json`), only on GPUs with ≥ 4 GB dedicated VRAM.
   Integrated-GPU / < 4 GB machines keep using Cloudflare. Text and voice stay as above.
+  **Exception 4 (local voices, `docs/09-voice-profiles.md`; owner, 2026-10-16):** voices may be
+  generated locally with **VoxCPM2** (Apache-2.0) via **audio.cpp** (Apache-2.0, bundled Vulkan
+  build), Q8_0 model downloaded on demand; Edge and Gemini TTS remain available. Voice cloning
+  only from the user's own voice or one they have permission to use (consent checkbox).
   No other non-Gemini AI services and no other local models.
   - Store the Gemini key **and the Cloudflare API token** only via the `keyring` crate
     (Windows Credential Manager; users `gemini_api_key`, `cloudflare_api_token`). The
@@ -68,6 +74,7 @@ React + TypeScript + Vite · FFmpeg as a Tauri sidecar.
 npm install
 powershell -ExecutionPolicy Bypass -File scripts/fetch-ffmpeg.ps1   # once: FFmpeg sidecar
 powershell -ExecutionPolicy Bypass -File scripts/fetch-sdcpp.ps1    # once: local image engine
+powershell -ExecutionPolicy Bypass -File scripts/fetch-audiocpp.ps1  # once: local voice engine
 npm run tauri dev      # run app in dev
 npm run tauri build    # Windows installer
 cargo test --manifest-path src-tauri/Cargo.toml

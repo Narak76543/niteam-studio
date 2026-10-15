@@ -94,6 +94,49 @@ fn is_safe_name(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)) && !s.starts_with('.')
 }
 
+/// Something installable into `models/<id>/`: an image profile or a voice model.
+pub trait Package {
+    fn id(&self) -> &str;
+    fn label(&self) -> &str;
+    fn min_vram_mb(&self) -> u64;
+    fn files(&self) -> &[ModelFile];
+    fn total_mb(&self) -> u64 {
+        self.files().iter().map(|f| f.size_mb).sum()
+    }
+}
+
+impl Package for Profile {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn label(&self) -> &str {
+        &self.label
+    }
+    fn min_vram_mb(&self) -> u64 {
+        self.min_vram_mb
+    }
+    fn files(&self) -> &[ModelFile] {
+        &self.files
+    }
+}
+
+/// Shared checks for any package's files (https URL, sha256, plain name, licence).
+pub fn validate_files(id: &str, files: &[ModelFile]) -> Result<(), String> {
+    for f in files {
+        if !f.url.starts_with("https://") || !is_sha256(&f.sha256) || !is_safe_name(&f.name) {
+            return Err(format!("'{id}': file '{}' needs an https URL, a sha256 and a plain name", f.name));
+        }
+        if f.license.trim().is_empty() || !f.license_url.starts_with("https://") {
+            return Err(format!("'{id}': file '{}' needs its license name and URL", f.name));
+        }
+    }
+    Ok(())
+}
+
+pub fn is_safe_id(s: &str) -> bool {
+    is_safe_name(s)
+}
+
 /// The manifest shipped with this build.
 pub fn shipped() -> Manifest {
     // Validated by the `the_shipped_manifest_is_valid` test; an empty list if ever broken.
@@ -146,10 +189,6 @@ impl Manifest {
 }
 
 impl Profile {
-    pub fn total_mb(&self) -> u64 {
-        self.files.iter().map(|f| f.size_mb).sum()
-    }
-
     /// Files loaded at server start, as (flag, file).
     pub fn loaded(&self) -> impl Iterator<Item = (&'static str, &ModelFile)> {
         self.files.iter().filter_map(|f| f.role.flag().map(|flag| (flag, f)))

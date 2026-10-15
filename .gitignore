@@ -14,3 +14,6 @@ src-tauri/binaries/*
 
 # stable-diffusion.cpp engine (scripts/fetch-sdcpp.ps1), ~90 MB
 src-tauri/resources/sdcpp/
+
+# audio.cpp voice engine (scripts/fetch-audiocpp.ps1), ~170 MB
+src-tauri/resources/audiocpp/

@@ -1645,6 +1645,26 @@ input[type="range"] {
 .local-profile__head {
   gap: var(--s-2);
 }
+.voice-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.voice-list__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.select--compact {
+  width: auto;
+  min-width: 12rem;
+}
 .local-profile__files {
   margin: 0;
   padding-left: var(--s-4);

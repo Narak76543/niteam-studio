@@ -165,7 +165,7 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
             states={states}
             highlight={highlight}
             resolution={project.render.resolution}
-            audioMime={project.voice.engine === "gemini" ? "audio/wav" : "audio/mpeg"}
+            audioMime={project.voice.engine === "edge" ? "audio/mpeg" : "audio/wav"}
             apiRef={player}
             onTime={setTime}
           />

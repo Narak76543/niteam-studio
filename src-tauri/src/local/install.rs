@@ -8,7 +8,7 @@ use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use super::download::{self, DownloadError, part_path};
-use super::manifest::{FileRole, Manifest, Profile};
+use super::manifest::{FileRole, ModelFile, Package};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FileInfo {
@@ -33,21 +33,21 @@ pub struct ProfileStatus {
     pub files: Vec<FileInfo>,
 }
 
-pub fn profile_dir(models_dir: &Path, profile: &Profile) -> PathBuf {
-    models_dir.join(&profile.id)
+pub fn profile_dir<P: Package + ?Sized>(models_dir: &Path, profile: &P) -> PathBuf {
+    models_dir.join(profile.id())
 }
 
-pub fn file_path(models_dir: &Path, profile: &Profile, name: &str) -> PathBuf {
+pub fn file_path<P: Package + ?Sized>(models_dir: &Path, profile: &P, name: &str) -> PathBuf {
     profile_dir(models_dir, profile).join(name)
 }
 
-pub fn installed(models_dir: &Path, profile: &Profile) -> bool {
-    profile.files.iter().all(|f| file_path(models_dir, profile, &f.name).is_file())
+pub fn installed<P: Package + ?Sized>(models_dir: &Path, profile: &P) -> bool {
+    profile.files().iter().all(|f| file_path(models_dir, profile, &f.name).is_file())
 }
 
-fn downloaded_bytes(models_dir: &Path, profile: &Profile) -> u64 {
+fn downloaded_bytes<P: Package + ?Sized>(models_dir: &Path, profile: &P) -> u64 {
     profile
-        .files
+        .files()
         .iter()
         .map(|f| {
             let p = file_path(models_dir, profile, &f.name);
@@ -59,22 +59,25 @@ fn downloaded_bytes(models_dir: &Path, profile: &Profile) -> u64 {
         .sum()
 }
 
-pub fn status(manifest: &Manifest, models_dir: &Path, vram_mb: Option<u64>) -> Vec<ProfileStatus> {
-    manifest
-        .profiles
-        .iter()
+pub fn status<'a, P: Package + 'a>(
+    packages: impl IntoIterator<Item = &'a P>,
+    models_dir: &Path,
+    vram_mb: Option<u64>,
+) -> Vec<ProfileStatus> {
+    packages
+        .into_iter()
         .map(|p| ProfileStatus {
-            id: p.id.clone(),
-            label: p.label.clone(),
-            min_vram_mb: p.min_vram_mb,
-            total_mb: p.total_mb(),
-            fits: vram_mb.is_some_and(|v| v >= p.min_vram_mb),
+            id: p.id().to_owned(),
+            label: p.label().to_owned(),
+            min_vram_mb: p.min_vram_mb(),
+            total_mb: p.files().iter().map(|f| f.size_mb).sum(),
+            fits: vram_mb.is_some_and(|v| v >= p.min_vram_mb()),
             installed: installed(models_dir, p),
             downloaded_mb: downloaded_bytes(models_dir, p) / (1024 * 1024),
             files: p
-                .files
+                .files()
                 .iter()
-                .map(|f| FileInfo {
+                .map(|f: &ModelFile| FileInfo {
                     name: f.name.clone(),
                     role: f.role,
                     size_mb: f.size_mb,
@@ -87,18 +90,18 @@ pub fn status(manifest: &Manifest, models_dir: &Path, vram_mb: Option<u64>) -> V
 }
 
 /// Downloads every missing file. `on_progress(done_bytes, total_bytes)` over the whole profile.
-pub async fn install(
+pub async fn install<P: Package + ?Sized>(
     client: &reqwest::Client,
     models_dir: &Path,
-    profile: &Profile,
+    profile: &P,
     cancel: &CancellationToken,
     mut on_progress: impl FnMut(u64, u64),
 ) -> Result<(), DownloadError> {
-    let total: u64 = profile.files.iter().map(|f| f.size_mb * 1024 * 1024).sum();
+    let total: u64 = profile.files().iter().map(|f| f.size_mb * 1024 * 1024).sum();
     let have = downloaded_bytes(models_dir, profile);
     download::check_space(models_dir, total.saturating_sub(have))?;
     let mut finished: u64 = 0;
-    for f in &profile.files {
+    for f in profile.files() {
         let dest = file_path(models_dir, profile, &f.name);
         if dest.is_file() {
             finished += std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
@@ -114,9 +117,9 @@ pub async fn install(
 }
 
 /// Re-checks every file's sha256; a damaged file is deleted. `true` = all good.
-pub async fn verify(models_dir: &Path, profile: &Profile) -> Result<bool, DownloadError> {
+pub async fn verify<P: Package + ?Sized>(models_dir: &Path, profile: &P) -> Result<bool, DownloadError> {
     let mut ok = true;
-    for f in &profile.files {
+    for f in profile.files() {
         let p = file_path(models_dir, profile, &f.name);
         if !p.is_file() {
             ok = false;
@@ -130,7 +133,7 @@ pub async fn verify(models_dir: &Path, profile: &Profile) -> Result<bool, Downlo
     Ok(ok)
 }
 
-pub fn delete(models_dir: &Path, profile: &Profile) -> std::io::Result<()> {
+pub fn delete<P: Package + ?Sized>(models_dir: &Path, profile: &P) -> std::io::Result<()> {
     let dir = profile_dir(models_dir, profile);
     if dir.exists() {
         std::fs::remove_dir_all(dir)?;
@@ -166,7 +169,7 @@ pub fn power() -> Power {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::local::manifest::{GenParams, ModelFile};
+    use crate::local::manifest::{GenParams, Manifest, ModelFile, Profile};
 
     fn profile() -> Profile {
         let file = |role, name: &str| ModelFile {
@@ -208,12 +211,12 @@ mod tests {
         std::fs::write(part_path(&file_path(dir.path(), &p, "l.safetensors")), vec![0u8; 1024]).unwrap();
         assert!(!installed(dir.path(), &p), "a .part file does not count");
         let m = Manifest { engine_version: "x".into(), profiles: vec![p.clone()] };
-        let s = &status(&m, dir.path(), Some(5920))[0];
+        let s = &status(&m.profiles, dir.path(), Some(5920))[0];
         assert!(s.fits && !s.installed);
         assert_eq!(s.total_mb, 2);
         std::fs::write(file_path(dir.path(), &p, "l.safetensors"), b"x").unwrap();
         assert!(installed(dir.path(), &p));
-        assert!(!status(&m, dir.path(), Some(2048))[0].fits);
+        assert!(!status(&m.profiles, dir.path(), Some(2048))[0].fits);
     }
 
     #[tokio::test]

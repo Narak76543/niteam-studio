@@ -250,7 +250,8 @@ export interface Style {
   style_prompt: string;
 }
 
-export type EngineKind = "edge" | "gemini";
+/** `voxcpm` = VoxCPM2 on the user's GPU (docs/09-voice-profiles.md). */
+export type EngineKind = "edge" | "gemini" | "voxcpm";
 
 /** Voice snapshot stored on the project (resolved from Settings for its language). */
 export interface VoiceSettings {
@@ -274,6 +275,38 @@ export interface VoiceDefaults {
   gemini_voice: string;
   gemini_model: string;
   direction: string;
+  /** Default Voice Profile id for VoxCPM2 ("" = none yet). */
+  voxcpm_profile: string;
+}
+
+export type VoiceProfileMode = "design" | "clone" | "ultimate";
+
+/** Settings → Voices: a reusable local voice (docs/09-voice-profiles.md). */
+export interface VoiceProfile {
+  id: string;
+  name: string;
+  language: Language;
+  mode: VoiceProfileMode;
+  description: string;
+  reference_wav: string;
+  reference_transcript: string;
+  style_hint: string;
+  cfg_value: number;
+  inference_timesteps: number;
+  created_at: string;
+  preview_wav: string | null;
+  consent_at: string | null;
+}
+
+export interface VoicesStatus {
+  gpu: GpuInfo | null;
+  capable: boolean;
+  engine_version: string;
+  engine_present: boolean;
+  model: LocalProfileStatus | null;
+  installing: string | null;
+  profiles: VoiceProfile[];
+  default_profile: string;
 }
 
 export interface VoiceInfo {
@@ -470,6 +503,8 @@ export interface Project {
   image_pause: ImagePause | null;
   /** Names kept exactly as written (React Native, Android, …). */
   keep_terms: string[];
+  /** VoxCPM2 Voice Profile for this project (null = the default). */
+  voice_profile: string | null;
   scenes: Scene[];
   render: RenderSettings;
 }

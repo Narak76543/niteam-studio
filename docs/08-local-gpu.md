@@ -230,6 +230,12 @@ profile to 4 GB.)
   6 steps → ~7 s / image (first image ~35 s incl. shader compilation). Quality for the
   Stickman style was poor (cartoon people, not stick figures) — see the model proposal.
 
+## 12b. Sharing the GPU with local voices
+
+Local voices (VoxCPM2, `09-voice-profiles.md`) use the same GPU. Only one local model is on
+the GPU at a time: building the `local_sdcpp` provider stops the voice server and is refused
+while a voice job is using it; voice jobs are refused while a local image job runs.
+
 ## 13. Next version: approved profile (not implemented yet)
 
 Owner-approved on 2026-10-15, to replace the SD 1.5 plan (§4, §7 no longer apply):

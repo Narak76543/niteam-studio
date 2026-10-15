@@ -8,6 +8,7 @@ use crate::gemini::GeminiClient;
 use crate::pipeline::ProjectStore;
 use crate::pipeline::jobs::JobRegistry;
 use crate::storage::{AppPaths, Settings};
+use crate::tts::voxcpm_server::VoxServer;
 
 pub struct AppState {
     pub paths: AppPaths,
@@ -23,4 +24,8 @@ pub struct AppState {
     pub install_jobs: Arc<JobRegistry>,
     /// One FFmpeg process at a time across the app (low-spec laptops).
     pub ffmpeg_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Local voice engine (VoxCPM2), shared by voice jobs, design and previews.
+    pub voice_server: Arc<VoxServer>,
+    /// Vulkan device index of the voice engine, found on first use.
+    pub voice_device: tokio::sync::Mutex<Option<u32>>,
 }

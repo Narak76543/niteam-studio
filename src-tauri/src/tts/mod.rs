@@ -4,9 +4,14 @@
 //! - [`gemini::GeminiTts`] — Gemini TTS via the user's key. WAV, no word timings.
 
 pub mod audio;
+pub mod chunker;
 pub mod edge;
 pub mod gemini;
+pub mod profiles;
 pub mod voices;
+pub mod voxcpm;
+pub mod voxcpm_server;
+pub mod wav;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -22,6 +27,8 @@ pub enum EngineKind {
     #[default]
     Edge,
     Gemini,
+    /// VoxCPM2 on the user's GPU via audio.cpp (`docs/09-voice-profiles.md`).
+    Voxcpm,
 }
 
 impl EngineKind {
@@ -29,6 +36,7 @@ impl EngineKind {
         match self {
             Self::Edge => "edge",
             Self::Gemini => "gemini",
+            Self::Voxcpm => "voxcpm",
         }
     }
 }
@@ -87,6 +95,12 @@ pub enum TtsError {
     Gemini(#[from] GeminiError),
     #[error("The voice engine returned unusable audio: {0}")]
     BadAudio(String),
+    /// Local voice engine missing / crashed / model not installed: stop the job.
+    #[error("{0}")]
+    LocalUnavailable(String),
+    /// Local voice failed for this scene (e.g. out of GPU memory after splitting).
+    #[error("{0}")]
+    Local(String),
     #[error("Cancelled")]
     Cancelled,
 }
@@ -98,6 +112,8 @@ impl TtsError {
             Self::EdgeUnavailable(_) => "edge_unavailable",
             Self::Gemini(e) => e.kind(),
             Self::BadAudio(_) => "bad_response",
+            Self::LocalUnavailable(_) => "local_voice_unavailable",
+            Self::Local(_) => "local_voice",
             Self::Cancelled => "cancelled",
         }
     }

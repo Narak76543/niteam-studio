@@ -88,12 +88,13 @@ UI only. On every edit, recompute `text_hash` (of `spoken_text` + voice settings
 
 ## Step 3 — Voice (TTS)
 
-Two engines behind the `TtsEngine` trait (`src-tauri/src/tts/`), chosen in Settings → Voice:
+Three engines behind the `TtsEngine` trait (`src-tauri/src/tts/`), chosen in Settings → Voice:
 
 | Engine | How | Output | Word timings |
 |---|---|---|---|
 | **Edge TTS** (default) | `msedge-tts` crate, Microsoft Edge "Read aloud" WebSocket. **Unofficial** — see CLAUDE.md | MP3 `audio-24khz-48kbitrate-mono-mp3` | yes → `words.json` |
 | **Gemini TTS** | Interactions API `POST /v1beta/interactions` with the user's key; model `gemini-3.8-flash-tts` or `-lite-tts` | WAV (24 kHz mono 16-bit) | no |
+| **VoxCPM2 (local)** | audio.cpp server on the user's GPU, one request per sentence, cloning a Voice Profile — **see `09-voice-profiles.md`** | WAV (48 kHz mono 16-bit) | per sentence → `words.json` |
 
 **Edge TTS**
 - Voices: Khmer `km-KH-SreymomNeural` (default) / `km-KH-PisethNeural`; English
@@ -125,8 +126,8 @@ wrapped in a WAV header). Same retry rules as all Gemini calls (5 attempts).
 **Both engines**
 - One request per scene with `spoken_text` (NFC, zero-width spaces removed; for Khmer the
   `khmer_numbers` fallback converts any digits left in it).
-- Saved as `scenes/<id>/voice.mp3` (Edge) or `voice.wav` (Gemini); old voice files of the
-  scene are removed first.
+- Saved as `scenes/<id>/voice.mp3` (Edge) or `voice.wav` (Gemini, VoxCPM2); old voice files
+  of the scene are removed first.
 - Duration is measured in Rust from the file (WAV header / MP3 frame count) →
   `voice.duration_ms`. (ffprobe is not needed for this; it arrives with FFmpeg in Phase 4.)
 - If duration is wildly off (< 40 % or > 250 % of the expected length for the text and rate),
@@ -141,7 +142,7 @@ wrapped in a WAV header). Same retry rules as all Gemini calls (5 attempts).
   part of every scene's `text_hash`, so changing voice, rate, pitch or engine makes existing
   voices `stale`.
 - Scenes whose voice is `done`, hash-current and whose file exists are skipped (resume).
-- Up to `concurrency.tts` scenes in parallel; cancel via `generate_cancel`; scenes interrupted
+- Up to `concurrency.tts` scenes in parallel (VoxCPM2: one at a time); cancel via `generate_cancel`; scenes interrupted
   by cancel go back to `pending`. `project.json` is saved after every scene.
 - Events: `scene-progress` per scene, `generate-progress` for the job, `gemini-retry`
   (scope `voice`) while Gemini TTS / Edge TTS retry.

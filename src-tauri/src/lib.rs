@@ -48,6 +48,8 @@ fn init_state(app: &tauri::App) -> Result<AppState, String> {
         proofread_jobs: Arc::new(JobRegistry::default()),
         install_jobs: Arc::new(JobRegistry::default()),
         ffmpeg_lock: Arc::new(tokio::sync::Mutex::new(())),
+        voice_server: Arc::new(tts::voxcpm_server::VoxServer::default()),
+        voice_device: tokio::sync::Mutex::new(None),
     })
 }
 
@@ -127,8 +129,33 @@ pub fn run() {
             commands::images::visual_bible_generate,
             commands::images::project_set_scenes_per_image,
             commands::images::images_catalog,
+            commands::voices::voices_status,
+            commands::voices::voices_model_install,
+            commands::voices::voices_model_verify,
+            commands::voices::voices_model_delete,
+            commands::voices::voice_design_samples,
+            commands::voices::voice_design_sample_audio,
+            commands::voices::voice_profile_create_design,
+            commands::voices::voice_profile_import,
+            commands::voices::voice_profile_update,
+            commands::voices::voice_profile_duplicate,
+            commands::voices::voice_profile_delete,
+            commands::voices::voice_profile_preview,
+            commands::voices::voice_profile_reference_audio,
+            commands::voices::voice_profile_set_default,
+            commands::voices::project_set_voice_profile,
         ])
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!())
+        .map(|app| {
+            app.run(|handle, event| {
+                // The voice engine is a long-lived child process: stop it with the app.
+                if let tauri::RunEvent::Exit = event
+                    && let Some(state) = handle.try_state::<AppState>()
+                {
+                    tauri::async_runtime::block_on(state.voice_server.stop());
+                }
+            });
+        });
     if let Err(e) = result {
         eprintln!("Nitean Studio failed to start: {e}");
         std::process::exit(1);

@@ -13,6 +13,8 @@ import type {
   CueIn,
   DownloadProgress,
   LocalStatus,
+  VoiceProfile,
+  VoicesStatus,
   ImageCatalog,
   ProofProgress,
   RenderProgress,
@@ -143,6 +145,37 @@ export const api = {
   localDelete: (profileId: string) => invoke<Settings>("local_delete", { profileId }),
   localOfferDismiss: () => invoke<Settings>("local_offer_dismiss"),
   localBenchmark: () => invoke<{ seconds_per_image: number; load_seconds: number }>("local_benchmark"),
+
+  // local voices (docs/09-voice-profiles.md)
+  voicesStatus: () => invoke<VoicesStatus>("voices_status"),
+  voicesModelInstall: () => invoke<null>("voices_model_install"),
+  voicesModelVerify: () => invoke<boolean>("voices_model_verify"),
+  voicesModelDelete: () => invoke<null>("voices_model_delete"),
+  /** Makes candidate samples for a described voice; returns how many. */
+  voiceDesignSamples: (language: Language, description: string) =>
+    invoke<number>("voice_design_samples", { language, description }),
+  voiceDesignSampleAudio: (index: number) => invoke<ArrayBuffer>("voice_design_sample_audio", { index }),
+  voiceProfileCreateDesign: (name: string, language: Language, description: string, index: number) =>
+    invoke<VoiceProfile>("voice_profile_create_design", { name, language, description, index }),
+  voiceProfileImport: (path: string, name: string, language: Language, transcript: string, consent: boolean) =>
+    invoke<VoiceProfile>("voice_profile_import", { path, name, language, transcript, consent }),
+  voiceProfileUpdate: (id: string, name: string, styleHint: string, cfgValue: number, inferenceTimesteps: number) =>
+    invoke<VoiceProfile>("voice_profile_update", { id, name, styleHint, cfgValue, inferenceTimesteps }),
+  voiceProfileDuplicate: (id: string) => invoke<VoiceProfile>("voice_profile_duplicate", { id }),
+  voiceProfileDelete: (id: string) => invoke<Settings>("voice_profile_delete", { id }),
+  voiceProfilePreview: (id: string) => invoke<ArrayBuffer>("voice_profile_preview", { id }),
+  voiceProfileReferenceAudio: (id: string) => invoke<ArrayBuffer>("voice_profile_reference_audio", { id }),
+  voiceProfileSetDefault: (id: string) => invoke<Settings>("voice_profile_set_default", { id }),
+  projectSetVoiceProfile: (projectId: string, profileId: string | null) =>
+    invoke<Project>("project_set_voice_profile", { projectId, profileId }),
+  /** One audio file, or null when cancelled. */
+  pickAudioFile: async (): Promise<string | null> => {
+    const picked = await openDialog({
+      multiple: false,
+      filters: [{ name: "Audio", extensions: ["wav", "mp3", "m4a", "flac", "ogg", "opus"] }],
+    });
+    return typeof picked === "string" ? picked : null;
+  },
 
   // native helpers
   pickFolder: async (): Promise<string | null> => {

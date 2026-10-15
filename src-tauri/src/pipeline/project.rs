@@ -68,6 +68,9 @@ pub struct Project {
     /// proofreading. Script page → Names.
     #[serde(default)]
     pub keep_terms: Vec<String>,
+    /// VoxCPM2 Voice Profile for this project (`None` = the default in Settings → Voices).
+    #[serde(default)]
+    pub voice_profile: Option<String>,
     #[serde(default)]
     pub scenes: Vec<Scene>,
     #[serde(default)]
@@ -535,6 +538,7 @@ pub(crate) mod tests {
             image_settings: ImageSnapshot::default(),
             image_pause: None,
             keep_terms: Vec::new(),
+            voice_profile: None,
             scenes: vec![],
             render: RenderSettings::default(),
         }

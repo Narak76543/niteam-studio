@@ -10,3 +10,4 @@ pub mod render;
 pub mod retry_events;
 pub mod script;
 pub mod settings;
+pub mod voices;

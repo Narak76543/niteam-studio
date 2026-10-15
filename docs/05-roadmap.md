@@ -120,6 +120,24 @@ licenses that allow commercial use) needs the owner's approval before it is fill
 **Test:** on a 4 GB GPU laptop, 1-minute Khmer project with local images: all images
 generated without quota, consistent style, no crash, temperatures acceptable.
 
+## Local voices — VoxCPM2  (owner request 2026-10-16; built, awaiting the owner's test)
+
+Spec: `docs/09-voice-profiles.md`.
+
+- [x] audio.cpp v0.9.0 Vulkan server bundled (`scripts/fetch-audiocpp.ps1`), correct GPU on
+      hybrid laptops, model unloaded when idle, stopped with the app
+- [x] VoxCPM2 Q8 model download (pinned revision, sha256, resumable) in Settings → Local voices
+- [x] `VoxCpmTts` engine: sentence chunking, same seed, length check + retry, OOM halving,
+      trim / join / loudness, sentence timings for the word tracker
+- [x] Voice Profiles: from a description (3 samples) or from the user's recording (consent),
+      edit / duplicate / delete / listen / default; per-project voice on the Scenes page
+- [x] One local model on the GPU at a time (voices vs local images)
+- [ ] Owner test
+
+**Test:** make a voice from a description and one from a recording; generate a 1-minute
+Khmer project with it: same voice in every scene, natural pauses, subtitles follow the
+sentences; switch a project to another voice → its scenes become outdated.
+
 ## Later / ideas (not scheduled)
 
 - Word-level subtitle timing
@@ -204,3 +222,9 @@ _Add one line per finished phase: date — phase — notes._
   option stays disabled and nothing is downloaded. Models tried on the RTX 4050: DreamShaper 8
   LCM (~7 s/image) and SD 1.5 + LCM-LoRA (~10 s/image) — neither draws stick figures. Next
   version: the owner-approved Z-Image Turbo profile (08 §13).
+- 2026-10-16 — Local voices (owner request) — VoxCPM2 (Apache-2.0) via the audio.cpp v0.9.0
+  Vulkan server (Apache-2.0), Q8 model downloaded on demand. Spike: Vulkan runs out of GPU
+  memory on whole paragraphs, so scenes are spoken sentence by sentence (RTF ≈ 0.63, peak
+  5.0 GB on the RTX 4050). Voice Profiles (description → 3 samples, or own recording with
+  consent) are cloned with a fixed seed so the voice stays the same; per-sentence timings feed
+  the word tracker. Real-GPU test: 2 Khmer sentences, 15.3 s of audio in 27.5 s incl. load.

@@ -125,7 +125,9 @@ export function ProjectsPage({ projects, hasKey, navigate, onChanged, searchToke
                   <div className="feature-card__inner">
                     <button
                       className="project-card__open"
-                      onClick={() => navigate({ name: "script", projectId: p.id })}
+                      onClick={() =>
+                        navigate({ name: p.status === "script_draft" ? "script" : "scenes", projectId: p.id })
+                      }
                     >
                       <div className="thumb" aria-hidden="true">
                         <Film size={24} strokeWidth={1.5} />

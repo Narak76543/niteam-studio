@@ -9,7 +9,12 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type {
   GeminiRetry,
+  GenerateProgress,
   KeyTestOutcome,
+  Language,
+  SceneProgress,
+  VoiceCatalog,
+  VoiceDefaults,
   NewProjectInput,
   Project,
   ProjectSummary,
@@ -53,6 +58,20 @@ export const api = {
   scriptApprove: (projectId: string) => invoke<Project>("script_approve", { projectId }),
   scriptReopen: (projectId: string) => invoke<Project>("script_reopen", { projectId }),
 
+  // voices (Phase 2)
+  generateStart: (projectId: string) => invoke<null>("generate_start", { projectId }),
+  generateCancel: (projectId: string) => invoke<null>("generate_cancel", { projectId }),
+  generateRunning: (projectId: string) => invoke<boolean>("generate_running", { projectId }),
+  sceneRegenerate: (projectId: string, sceneId: string, what: "voice") =>
+    invoke<null>("scene_regenerate", { projectId, sceneId, what }),
+  /** Raw MP3/WAV bytes of a scene's voice. */
+  sceneVoiceAudio: (projectId: string, sceneId: string) =>
+    invoke<ArrayBuffer>("scene_voice_audio", { projectId, sceneId }),
+  voicesCatalog: () => invoke<VoiceCatalog>("voices_catalog"),
+  /** Speaks a sample with (possibly unsaved) voice settings; raw audio bytes. */
+  voicePreview: (language: Language, voice: VoiceDefaults) =>
+    invoke<ArrayBuffer>("voice_preview", { language, voice }),
+
   // native helpers
   pickFolder: async (): Promise<string | null> => {
     const picked = await openDialog({ directory: true, multiple: false });
@@ -63,6 +82,14 @@ export const api = {
 
 export function onScriptProgress(cb: (p: ScriptProgress) => void): Promise<UnlistenFn> {
   return listen<ScriptProgress>("script-progress", (e) => cb(e.payload));
+}
+
+export function onSceneProgress(cb: (p: SceneProgress) => void): Promise<UnlistenFn> {
+  return listen<SceneProgress>("scene-progress", (e) => cb(e.payload));
+}
+
+export function onGenerateProgress(cb: (p: GenerateProgress) => void): Promise<UnlistenFn> {
+  return listen<GenerateProgress>("generate-progress", (e) => cb(e.payload));
 }
 
 /** Retry/fallback notices for any Gemini call (filter by `scope` / `project_id`). */

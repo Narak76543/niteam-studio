@@ -9,6 +9,7 @@ import type { Route } from "./lib/route";
 import type { Language, ProjectSummary, Settings } from "./lib/types";
 import { NewProjectPage } from "./pages/NewProjectPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { ScenesPage } from "./pages/ScenesPage";
 import { ScriptPage } from "./pages/ScriptPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -132,6 +133,9 @@ export default function App() {
             )}
             {route.name === "script" && (
               <ScriptPage key={route.projectId} projectId={route.projectId} navigate={navigate} />
+            )}
+            {route.name === "scenes" && (
+              <ScenesPage key={route.projectId} projectId={route.projectId} navigate={navigate} />
             )}
             {route.name === "settings" && (
               <SettingsPage settings={settings} onSave={saveSettings} onKeyChanged={refreshKey} />

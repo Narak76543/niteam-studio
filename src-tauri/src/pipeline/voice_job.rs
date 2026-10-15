@@ -680,4 +680,101 @@ mod tests {
             .await;
         assert_eq!(rec.progress.lock().unwrap()[0].stage, GenerateStage::Failed);
     }
+
+    /// End-to-end: real script (Gemini, saved key) + real Edge TTS voices for the
+    /// 1-minute Khmer test project. Run with:
+    /// `cargo test --manifest-path src-tauri/Cargo.toml live_one_minute -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore = "calls Gemini and Edge TTS"]
+    async fn live_one_minute_khmer_voices() {
+        use crate::gemini::GeminiClient;
+        use crate::gemini::client::ModelChain;
+        use crate::pipeline::editing::{NewProjectInput, approve, new_project};
+        use crate::pipeline::script_job::ScriptJob;
+        use crate::storage::secrets;
+        use crate::storage::settings::Settings;
+        use crate::tts::edge::EdgeTts;
+
+        let key = secrets::get_api_key().unwrap().expect("no API key saved");
+        let settings = Settings::default();
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::new(dir.path().to_path_buf());
+        let store = Arc::new(ProjectStore::new(paths.clone()));
+        let project = new_project(
+            &NewProjectInput {
+                topic: "How was Angkor Wat built?".into(),
+                language: Language::Km,
+                target_minutes: 1,
+                style_preset: "storybook_watercolor".into(),
+            },
+            &settings.models.tts,
+        )
+        .unwrap();
+        let id = project.id.clone();
+        store.insert(&project).await.unwrap();
+        let log = LogFile::new(paths.project_log(&id)).redacting(key.expose());
+        let client = GeminiClient::new(&settings.concurrency).unwrap();
+        let chain = ModelChain::new(&settings.models.text_chain);
+        ScriptJob {
+            store: &store,
+            client: &client,
+            key: &key,
+            models: &chain,
+            hooks: &RetryHooks::default(),
+            log: &log,
+        }
+        .run(&id, |p| {
+            if p.error.is_some() {
+                eprintln!("script step failed [{:?}]: {:?}", p.error_kind, p.error);
+            }
+        })
+        .await;
+        store
+            .update(&id, approve)
+            .await
+            .expect("script should be complete (see 'script step failed' above)");
+
+        let rec = Arc::new(Recorder::default());
+        VoiceJob {
+            store: store.clone(),
+            paths: paths.clone(),
+            engine: Arc::new(EdgeTts::new(settings.concurrency.tts)),
+            voice: settings.voice.resolve(Language::Km),
+            hooks: RetryHooks::default(),
+            log: log.clone(),
+            concurrency: settings.concurrency.tts,
+        }
+        .run(&id, None, rec.clone())
+        .await;
+
+        let p = store.get(&id).await.unwrap();
+        let mut total_ms = 0;
+        for s in &p.scenes {
+            let words = s
+                .voice
+                .words_path
+                .as_ref()
+                .and_then(|w| std::fs::read_to_string(paths.project_dir(&id).join(w)).ok())
+                .map(|t| serde_json::from_str::<Vec<WordTiming>>(&t).unwrap().len())
+                .unwrap_or(0);
+            eprintln!(
+                "{} {:?} {:>5} ms {:>2} timings  {}",
+                s.id,
+                s.voice.status,
+                s.voice.duration_ms.unwrap_or(0),
+                words,
+                s.voice.error.as_deref().unwrap_or("")
+            );
+            total_ms += s.voice.duration_ms.unwrap_or(0);
+        }
+        eprintln!("total narration: {:.1} s", total_ms as f64 / 1000.0);
+        eprintln!(
+            "---- log ----
+{}",
+            std::fs::read_to_string(paths.project_log(&id)).unwrap_or_default()
+        );
+        let last = rec.progress.lock().unwrap().last().cloned().unwrap();
+        assert_eq!(last.stage, GenerateStage::Done, "{:?}", last.error);
+        assert!(p.scenes.iter().all(|s| s.voice.path.is_some()));
+    }
 }

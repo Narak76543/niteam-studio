@@ -192,6 +192,19 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
     }
   };
 
+  /** Approve → start voice generation → go to the Scenes page. */
+  const approve = async () => {
+    try {
+      await flush();
+      setProject(await api.scriptApprove(projectId));
+    } catch (e) {
+      toast.show(errorMessage(e), "danger");
+      return;
+    }
+    await api.generateStart(projectId).catch((e: unknown) => toast.show(errorMessage(e), "danger"));
+    navigate({ name: "scenes", projectId });
+  };
+
   const generate = (restart: boolean) =>
     run(async () => {
       setFinished(null);
@@ -299,7 +312,7 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
           </Button>
         )}
         {hasScenes && !incomplete && (
-          <Button variant="primary" onClick={() => void run(() => api.scriptApprove(projectId))}>
+          <Button variant="primary" onClick={() => void approve()}>
             {t("script.approve")}
           </Button>
         )}
@@ -359,7 +372,14 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
           <Notice tone="warn">{t("script.stopped", { done: chaptersDone, total: chaptersTotal })}</Notice>
         )}
         {!editable && (
-          <Notice tone="ok">
+          <Notice
+            tone="ok"
+            actions={
+              <Button variant="pill" onClick={() => navigate({ name: "scenes", projectId })}>
+                {t("script.openScenes")}
+              </Button>
+            }
+          >
             <strong>{t("script.approved")}</strong> — {t("script.approvedBody")}
           </Notice>
         )}

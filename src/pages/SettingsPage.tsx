@@ -9,6 +9,7 @@ import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { RetryStatus } from "../components/RetryStatus";
 import { useToast } from "../components/toast";
+import { VoiceSettingsSection } from "../components/VoiceSettingsSection";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage, onGeminiRetry } from "../lib/api";
 import type { GeminiRetry, Language, ModelSettings, Settings } from "../lib/types";
@@ -199,6 +200,8 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
             )}
           </div>
         </div>
+
+        <VoiceSettingsSection settings={settings} onSave={onSave} />
 
         {/* UI language */}
         <div className="settings-row">

@@ -74,7 +74,10 @@ mod tests {
             model: settings.models.tts.clone(),
             style: "calm, warm storyteller".into(),
         };
-        let out = engine.synthesize(&req, &RetryHooks::default()).await.unwrap();
+        let out = engine
+            .synthesize(&req, &RetryHooks::default())
+            .await
+            .unwrap();
         let ms = super::super::audio::wav_duration_ms(&out.audio);
         eprintln!("gemini tts: {} bytes, {:?} ms", out.audio.len(), ms);
         assert!(ms.unwrap_or(0) > 500);

@@ -57,5 +57,7 @@ linker_messages = "allow"
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+# unwind (not abort): a panic inside a dependency (e.g. the Edge TTS crate) becomes an
+# error in that task instead of killing the app.
+panic = "unwind"
 strip = true

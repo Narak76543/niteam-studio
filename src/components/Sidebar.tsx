@@ -95,8 +95,10 @@ export function Sidebar({ route, navigate, recent, onSearch, onToggleLanguage }:
               icon={<FileText {...ICON} />}
               label={p.title}
               lang={p.language}
-              active={route.name === "script" && route.projectId === p.id}
-              onClick={() => navigate({ name: "script", projectId: p.id })}
+              active={(route.name === "script" || route.name === "scenes") && route.projectId === p.id}
+              onClick={() =>
+                navigate({ name: p.status === "script_draft" ? "script" : "scenes", projectId: p.id })
+              }
             />
           ))}
         </div>

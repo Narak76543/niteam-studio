@@ -1035,3 +1035,42 @@ input[type="range"] {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- scene grid (Scenes page) ---------- */
+.scene-grid {
+  display: grid;
+  gap: var(--s-4);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.scene-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+}
+.scene-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.scene-card__text {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.scene-card__actions {
+  display: flex;
+  gap: var(--s-1);
+  margin-top: auto;
+}
+.scene-card .notice {
+  padding: var(--s-2) var(--s-3);
+}
+@media (min-width: 1400px) {
+  .scene-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}

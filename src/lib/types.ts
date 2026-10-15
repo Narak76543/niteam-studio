@@ -26,10 +26,13 @@ export interface Settings {
   output_dir: string | null;
   models: ModelSettings;
   concurrency: ConcurrencySettings;
+  voice: VoiceDefaults;
 }
 
 /** Stable error codes from `GeminiError::kind` / `ProjectError::kind`. */
 export type ErrorKind =
+  | "edge_unavailable"
+  | "suspicious_length"
   | "missing_key"
   | "invalid_key"
   | "rate_limited"
@@ -43,6 +46,8 @@ export type ErrorKind =
   | "other";
 
 export const ERROR_KINDS: readonly ErrorKind[] = [
+  "edge_unavailable",
+  "suspicious_length",
   "missing_key",
   "invalid_key",
   "rate_limited",
@@ -68,7 +73,7 @@ export type RetryReason = "busy" | "rate_limited" | "network" | "next_model";
 
 /** Payload of the `gemini-retry` event. */
 export interface GeminiRetry {
-  scope: "script" | "key_test";
+  scope: "script" | "key_test" | "voice";
   project_id: string | null;
   model: string;
   /** For `next_model`: the model that just gave up. */
@@ -92,10 +97,49 @@ export interface Style {
   style_prompt: string;
 }
 
+export type EngineKind = "edge" | "gemini";
+
+/** Voice snapshot stored on the project (resolved from Settings for its language). */
 export interface VoiceSettings {
+  engine: EngineKind;
   model: string;
   voice_name: string;
   direction: string;
+  rate: number;
+  pitch: number;
+}
+
+/** Settings → Voice. */
+export interface VoiceDefaults {
+  engine: EngineKind;
+  edge_voice_km: string;
+  edge_voice_en: string;
+  /** Edge rate in % (−50…+50). */
+  rate: number;
+  /** Edge pitch in Hz (−50…+50). */
+  pitch: number;
+  gemini_voice: string;
+  gemini_model: string;
+  direction: string;
+}
+
+export interface VoiceInfo {
+  id: string;
+  label: string;
+  language: Language;
+}
+
+export interface VoiceCatalog {
+  edge: VoiceInfo[];
+  /** [name, character] — Gemini voices are multilingual. */
+  gemini: [string, string][];
+}
+
+/** One entry of `scenes/<id>/words.json` (Edge WordBoundary; Khmer = phrase level). */
+export interface WordTiming {
+  text: string;
+  start_ms: number;
+  end_ms: number;
 }
 
 export interface OutlineChapter {
@@ -113,10 +157,13 @@ export interface Outline {
 
 export interface VoiceAsset {
   status: AssetStatus;
+  /** Relative to the project folder: scenes/<id>/voice.mp3 | voice.wav */
   path: string | null;
   duration_ms: number | null;
   error: string | null;
+  error_kind: string | null;
   text_hash: string | null;
+  words_path: string | null;
 }
 
 export interface ImageAsset {
@@ -220,6 +267,30 @@ export interface ScriptProgress {
   chapters_done: number;
   chapters_total: number;
   /** Raw error text (shown under "Details"). */
+  error: string | null;
+  error_kind: string | null;
+}
+
+/** Payload of `scene-progress`. */
+export interface SceneProgress {
+  project_id: string;
+  scene_id: string;
+  asset: "voice" | "image";
+  status: AssetStatus;
+  duration_ms: number | null;
+  error: string | null;
+  error_kind: string | null;
+}
+
+export type GenerateStage = "running" | "done" | "cancelled" | "failed";
+
+/** Payload of `generate-progress`. */
+export interface GenerateProgress {
+  project_id: string;
+  stage: GenerateStage;
+  done: number;
+  failed: number;
+  total: number;
   error: string | null;
   error_kind: string | null;
 }

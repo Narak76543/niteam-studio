@@ -22,7 +22,8 @@ stop and ask the human to test. Do not start the next phase on your own.
 ## Hard rules
 
 - **Target hardware is a low-spec Windows laptop** (8 GB RAM, integrated GPU, no CUDA).
-  No Remotion, no Node at runtime, no headless Chrome, no local AI models.
+  No Remotion, no Node at runtime, no headless Chrome, no local AI models (except
+  Exception 3 below).
 - **All AI runs through the Gemini API** with the user's own key (BYOK).
   **Exception (decided by the project owner, 2026-10-15):** voices may also come from
   **Edge TTS** (Microsoft Edge "Read aloud", via the `msedge-tts` crate). It is an unofficial,
@@ -33,7 +34,12 @@ stop and ask the human to test. Do not start the next phase on your own.
   **Exception 2 (images, `docs/07-image-generation.md`):** images default to **Cloudflare
   Workers AI** (`@cf/black-forest-labs/flux-1-schnell`) with the user's own Cloudflare account
   (free daily allowance); Gemini image models remain the paid alternative.
-  No other non-Gemini AI services.
+  **Exception 3 (local images, `docs/08-local-gpu.md`, Phase 6 only; decided by the project
+  owner, 2026-10-15):** images may be generated locally with **stable-diffusion.cpp** (MIT,
+  bundled as a sidecar) and on-demand downloaded model files whose licenses allow commercial
+  use (owner-approved list in `local_models.json`), only on GPUs with ≥ 4 GB dedicated VRAM.
+  Integrated-GPU / < 4 GB machines keep using Cloudflare. Text and voice stay as above.
+  No other non-Gemini AI services and no other local models.
   - Store the Gemini key **and the Cloudflare API token** only via the `keyring` crate
     (Windows Credential Manager; users `gemini_api_key`, `cloudflare_api_token`). The
     Cloudflare **account ID** is not secret and lives in `settings.json`.

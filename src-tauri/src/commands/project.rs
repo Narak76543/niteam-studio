@@ -37,5 +37,6 @@ pub async fn project_get(state: State<'_, AppState>, project_id: String) -> CmdR
 #[tauri::command]
 pub async fn project_delete(state: State<'_, AppState>, project_id: String) -> CmdResult<()> {
     state.script_jobs.cancel(&project_id);
+    state.voice_jobs.cancel(&project_id);
     state.store.delete(&project_id).await.map_err(to_cmd)
 }

@@ -37,6 +37,10 @@ hex = "0.4"
 unicode-normalization = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 rand = "0.8"
+# Edge TTS (unofficial, see CLAUDE.md). Async tokio client; no blocking/ureq stack.
+msedge-tts = { version = "0.4", default-features = false, features = ["tokio-runtime"] }
+unicode-segmentation = "1"
+base64 = "0.22"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }

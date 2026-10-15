@@ -134,6 +134,27 @@ impl GeminiClient {
         self.call(kind, model, request, hooks, max_attempts).await
     }
 
+    /// `POST /interactions` (Interactions API; used for TTS, see `gemini/tts.rs`).
+    pub async fn create_interaction<T: DeserializeOwned, B: serde::Serialize>(
+        &self,
+        key: &ApiKey,
+        model: &str,
+        kind: EndpointKind,
+        body: &B,
+        hooks: &RetryHooks,
+        max_attempts: u32,
+    ) -> Result<T, GeminiError> {
+        let body = serde_json::to_vec(body)
+            .map_err(|e| GeminiError::BadResponse(format!("could not encode request: {e}")))?;
+        let request = HttpRequest {
+            method: Method::Post,
+            url: format!("{}/interactions", self.base_url),
+            api_key: key.clone(),
+            body: Some(body),
+        };
+        self.call(kind, model, request, hooks, max_attempts).await
+    }
+
     /// Text generation over the model chain: each model gets [`TEXT_CHAIN_ATTEMPTS`] tries
     /// (429 / 5xx / timeouts are retried with backoff); if it still fails with a transient
     /// error or 404, the next model is tried. Returns the response and the model that answered.

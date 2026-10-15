@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::tts::EngineKind;
+
 pub const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -61,10 +63,23 @@ pub struct Style {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Voice used for this project's scenes. Copied from Settings (resolved for the project
+/// language) when voice generation starts; part of every scene's `text_hash`.
 pub struct VoiceSettings {
+    #[serde(default)]
+    pub engine: EngineKind,
+    /// Gemini TTS model (ignored by Edge).
     pub model: String,
+    /// Edge voice ID (`km-KH-SreymomNeural`) or Gemini voice name (`Kore`).
     pub voice_name: String,
+    /// Gemini delivery style (ignored by Edge).
     pub direction: String,
+    /// Edge rate in % (−50…+50).
+    #[serde(default)]
+    pub rate: i32,
+    /// Edge pitch in Hz (−50…+50).
+    #[serde(default)]
+    pub pitch: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -109,10 +124,17 @@ pub struct Scene {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct VoiceAsset {
     pub status: AssetStatus,
+    /// Relative to the project folder: `scenes/<id>/voice.mp3` (Edge) or `.wav` (Gemini).
     pub path: Option<String>,
     pub duration_ms: Option<u64>,
     pub error: Option<String>,
+    /// Stable error code for the UI (`edge_unavailable`, `busy`, `suspicious_length`, …).
+    #[serde(default)]
+    pub error_kind: Option<String>,
     pub text_hash: Option<String>,
+    /// `scenes/<id>/words.json` when the engine reported word/phrase timings (Edge).
+    #[serde(default)]
+    pub words_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -303,9 +325,12 @@ pub(crate) mod tests {
                 style_prompt: "watercolor".into(),
             },
             voice: VoiceSettings {
+                engine: EngineKind::Edge,
                 model: "m".into(),
                 voice_name: "v".into(),
                 direction: "d".into(),
+                rate: 0,
+                pitch: 0,
             },
             status: ProjectStatus::ScriptDraft,
             created_at: String::new(),

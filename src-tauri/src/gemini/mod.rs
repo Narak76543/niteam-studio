@@ -6,6 +6,7 @@ pub mod models;
 pub mod retry;
 pub mod script;
 pub mod transport;
+pub mod tts;
 
 pub use client::GeminiClient;
 

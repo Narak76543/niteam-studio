@@ -3,6 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::{AppPaths, StorageError, atomic};
+use crate::pipeline::editing::DEFAULT_VOICE_DIRECTION;
+use crate::pipeline::project::{Language, VoiceSettings};
+use crate::tts::{EngineKind, voices};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -14,6 +17,82 @@ pub struct Settings {
     pub output_dir: Option<String>,
     pub models: ModelSettings,
     pub concurrency: ConcurrencySettings,
+    pub voice: VoiceDefaults,
+}
+
+/// Voice engine and voices (Settings → Voice). Resolved per project language with
+/// [`VoiceDefaults::resolve`] when voice generation starts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct VoiceDefaults {
+    pub engine: EngineKind,
+    pub edge_voice_km: String,
+    pub edge_voice_en: String,
+    /// Edge speaking rate in % (−50…+50).
+    pub rate: i32,
+    /// Edge pitch in Hz (−50…+50).
+    pub pitch: i32,
+    pub gemini_voice: String,
+    pub gemini_model: String,
+    /// Gemini delivery style.
+    pub direction: String,
+}
+
+impl Default for VoiceDefaults {
+    fn default() -> Self {
+        Self {
+            engine: EngineKind::Edge,
+            edge_voice_km: "km-KH-SreymomNeural".into(),
+            edge_voice_en: "en-US-AvaNeural".into(),
+            rate: 0,
+            pitch: 0,
+            gemini_voice: "Kore".into(),
+            gemini_model: ModelSettings::default().tts,
+            direction: DEFAULT_VOICE_DIRECTION.into(),
+        }
+    }
+}
+
+impl VoiceDefaults {
+    /// The concrete voice for a project in `language`.
+    pub fn resolve(&self, language: Language) -> VoiceSettings {
+        let voice_name = match (self.engine, language) {
+            (EngineKind::Edge, Language::Km) => self.edge_voice_km.clone(),
+            (EngineKind::Edge, Language::En) => self.edge_voice_en.clone(),
+            (EngineKind::Gemini, _) => self.gemini_voice.clone(),
+        };
+        VoiceSettings {
+            engine: self.engine,
+            model: self.gemini_model.clone(),
+            voice_name,
+            direction: self.direction.trim().to_owned(),
+            rate: self.rate,
+            pitch: self.pitch,
+        }
+    }
+
+    fn validate(&self) -> Result<(), StorageError> {
+        let bad = |what: &str| Err(StorageError::InvalidSetting(what.to_owned()));
+        if !voices::is_edge_voice(&self.edge_voice_km) || !self.edge_voice_km.starts_with("km-") {
+            return bad("Khmer Edge voice");
+        }
+        if !voices::is_edge_voice(&self.edge_voice_en) || !self.edge_voice_en.starts_with("en-") {
+            return bad("English Edge voice");
+        }
+        if !voices::is_gemini_voice(&self.gemini_voice) {
+            return bad("Gemini voice");
+        }
+        if self.gemini_model.is_empty() || !is_model_id(&self.gemini_model) {
+            return bad("Gemini TTS model");
+        }
+        if !(-50..=50).contains(&self.rate) || !(-50..=50).contains(&self.pitch) {
+            return bad("rate and pitch must be between -50 and +50");
+        }
+        if self.direction.chars().count() > 300 {
+            return bad("voice direction is too long");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -43,6 +122,7 @@ impl Default for Settings {
             output_dir: None,
             models: ModelSettings::default(),
             concurrency: ConcurrencySettings::default(),
+            voice: VoiceDefaults::default(),
         }
     }
 }
@@ -114,6 +194,7 @@ impl Settings {
                 return Err(StorageError::InvalidSetting(format!("model id '{m}'")));
             }
         }
+        self.voice.validate()?;
         let c = &self.concurrency;
         for n in [c.text, c.tts, c.image] {
             if n == 0 || n > MAX_CONCURRENCY {
@@ -170,6 +251,23 @@ mod tests {
         let mut s = Settings::default();
         s.models.text_chain[1] = "bad id!".into();
         assert!(s.validate().is_err());
+    }
+
+    #[test]
+    fn voice_defaults_resolve_per_language() {
+        let mut v = VoiceDefaults::default();
+        assert_eq!(v.resolve(Language::Km).voice_name, "km-KH-SreymomNeural");
+        assert_eq!(v.resolve(Language::En).voice_name, "en-US-AvaNeural");
+        v.engine = EngineKind::Gemini;
+        assert_eq!(v.resolve(Language::Km).voice_name, "Kore");
+        assert!(v.validate().is_ok());
+        v.edge_voice_km = "en-US-AvaNeural".into();
+        assert!(v.validate().is_err(), "Khmer slot needs a Khmer voice");
+        let v = VoiceDefaults {
+            rate: 80,
+            ..VoiceDefaults::default()
+        };
+        assert!(v.validate().is_err());
     }
 
     #[test]

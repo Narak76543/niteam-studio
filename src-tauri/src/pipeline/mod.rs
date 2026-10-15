@@ -2,10 +2,13 @@
 
 pub mod editing;
 pub mod hashing;
+pub mod jobs;
+pub mod khmer_numbers;
 pub mod presets;
 pub mod project;
 pub mod script_job;
 pub mod store;
+pub mod voice_job;
 
 pub use store::ProjectStore;
 

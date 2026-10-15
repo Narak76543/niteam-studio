@@ -30,9 +30,12 @@ pub fn text_hash(project: &Project, scene: &Scene) -> String {
     let v = &project.voice;
     sha(&[
         &normalize_spoken(&scene.spoken_text),
+        v.engine.as_str(),
         &v.model,
         &v.voice_name,
         &v.direction,
+        &v.rate.to_string(),
+        &v.pitch.to_string(),
     ])
 }
 

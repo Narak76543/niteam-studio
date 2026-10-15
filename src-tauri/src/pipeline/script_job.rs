@@ -2,11 +2,7 @@
 //! `project.json` is saved after the outline and after every chapter, so a crash or
 //! cancel resumes at the first chapter that isn't `done`.
 
-use std::collections::HashMap;
-use std::sync::Mutex;
-
 use serde::Serialize;
-use tokio_util::sync::CancellationToken;
 
 use super::ProjectError;
 use super::hashing::{normalize, normalize_spoken};
@@ -59,41 +55,6 @@ pub fn plan_scenes(target_minutes: u32) -> Vec<u32> {
     let base = total / chapters;
     let extra = total % chapters;
     (0..chapters).map(|i| base + u32::from(i < extra)).collect()
-}
-
-/// Tracks running jobs so a project can't run two at once and can be cancelled.
-#[derive(Default)]
-pub struct ScriptJobs {
-    running: Mutex<HashMap<String, CancellationToken>>,
-}
-
-impl ScriptJobs {
-    pub fn start(&self, project_id: &str) -> Result<CancellationToken, ProjectError> {
-        let mut map = self.running.lock().unwrap_or_else(|p| p.into_inner());
-        if map.contains_key(project_id) {
-            return Err(ProjectError::Busy);
-        }
-        let token = CancellationToken::new();
-        map.insert(project_id.to_owned(), token.clone());
-        Ok(token)
-    }
-
-    pub fn finish(&self, project_id: &str) {
-        let mut map = self.running.lock().unwrap_or_else(|p| p.into_inner());
-        map.remove(project_id);
-    }
-
-    pub fn cancel(&self, project_id: &str) {
-        let map = self.running.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(t) = map.get(project_id) {
-            t.cancel();
-        }
-    }
-
-    pub fn is_running(&self, project_id: &str) -> bool {
-        let map = self.running.lock().unwrap_or_else(|p| p.into_inner());
-        map.contains_key(project_id)
-    }
 }
 
 pub struct ScriptJob<'a> {
@@ -416,17 +377,6 @@ mod tests {
         );
         assert_eq!(o.chapters.len(), 1);
         assert_eq!(o.chapters[0].scene_count, 14);
-    }
-
-    #[test]
-    fn jobs_are_exclusive() {
-        let jobs = ScriptJobs::default();
-        let t = jobs.start("a").unwrap();
-        assert!(jobs.start("a").is_err());
-        jobs.cancel("a");
-        assert!(t.is_cancelled());
-        jobs.finish("a");
-        assert!(!jobs.is_running("a"));
     }
 
     /// Live end-to-end check against the real Gemini API with the key from Windows

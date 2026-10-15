@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 
 use crate::gemini::GeminiClient;
 use crate::pipeline::ProjectStore;
-use crate::pipeline::script_job::ScriptJobs;
+use crate::pipeline::jobs::JobRegistry;
 use crate::storage::{AppPaths, Settings};
 
 pub struct AppState {
@@ -14,5 +14,6 @@ pub struct AppState {
     pub settings: RwLock<Settings>,
     pub gemini: GeminiClient,
     pub store: Arc<ProjectStore>,
-    pub script_jobs: Arc<ScriptJobs>,
+    pub script_jobs: Arc<JobRegistry>,
+    pub voice_jobs: Arc<JobRegistry>,
 }

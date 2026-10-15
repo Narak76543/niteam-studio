@@ -10,12 +10,13 @@ use super::project::{
 };
 use super::store::now;
 use crate::gemini::script::MOODS;
+use crate::tts::EngineKind;
 
 pub const MIN_MINUTES: u32 = 1;
 pub const MAX_MINUTES: u32 = 20;
 const MAX_TOPIC_CHARS: usize = 500;
 const MAX_FIELD_CHARS: usize = 4_000;
-const DEFAULT_VOICE_DIRECTION: &str = "calm, warm storyteller, medium pace";
+pub const DEFAULT_VOICE_DIRECTION: &str = "calm, warm storyteller, medium pace";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct NewProjectInput {
@@ -63,11 +64,14 @@ pub fn new_project(input: &NewProjectInput, tts_model: &str) -> Result<Project, 
             preset: preset.id.to_owned(),
             style_prompt: preset.style_prompt.to_owned(),
         },
+        // Replaced by the Settings voice (resolved for the language) when voices are generated.
         voice: VoiceSettings {
+            engine: EngineKind::default(),
             model: tts_model.to_owned(),
-            // Voice picker arrives with TTS (Phase 2).
             voice_name: String::new(),
             direction: DEFAULT_VOICE_DIRECTION.to_owned(),
+            rate: 0,
+            pitch: 0,
         },
         status: ProjectStatus::ScriptDraft,
         created_at: ts.clone(),

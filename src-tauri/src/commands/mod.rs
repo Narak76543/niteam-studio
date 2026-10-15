@@ -4,6 +4,7 @@
 pub mod generate;
 pub mod images;
 pub mod project;
+pub mod render;
 pub mod retry_events;
 pub mod script;
 pub mod settings;

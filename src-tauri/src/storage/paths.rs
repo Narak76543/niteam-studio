@@ -27,7 +27,6 @@ impl AppPaths {
         Self { root }
     }
 
-    #[cfg(test)]
     pub fn root(&self) -> &std::path::Path {
         &self.root
     }

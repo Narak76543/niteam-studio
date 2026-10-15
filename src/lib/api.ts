@@ -10,7 +10,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   GeminiRetry,
   GenerateProgress,
+  CueIn,
   ImageCatalog,
+  RenderProgress,
+  SubsTask,
   ImageEstimate,
   ImageTestOutcome,
   VisualBible,
@@ -97,6 +100,18 @@ export const api = {
   projectSetScenesPerImage: (projectId: string, n: 1 | 2) =>
     invoke<Project>("project_set_scenes_per_image", { projectId, n }),
 
+  // subtitles + render (Phase 4)
+  subsPlan: (projectId: string) => invoke<SubsTask[]>("subs_plan", { projectId }),
+  subsSave: (projectId: string, sceneId: string, hash: string, cues: CueIn[]) =>
+    invoke<null>("subs_save", { projectId, sceneId, hash, cues }),
+  encodersDetect: () => invoke<string>("encoders_detect"),
+  renderStart: (projectId: string) => invoke<null>("render_start", { projectId }),
+  renderCancel: (projectId: string) => invoke<null>("render_cancel", { projectId }),
+  renderRunning: (projectId: string) => invoke<boolean>("render_running", { projectId }),
+  /** Opens the finished video, or shows it in Explorer with `reveal`. */
+  renderOpenOutput: (projectId: string, reveal: boolean) =>
+    invoke<null>("render_open_output", { projectId, reveal }),
+
   // native helpers
   pickFolder: async (): Promise<string | null> => {
     const picked = await openDialog({ directory: true, multiple: false });
@@ -115,6 +130,10 @@ export function onSceneProgress(cb: (p: SceneProgress) => void): Promise<Unliste
 
 export function onGenerateProgress(cb: (p: GenerateProgress) => void): Promise<UnlistenFn> {
   return listen<GenerateProgress>("generate-progress", (e) => cb(e.payload));
+}
+
+export function onRenderProgress(cb: (p: RenderProgress) => void): Promise<UnlistenFn> {
+  return listen<RenderProgress>("render-progress", (e) => cb(e.payload));
 }
 
 /** Retry/fallback notices for any Gemini call (filter by `scope` / `project_id`). */

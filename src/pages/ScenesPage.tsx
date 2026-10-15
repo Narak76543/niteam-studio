@@ -1,4 +1,4 @@
-import { ImageIcon, ImagePlus, PencilLine, Play, RotateCcw, Sparkles, Square, Volume2 } from "lucide-react";
+import { Clapperboard, ImageIcon, ImagePlus, PencilLine, Play, RotateCcw, Sparkles, Square, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AssetStatusBadge, Badge, ProjectStatusBadge } from "../components/Badge";
@@ -259,6 +259,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   };
 
   const failedTotal = voices.failed + images.failed;
+  const allReady = scenes.length > 0 && voices.todo === 0 && images.todo === 0;
 
   return (
     <div className="page">
@@ -311,6 +312,15 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
                 </Button>
               )
             )}
+            {allReady && !anyRunning && (
+              <Button
+                variant="primary"
+                icon={<Clapperboard {...ICON} />}
+                onClick={() => navigate({ name: "render", projectId })}
+              >
+                {t("render.open")}
+              </Button>
+            )}
           </>
         }
       />
@@ -328,9 +338,9 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
           />
         )}
         {!anyRunning && failedTotal > 0 && <Notice tone="warn">{t("scenes.someFailed", { n: failedTotal })}</Notice>}
-        {!anyRunning && scenes.length > 0 && voices.todo === 0 && images.todo === 0 && (
+        {!anyRunning && allReady && (
           <Notice tone="ok">
-            {t("scenes.allReady")} {t("scenes.imagesLater")}
+            {t("scenes.allReady")} {t("scenes.nextRender")}
           </Notice>
         )}
       </div>

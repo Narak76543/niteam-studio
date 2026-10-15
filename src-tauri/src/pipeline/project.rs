@@ -281,10 +281,14 @@ pub struct SubsAsset {
     pub status: AssetStatus,
     #[serde(default)]
     pub lines: Vec<SubLine>,
+    /// `hashing::subs_hash` the PNGs were rendered for.
+    #[serde(default)]
+    pub hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SubLine {
+    /// One subtitle cue: up to 2 display lines joined with a line break.
     pub text: String,
     pub start_ms: u64,
     pub end_ms: u64,
@@ -294,7 +298,11 @@ pub struct SubLine {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ClipAsset {
     pub status: AssetStatus,
+    /// `scenes/<id>/clip.mkv` (H.264 + PCM so clips join without audio gaps).
     pub path: Option<String>,
+    /// `hashing::clip_hash` of the inputs the clip was rendered from.
+    #[serde(default)]
+    pub hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -396,6 +404,11 @@ impl Project {
     /// On app start: anything left `running` by a crash goes back to `pending`.
     pub fn reset_running_assets(&mut self) -> bool {
         let mut changed = false;
+        // A render interrupted by a crash: finished clips are kept, the project goes back to review.
+        if self.status == ProjectStatus::Rendering {
+            self.status = ProjectStatus::Review;
+            changed = true;
+        }
         for s in &mut self.scenes {
             for st in [
                 &mut s.voice.status,

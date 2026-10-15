@@ -4,6 +4,7 @@ mod gemini;
 mod images;
 mod net;
 mod pipeline;
+mod render;
 mod state;
 mod storage;
 mod tts;
@@ -36,6 +37,8 @@ fn init_state(app: &tauri::App) -> Result<AppState, String> {
         script_jobs: Arc::new(JobRegistry::default()),
         voice_jobs: Arc::new(JobRegistry::default()),
         image_jobs: Arc::new(JobRegistry::default()),
+        render_jobs: Arc::new(JobRegistry::default()),
+        ffmpeg_lock: Arc::new(tokio::sync::Mutex::new(())),
     })
 }
 
@@ -70,6 +73,13 @@ pub fn run() {
             commands::script::scenes_reorder,
             commands::script::script_approve,
             commands::script::script_reopen,
+            commands::render::subs_plan,
+            commands::render::subs_save,
+            commands::render::encoders_detect,
+            commands::render::render_start,
+            commands::render::render_cancel,
+            commands::render::render_running,
+            commands::render::render_open_output,
             commands::generate::generate_start,
             commands::generate::generate_cancel,
             commands::generate::generate_running,

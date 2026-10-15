@@ -66,6 +66,7 @@ React + TypeScript + Vite · FFmpeg as a Tauri sidecar.
 
 ```bash
 npm install
+powershell -ExecutionPolicy Bypass -File scripts/fetch-ffmpeg.ps1   # once: FFmpeg sidecar
 npm run tauri dev      # run app in dev
 npm run tauri build    # Windows installer
 cargo test --manifest-path src-tauri/Cargo.toml

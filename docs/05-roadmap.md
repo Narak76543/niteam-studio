@@ -45,7 +45,7 @@ Edge TTS and play them back in the scene list; switch to Gemini TTS and regenera
 close the app mid-way through a 3-minute project; reopen → it resumes without redoing
 finished scenes.
 
-## Phase 3 — Images  ← **CURRENT** (started before Phase 2 was tested, by the owner's request)
+## Phase 3 — Images  ✅ (tested by the owner, 2026-10-15)
 
 Spec: `docs/07-image-generation.md` (§7 quality check and §9 thumbnail are Phase 5).
 
@@ -82,14 +82,15 @@ Spec: `docs/07-image-generation.md` (§7 quality check and §9 thumbnail are Pha
 in one consistent style (same characters/places look alike); one regenerated with a new seed;
 edit one image prompt → only that image becomes outdated; Look & feel edit → all images outdated.
 
-## Phase 4 — Subtitles + first render
+## Phase 4 — Subtitles + first render  ← **CURRENT**
 
-- [ ] `lib/subtitles.ts`: Khmer segmentation per `04-khmer.md` + unit tests
-- [ ] Canvas PNG rendering, font-loaded check, `subs_save` command
-- [ ] FFmpeg sidecar bundled (ffmpeg + ffprobe for Windows x64)
-- [ ] Encoder detection + cache
-- [ ] Per-scene clip render with pan motion + subtitle overlays, then concat
-- [ ] Render page: progress, ETA, cancel, open file/folder
+- [x] `lib/subtitles.ts`: Khmer segmentation per `04-khmer.md` + unit tests
+- [x] Canvas PNG rendering, font-loaded check, `subs_save` command
+- [x] FFmpeg sidecar bundled (Windows x64, pinned 9.0.2, `scripts/fetch-ffmpeg.ps1`).
+      ffprobe is not bundled: nothing needs it (durations are measured in Rust), saves ~100 MB
+- [x] Encoder detection + cache
+- [x] Per-scene clip render with pan motion + subtitle overlays, then concat
+- [x] Render page: progress, ETA, cancel, open file/folder
 
 **Test:** 3-minute Khmer video plays in VLC and Windows Media Player; subtitles are
 correctly shaped, no word split across lines, in sync with voice.
@@ -167,3 +168,16 @@ _Add one line per finished phase: date — phase — notes._
   **Resume** / "Ready to resume" (no account switching); Settings → Images with Test
   connection; Scenes page shows thumbnails, voice + image status, regenerate / edit prompt.
   Not yet live-tested against Cloudflare (needs the owner's account ID + token).
+- 2026-10-15 — Phase 3 test — owner confirmed images work (Cloudflare Flux, 9 images for the
+  1-minute Khmer Angkor Wat project in ~25 s after the `seed` fix).
+- 2026-10-15 — Phase 4 — subtitles + render: Khmer line breaking (`lib/subtitles.ts`, word
+  segmenter, ≤ 38 graphemes, phrase/sentence breaks preferred, no orphans), cues of ≤ 2 lines
+  timed from Edge phrase timings, drawn on canvas (Noto Sans Khmer, white + dark outline) and
+  saved via `subs_save` with an input hash; FFmpeg 9.0.2 sidecar; encoder detection
+  (QSV → AMF → NVENC → x264) cached in Settings → Video; per-scene `clip.mkv` (time-based crop
+  pan, subtitle overlays, H.264 + PCM) cached by input hash, then concat with AAC once →
+  one MP4 (`output/final.mp4` or `<output folder>/<title>.mp4`); trailing TTS silence trimmed
+  to 0.15 s after the last word (pauses between scenes ~0.6 s instead of ~1.3 s); Render page
+  with progress, ETA, cancel, open video / show in folder. Measured on the dev laptop (Intel
+  QSV): 9 scenes / 69 s of video in 18 s; re-render with cached clips 1.4 s; audio/video
+  durations equal within 30 ms.

@@ -7,3 +7,7 @@ src-tauri/gen/schemas/
 .env.*
 .DS_Store
 Thumbs.db
+
+# FFmpeg sidecar (scripts/fetch-ffmpeg.ps1), ~100 MB
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep

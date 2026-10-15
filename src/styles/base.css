@@ -1140,3 +1140,39 @@ input[type="range"] {
   cursor: default;
   opacity: 0.6;
 }
+
+/* ---------- render page (Phase 4) ---------- */
+.render-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) 1fr;
+  gap: var(--s-4);
+  align-items: start;
+}
+.render-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-5);
+}
+.render-card__status {
+  justify-content: space-between;
+}
+.render-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s-2) var(--s-4);
+  margin: 0;
+  font-size: var(--fs-small);
+}
+.render-facts dt {
+  color: var(--text-muted);
+}
+.render-facts dd {
+  margin: 0;
+  min-width: 0;
+}
+@media (max-width: 1200px) {
+  .render-layout {
+    grid-template-columns: 1fr;
+  }
+}

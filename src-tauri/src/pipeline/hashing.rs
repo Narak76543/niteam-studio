@@ -4,7 +4,7 @@
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
-use super::project::{AssetStatus, Project, Scene};
+use super::project::{AssetStatus, Language, Project, Scene};
 
 const ZERO_WIDTH_SPACE: char = '\u{200B}';
 const SEP: &str = "\u{1F}";
@@ -19,7 +19,7 @@ pub fn normalize_spoken(text: &str) -> String {
     normalize(text).replace(ZERO_WIDTH_SPACE, "")
 }
 
-fn sha(parts: &[&str]) -> String {
+pub(crate) fn sha(parts: &[&str]) -> String {
     let mut h = Sha256::new();
     h.update(parts.join(SEP).as_bytes());
     hex::encode(&h.finalize()[..16])
@@ -62,6 +62,30 @@ pub fn mark_all_images_stale(project: &mut Project) {
             }
         }
     }
+}
+
+/// Bump when the subtitle look (`src/lib/subtitleCanvas.ts`) or line breaking
+/// (`src/lib/subtitles.ts`) changes, so existing subtitle PNGs are redrawn.
+pub const SUBS_VERSION: &str = "1";
+
+/// Inputs of a scene's subtitle PNGs: narration, the voice they are timed to, resolution.
+/// `None` while the scene has no finished voice.
+pub fn subs_hash(project: &Project, scene: &Scene) -> Option<String> {
+    let voice_hash = scene.voice.text_hash.as_deref()?;
+    let duration = scene.voice.duration_ms?;
+    let language = match project.language {
+        Language::Km => "km",
+        Language::En => "en",
+    };
+    Some(sha(&[
+        "subs",
+        SUBS_VERSION,
+        &normalize(&scene.narration),
+        voice_hash,
+        &duration.to_string(),
+        &project.render.resolution,
+        language,
+    ]))
 }
 
 /// Marks done/failed assets of `scene_index` stale if their input changed.

@@ -199,7 +199,11 @@ at 1 MB.
 
 Done in React because only the browser shapes Khmer reliably. Details in `04-khmer.md`.
 
-1. Split `narration` into display lines (max ~38 Khmer graphemes / ~42 Latin chars, max 2 lines on screen).
+1. Split `narration` into display lines (`src/lib/subtitles.ts`: max ~38 Khmer graphemes /
+   ~42 Latin chars; phrase/sentence boundaries preferred in the last 30 % of a line; punctuation
+   never starts a line; a one-word line of ≤ 3 graphemes is merged with its neighbour). Lines
+   are grouped into **cues of at most 2 lines** (one PNG per cue, shown from the first line's
+   start to the last line's end).
 2. Timing (`src/lib/subtitleTiming.ts`): if `words.json` exists, each line break is placed
    where the voice reaches that point of the text (inside a phrase, interpolated by grapheme
    count; at a phrase end, in the pause before the next phrase). Lines come from `narration`
@@ -207,9 +211,16 @@ Done in React because only the browser shapes Khmer reliably. Details in `04-khm
    letter count. Without `words.json` (Gemini TTS), the scene's `duration_ms` is split
    proportionally to grapheme count. The first line starts at 0, the last ends at the
    scene duration.
-3. Draw each line on a transparent `<canvas>` (full frame width, ~180 px tall),
-   white text, dark outline + soft shadow, bundled Khmer font.
-4. `canvas.toBlob('image/png')` → bytes → `subs_save` command → Rust writes files.
+3. Draw each cue on a transparent `<canvas>` (`src/lib/subtitleCanvas.ts`): full frame width
+   × 240 px at 1080p (160 px at 720p), 56 px Noto Sans Khmer 600 (Manrope for English), line
+   height 1.6, white fill, ~6 px dark outline + soft shadow, lines bottom-aligned. The font is
+   awaited with `document.fonts.load` and checked before drawing.
+4. `subs_plan(project_id)` lists scenes whose subtitles are missing or outdated
+   (`subs.hash` ≠ `hashing::subs_hash` = narration + voice hash + duration + resolution +
+   language + `SUBS_VERSION`). For each: draw → base64 PNGs → `subs_save(project_id,
+   scene_id, hash, cues)`. Rust re-checks the hash (the scene may have changed meanwhile),
+   validates the PNGs and times, writes `scenes/<id>/subs/NNN.png` and marks a done clip
+   stale. Bump `SUBS_VERSION` when the subtitle look or line breaking changes.
 
 ## Step 6 — Render (FFmpeg)
 
@@ -220,7 +231,20 @@ for 170 scenes.
 
 Variables: `W×H` = 1920×1080, `D` = scene duration in seconds (voice + 0.25 s),
 `IW×IH` = enlarged image size. Pan direction alternates per scene (left→right,
-right→left, top→bottom…) so motion doesn't feel repetitive.
+right→left, top→bottom, bottom→top; scenes 2k / 2k+1 always opposite, so the two scenes of a
+shared image pan in opposite directions) so motion doesn't feel repetitive.
+
+**Voice length:** Edge TTS MP3s carry ~0.23 s of silence before and ~0.8 s after the speech.
+When `words.json` exists the clip uses the voice only up to **0.15 s after the last word**
+(`render_job::trimmed_voice_ms`), so scenes are ~0.6 s apart instead of ~1.3 s. Gemini TTS
+voices (no timings) are used whole.
+
+**As implemented** (`render/clip.rs`, pure + unit-tested): the command below, but subtitle
+inputs are single PNGs (overlay repeats the last frame), `format=yuv420p` comes *after* the
+overlays, and clips are **`clip.mkv` with PCM audio** (`-c:a pcm_s16le -ar 48000 -ac 2
+-f matroska`). PCM avoids the AAC priming gap at every scene boundary; audio is encoded once,
+at concat. Paths are relative to the project folder (FFmpeg runs with it as working
+directory). Each clip is written to `clip.tmp.mkv` and renamed when complete.
 
 ```bash
 ffmpeg -y -loop 1 -framerate 30 -t D -i image_1080.png \
@@ -244,8 +268,36 @@ ffmpeg -y -loop 1 -framerate 30 -t D -i image_1080.png \
 
 ### 6b. Concat
 
-`concat.txt` with `file 'scenes/s001/clip.mp4'` lines →
-`ffmpeg -f concat -safe 0 -i concat.txt -c copy output/narration.mp4`
+`concat.txt` with `file 'scenes/s001/clip.mkv'` lines →
+`ffmpeg -f concat -safe 0 -i concat.txt -map 0:v -map 0:a -c:v copy -c:a aac -b:a 192k
+-ar 48000 -ac 2 -movflags +faststart output/final.tmp.mp4`, then moved to the final place:
+`<Settings output folder>/<title>.mp4` (unsafe file-name characters → `_`) or
+`<project>/output/final.mp4`. (Phase 5 inserts the music step between concat and the move.)
+
+### 6x. Render job (`pipeline/render_job.rs`)
+
+- `render_start` refuses while a script / voice / image job runs, and `check_ready` requires
+  every voice and image `done` with files present and every scene's subtitles current
+  (the Render page draws missing subtitles first).
+- Clip cache: `clip.hash` = sha of image hash + path, voice hash + path + used length, subtitle
+  hash, encoder, resolution, pan, `CLIP_VERSION`. Done + same hash + file present → skipped.
+- One FFmpeg process at a time app-wide (`AppState::ffmpeg_lock`), `BELOW_NORMAL_PRIORITY_CLASS`
+  + `CREATE_NO_WINDOW`, `-progress pipe:1` parsed for `out_time_us`. Cancel kills the child and
+  deletes the current `clip.tmp.mkv`; finished clips stay.
+- Status: `rendering` while running → `done` with `render.output_path`; on failure or cancel
+  back to `review`. A crash during `rendering` is reset to `review` on startup.
+- Events: `render-progress {project_id, stage: clips|concat|done|failed|cancelled, scene_index,
+  total, percent (0–1 of this run's work, concat weighted 10 %), eta_seconds, output_path,
+  error, error_kind (ffmpeg_missing | ffmpeg | cancelled | other)}`.
+
+### FFmpeg sidecar
+
+Pinned Windows x64 build **FFmpeg 9.0.2 "essentials"** (gyan.dev, GPL, includes libx264,
+NVENC, QSV, AMF), fetched by `scripts/fetch-ffmpeg.ps1` (sha256-checked) to
+`src-tauri/binaries/ffmpeg-<host-triple>.exe` and listed in `bundle.externalBin`. Not committed
+(~100 MB). Tauri copies it next to the app exe as `ffmpeg.exe`, which is where
+`render::ffmpeg::Ffmpeg::locate` looks. Its LICENSE/README are copied next to it; the installer
+(Phase 5) must ship them (GPL: license text + where to get the source).
 
 ### 6c. Music + ducking
 
@@ -266,8 +318,9 @@ big Khmer/English headline via the same canvas method, save `thumbnail.png` (128
 
 ## Encoder detection
 
-At startup (cache result in settings), try encoding 1 s of `testsrc` with each
-encoder in order and keep the first that works:
+On the first render (or **Detect again** in Settings → Video; cached as
+`settings.render.encoder`, which the user may also pick by hand), try encoding 1 s of 1080p
+`testsrc` with each encoder in order and keep the first that works:
 
 | Encoder | Options |
 |---|---|

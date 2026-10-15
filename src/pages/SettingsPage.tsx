@@ -10,6 +10,7 @@ import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { RetryStatus } from "../components/RetryStatus";
 import { useToast } from "../components/toast";
+import { VideoSettingsSection } from "../components/VideoSettingsSection";
 import { VoiceSettingsSection } from "../components/VoiceSettingsSection";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage, onGeminiRetry } from "../lib/api";
@@ -205,6 +206,8 @@ export function SettingsPage({ settings, onSave, onKeyChanged }: Props) {
         <VoiceSettingsSection settings={settings} onSave={onSave} />
 
         <ImageSettingsSection settings={settings} onSave={onSave} />
+
+        <VideoSettingsSection settings={settings} onSave={onSave} />
 
         {/* UI language */}
         <div className="settings-row">

@@ -4,6 +4,7 @@ export type Route =
   | { name: "new"; preset?: string }
   | { name: "script"; projectId: string }
   | { name: "scenes"; projectId: string }
+  | { name: "render"; projectId: string }
   | { name: "settings" };
 
 export type Navigate = (route: Route) => void;

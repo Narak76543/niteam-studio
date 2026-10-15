@@ -51,9 +51,11 @@ nitean-studio/
 │     ├─ tts/        mod.rs (TtsEngine)  edge.rs  gemini.rs  audio.rs  voices.rs
 │     ├─ images/     provider.rs (ImageProvider)  cloudflare.rs  gemini.rs  prompt.rs
 │     │              postprocess.rs  budget.rs   (see 07-image-generation.md)
+│     ├─ render/     ffmpeg.rs (sidecar runner)  encoders.rs  clip.rs  concat.rs
 │     ├─ net/        transport.rs (HTTP behind a trait; mocked in tests)
 │     ├─ pipeline/   project.rs  store.rs  editing.rs  hashing.rs  presets.rs  script_job.rs
 │     │              jobs.rs  voice_job.rs  image_job.rs  visual_bible.rs  khmer_numbers.rs
+│     │              subs.rs  render_job.rs
 │     │              scheduler.rs  render.rs  ffmpeg.rs  encoders.rs  audio.rs
 │     └─ storage/    paths.rs  secrets.rs  settings.rs  atomic.rs  log.rs
 └─ package.json  vite.config.ts  tsconfig.json
@@ -87,8 +89,9 @@ harmless; sidecar file names must use the matching target triple.
     - `project.json` — single source of truth (see data model)
     - `scenes\<scene-id>\voice.mp3` (Edge) or `voice.wav` (Gemini), `words.json` (Edge
       phrase/word timings), `image_raw.jpg|png` (provider original), `image_1080.png` or
-      `image_720.png` (16:9, pan size), `thumb.jpg` (384×216), `subs\000.png …`, `clip.mp4`
-    - `output\final.mp4`, `output\thumbnail.png`
+      `image_720.png` (16:9, pan size), `thumb.jpg` (384×216), `subs\000.png …`, `clip.mkv`
+    - `concat.txt`, `output\final.mp4` (or `<Settings output folder>\<title>.mp4`),
+      `output\thumbnail.png`
     - `logs\pipeline.log` (no secrets)
   - `logs\app.log` — app-level events such as key tests (no secrets)
 - Secrets: `keyring` crate, service `NiteanStudio`:
@@ -153,8 +156,10 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
                    "provider": null, "seed": null, "shared_from": null,
                    "error": null, "error_kind": null, "prompt_hash": null },
                    // prompt_hash = sha256(provider_id + model + final_prompt + seed + steps) (07 §8)
-      "subs":    { "status": "pending", "lines": [ { "text": "…", "start_ms": 0, "end_ms": 2400, "path": "subs/000.png" } ] },
-      "clip":    { "status": "pending", "path": null }
+      "subs":    { "status": "pending", "hash": null,   // hashing::subs_hash the PNGs were drawn for
+                   "lines": [ { "text": "line 1\nline 2", "start_ms": 0, "end_ms": 2400,
+                                "path": "scenes/s001/subs/000.png" } ] },  // one cue = ≤ 2 lines
+      "clip":    { "status": "pending", "path": null, "hash": null }   // scenes/<id>/clip.mkv
     }
   ],
   "render": { "resolution": "1080p", "music": "default_calm.mp3", "music_volume": 0.12,
@@ -210,9 +215,11 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | `scene_image_prompt_update(project_id, scene_id, image_prompt)` | edit a prompt after approval |
 | `visual_bible_update(project_id, bible)`, `visual_bible_generate(project_id)` | Look & feel |
 | `project_set_scenes_per_image(project_id, n)` | 1 or 2 (07 §5) |
-| `subs_save(project_id, scene_id, lines_with_png_bytes)` | frontend hands rendered subtitle PNGs to Rust |
-| `render_start / render_cancel(project_id, options)` | FFmpeg render |
-| `encoders_detect()` | which H.264 encoders work on this machine |
+| `subs_plan(project_id)` | scenes whose subtitle PNGs are missing/outdated: narration, duration, Edge timings, hash |
+| `subs_save(project_id, scene_id, hash, cues[{text, start_ms, end_ms, png_base64}])` | frontend hands rendered subtitle PNGs to Rust |
+| `render_start / render_cancel / render_running(project_id)` | FFmpeg render job (clips + concat) |
+| `render_open_output(project_id, reveal)` | open the finished MP4 / show it in Explorer |
+| `encoders_detect()` | first working H.264 encoder; cached in `settings.render.encoder` |
 
 ## Events (Rust → UI)
 
@@ -220,7 +227,7 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 `gemini-retry` `{scope: script|key_test, project_id?, model, previous_model?, reason: busy|rate_limited|network|next_model, attempt, max_attempts, delay_ms, status?, error}`
 `scene-progress` `{project_id, scene_id, asset, status, duration_ms?, error?, error_kind?}`
 `generate-progress` `{project_id, job: voice|image, stage: running|done|cancelled|failed|paused_quota, done, failed, total, error?, error_kind?, resets_at_utc?}`
-`render-progress` `{project_id, stage, scene_index, total, percent, eta_seconds}`
+`render-progress` `{project_id, stage: clips|concat|done|failed|cancelled, scene_index, total, percent, eta_seconds, output_path?, error?, error_kind?}`
 `log` `{level, message}`
 
 ## Concurrency

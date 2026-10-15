@@ -70,10 +70,53 @@ export interface Settings {
   concurrency: ConcurrencySettings;
   voice: VoiceDefaults;
   image: ImageSettings;
+  render: RenderPrefs;
+}
+
+/** Settings → Video. */
+export interface RenderPrefs {
+  /** Cached detection result; null = detect on the next render. */
+  encoder: string | null;
+}
+
+/** Returned by `subs_plan`: one scene whose subtitle PNGs must be drawn. */
+export interface SubsTask {
+  scene_id: string;
+  narration: string;
+  duration_ms: number;
+  words: WordTiming[] | null;
+  hash: string;
+}
+
+/** One drawn subtitle cue for `subs_save`. */
+export interface CueIn {
+  text: string;
+  start_ms: number;
+  end_ms: number;
+  png_base64: string;
+}
+
+export type RenderStage = "clips" | "concat" | "done" | "failed" | "cancelled";
+
+/** Payload of `render-progress`. */
+export interface RenderProgress {
+  project_id: string;
+  stage: RenderStage;
+  /** 1-based scene being rendered (0 during concat). */
+  scene_index: number;
+  total: number;
+  /** 0–1 of this run's work. */
+  percent: number;
+  eta_seconds: number | null;
+  output_path: string | null;
+  error: string | null;
+  error_kind: string | null;
 }
 
 /** Stable error codes from `GeminiError::kind` / `ProjectError::kind`. */
 export type ErrorKind =
+  | "ffmpeg_missing"
+  | "ffmpeg"
   | "quota_daily"
   | "image_auth"
   | "edge_unavailable"
@@ -91,6 +134,8 @@ export type ErrorKind =
   | "other";
 
 export const ERROR_KINDS: readonly ErrorKind[] = [
+  "ffmpeg_missing",
+  "ffmpeg",
   "quota_daily",
   "image_auth",
   "edge_unavailable",
@@ -265,11 +310,14 @@ export interface SubLine {
 export interface SubsAsset {
   status: AssetStatus;
   lines: SubLine[];
+  hash: string | null;
 }
 
 export interface ClipAsset {
   status: AssetStatus;
+  /** scenes/<id>/clip.mkv */
   path: string | null;
+  hash: string | null;
 }
 
 export interface Scene {

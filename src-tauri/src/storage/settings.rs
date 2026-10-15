@@ -20,6 +20,15 @@ pub struct Settings {
     pub concurrency: ConcurrencySettings,
     pub voice: VoiceDefaults,
     pub image: ImageSettings,
+    pub render: RenderPrefs,
+}
+
+/// Settings → Video. The detected encoder is cached here (03 "Encoder detection").
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct RenderPrefs {
+    /// `h264_qsv` | `h264_amf` | `h264_nvenc` | `libx264`; `None` = detect on the next render.
+    pub encoder: Option<String>,
 }
 
 /// Settings → Images (`docs/07-image-generation.md` §1).
@@ -175,6 +184,7 @@ impl Default for Settings {
             concurrency: ConcurrencySettings::default(),
             voice: VoiceDefaults::default(),
             image: ImageSettings::default(),
+            render: RenderPrefs::default(),
         }
     }
 }

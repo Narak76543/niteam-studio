@@ -337,6 +337,26 @@ export interface Scene {
   image: ImageAsset;
   subs: SubsAsset;
   clip: ClipAsset;
+  /** Pending proofreading suggestion (Script page). */
+  proofread: ProofSuggestion | null;
+  proofread_hash: string | null;
+}
+
+export interface ProofSuggestion {
+  narration: string;
+  spoken_text: string;
+  note: string;
+}
+
+/** Payload of `proofread-progress`. */
+export interface ProofProgress {
+  project_id: string;
+  stage: "running" | "done" | "failed" | "cancelled";
+  checked: number;
+  total: number;
+  suggestions: number;
+  error: string | null;
+  error_kind: string | null;
 }
 
 export interface RenderSettings {
@@ -386,6 +406,8 @@ export interface Project {
   visual_bible: VisualBible | null;
   image_settings: ImageSnapshot;
   image_pause: ImagePause | null;
+  /** Names kept exactly as written (React Native, Android, …). */
+  keep_terms: string[];
   scenes: Scene[];
   render: RenderSettings;
 }

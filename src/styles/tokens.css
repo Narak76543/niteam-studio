@@ -68,14 +68,3 @@
   --lh-small: 1.7;
   --lh-micro: 1.5;
 }
-
-/* Dark mode (Phase 5 — keep tokens ready now) */
-:root[data-theme="dark"],
-[data-theme="dark"] {
-  --bg-app: #0E0E0D; --bg-shell: #161615; --bg-sidebar: #121211;
-  --bg-subtle: #1B1B1A; --bg-hover: #222220; --bg-selected: #1F1F1E;
-  --border: #2A2A28; --border-strong: #3A3A37;
-  --text: #F2F1EE; --text-muted: #A3A29E; --text-faint: #6F6E6A;
-  --ink: #F2F1EE; --ink-hover: #FFFFFF; --text-inverse: #141414;
-  --accent-soft: #3A1E19;
-}

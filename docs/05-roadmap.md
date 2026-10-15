@@ -189,3 +189,10 @@ _Add one line per finished phase: date — phase — notes._
   (5 colours or off, per project). Export draws one PNG per word state and FFmpeg reads them as
   one `track.ffconcat` input with a single overlay (SUBS_VERSION 2, CLIP_VERSION 2). Verified:
   track timing exact in FFmpeg (states switch at 1.5 s / 3.5 s as listed); 9-scene export 17 s.
+- 2026-10-15 — Owner requests — (1) **Stickman** style preset, default for new projects,
+  stick-figure rules in the Visual Bible prompt, Look & feel → Style switches a project
+  (checked with 4 Flux images; "white paper" wording removed after it produced a photo of
+  paper); (2) **light mode only**: dark editor theme and dark tokens removed; (3) **names stay
+  as written**: product/brand/tech names in Latin letters in narration, Khmer pronunciation in
+  spoken text, per-project Names list; (4) **grammar & phrasing check** with Gemini: batched,
+  resumable suggestions with diff, Accept / Dismiss (all).

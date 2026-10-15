@@ -70,17 +70,9 @@ Put these in `src/styles/tokens.css` and use them everywhere. **No raw hex value
   --ease: cubic-bezier(.2,.7,.2,1);
   --dur: 160ms;
 }
-
-/* Dark mode (Phase 5 — keep tokens ready now) */
-:root[data-theme="dark"] {
-  --bg-app: #0E0E0D; --bg-shell: #161615; --bg-sidebar: #121211;
-  --bg-subtle: #1B1B1A; --bg-hover: #222220; --bg-selected: #1F1F1E;
-  --border: #2A2A28; --border-strong: #3A3A37;
-  --text: #F2F1EE; --text-muted: #A3A29E; --text-faint: #6F6E6A;
-  --ink: #F2F1EE; --ink-hover: #FFFFFF; --text-inverse: #141414;
-  --accent-soft: #3A1E19;
-}
 ```
+
+**Light mode only** (owner's decision, 2026-10-15): there is no dark theme.
 
 ## 3. Typography
 
@@ -190,7 +182,7 @@ dotted `--border-strong` for comparison, ring markers. Keep to at most one chart
 | New project wizard | Single centered card, max 640 px, 3 steps with a thin stepper | Generate script |
 | Script | Two-column: scene list (left) + editor (right); narration vs spoken text tabs | Approve script |
 | Scenes | Scene card grid + right panel for the selected scene | Generate all / Continue |
-| Render (editor) | CapCut-style, dark (`data-theme="dark"` on the page): top bar with **Export**; centre live preview (canvas: image pan + voice + subtitles with word tracker, play/pause, prev/next scene, Space / ← →); right panel (subtitle font, word tracker on/off + colour swatches, current scene); bottom timeline (ruler, video thumbnails, subtitle cues, voice blocks, draggable playhead, zoom). Export dialog: settings → progress with % and ETA → Open video / Show in folder | Export |
+| Render (editor) | CapCut-style, light like the rest of the app (only the video frame is black): top bar with **Export**; centre live preview (canvas: image pan + voice + subtitles with word tracker, play/pause, prev/next scene, Space / ← →); right panel (subtitle font, word tracker on/off + colour swatches, current scene); bottom timeline (ruler, video thumbnails, subtitle cues, voice blocks, draggable playhead, zoom). Export dialog: settings → progress with % and ETA → Open video / Show in folder | Export |
 | Settings | Grouped form rows, API key field masked with Test/Clear pills | — |
 
 ## 8. Accessibility

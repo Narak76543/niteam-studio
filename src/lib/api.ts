@@ -12,6 +12,7 @@ import type {
   GenerateProgress,
   CueIn,
   ImageCatalog,
+  ProofProgress,
   RenderProgress,
   TimelineScene,
   SubsTask,
@@ -65,6 +66,19 @@ export const api = {
     invoke<Project>("scenes_reorder", { projectId, sceneIds }),
   scriptApprove: (projectId: string) => invoke<Project>("script_approve", { projectId }),
   scriptReopen: (projectId: string) => invoke<Project>("script_reopen", { projectId }),
+
+  // proofreading + names (Script page)
+  proofreadStart: (projectId: string) => invoke<null>("proofread_start", { projectId }),
+  proofreadCancel: (projectId: string) => invoke<null>("proofread_cancel", { projectId }),
+  proofreadRunning: (projectId: string) => invoke<boolean>("proofread_running", { projectId }),
+  proofreadAccept: (projectId: string, sceneIds: string[]) =>
+    invoke<Project>("proofread_accept", { projectId, sceneIds }),
+  proofreadDismiss: (projectId: string, sceneIds: string[]) =>
+    invoke<Project>("proofread_dismiss", { projectId, sceneIds }),
+  projectSetKeepTerms: (projectId: string, terms: string[]) =>
+    invoke<Project>("project_set_keep_terms", { projectId, terms }),
+  /** Switches the style preset and rewrites the Visual Bible for it. */
+  projectSetStyle: (projectId: string, preset: string) => invoke<Project>("project_set_style", { projectId, preset }),
 
   // voices (Phase 2)
   generateStart: (projectId: string) => invoke<null>("generate_start", { projectId }),
@@ -137,6 +151,10 @@ export function onSceneProgress(cb: (p: SceneProgress) => void): Promise<Unliste
 
 export function onGenerateProgress(cb: (p: GenerateProgress) => void): Promise<UnlistenFn> {
   return listen<GenerateProgress>("generate-progress", (e) => cb(e.payload));
+}
+
+export function onProofreadProgress(cb: (p: ProofProgress) => void): Promise<UnlistenFn> {
+  return listen<ProofProgress>("proofread-progress", (e) => cb(e.payload));
 }
 
 export function onRenderProgress(cb: (p: RenderProgress) => void): Promise<UnlistenFn> {

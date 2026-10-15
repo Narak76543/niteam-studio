@@ -1177,7 +1177,7 @@ input[type="range"] {
   }
 }
 
-/* ---------- editor (Render page, CapCut-style) ---------- */
+/* ---------- editor (Render page, CapCut-style, light; only the video frame is black) ---------- */
 .studio {
   flex: 1;
   min-height: 0;
@@ -1490,9 +1490,9 @@ input[type="range"] {
   top: 5px;
   bottom: 5px;
   border-radius: var(--r-xs);
-  background: #3a3220;
-  border: 1px solid #8a7224;
-  color: #f5e6b0;
+  background: #fff4cc;
+  border: 1px solid #e3c04d;
+  color: #5c4700;
   font-size: 11px;
   line-height: 24px;
   padding: 0 6px;
@@ -1505,8 +1505,8 @@ input[type="range"] {
   top: 8px;
   bottom: 8px;
   border-radius: var(--r-xs);
-  background: repeating-linear-gradient(90deg, #2f5d4a 0 2px, #24463a 2px 4px);
-  border: 1px solid #3f7a61;
+  background: repeating-linear-gradient(90deg, #cfeadc 0 2px, #e4f4eb 2px 4px);
+  border: 1px solid #7cc4a0;
 }
 .tl__playhead {
   position: absolute;
@@ -1550,4 +1550,73 @@ input[type="range"] {
   .studio__main {
     grid-template-columns: minmax(0, 1fr) 260px;
   }
+}
+
+/* ---------- proofreading + names (Script page) ---------- */
+.suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+}
+.suggestion__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--accent);
+}
+.suggestion__note {
+  margin: 0;
+}
+.diff {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  background: var(--bg-shell);
+  border: 1px solid var(--border);
+  line-height: var(--lh-body);
+}
+.diff__ins {
+  text-decoration: none;
+  background: #d9f2e3;
+  color: #12583a;
+  border-radius: 3px;
+}
+.diff__del {
+  background: #fde2de;
+  color: #8a2a1c;
+  border-radius: 3px;
+}
+.scene-row__flag--proof {
+  color: var(--accent);
+}
+.term-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  height: 28px;
+  padding: 0 var(--s-1) 0 var(--s-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  font-size: var(--fs-small);
+}
+.term-chip__remove {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.term-chip__remove:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }

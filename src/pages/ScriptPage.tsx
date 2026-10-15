@@ -8,6 +8,7 @@ import {
   RefreshCw,
   ScrollText,
   Sparkles,
+  SpellCheck,
   Square,
   Trash2,
 } from "lucide-react";
@@ -18,19 +19,22 @@ import { Button, IconButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorPanel } from "../components/ErrorPanel";
+import { KeepTermsEditor } from "../components/KeepTermsEditor";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { ProgressBar } from "../components/ProgressBar";
 import { RetryStatus } from "../components/RetryStatus";
+import { SuggestionCard } from "../components/SuggestionCard";
 import { useToast } from "../components/toast";
 import { VisualBibleEditor } from "../components/VisualBibleEditor";
 import { useI18n } from "../i18n/context";
-import { api, errorMessage, onGeminiRetry, onScriptProgress } from "../lib/api";
+import { api, errorMessage, onGeminiRetry, onProofreadProgress, onScriptProgress } from "../lib/api";
 import type { Navigate } from "../lib/route";
 import {
   MOODS,
   SHOTS,
   type GeminiRetry,
+  type ProofProgress,
   type Project,
   type Scene,
   type SceneEdit,
@@ -42,7 +46,7 @@ const SAVE_DELAY_MS = 600;
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
 
 type Tab = "narration" | "spoken";
-type View = "scenes" | "look";
+type View = "scenes" | "look" | "names";
 type SaveState = "idle" | "saving" | "saved";
 type Confirm = { kind: "regenerate" } | { kind: "deleteScene"; id: string; order: number } | null;
 type Finished = Pick<ScriptProgress, "stage" | "error" | "error_kind"> | null;
@@ -77,6 +81,8 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
   const [draftState, setDraftState] = useState<SceneEdit | null>(null);
   const [tab, setTab] = useState<Tab>("narration");
   const [view, setView] = useState<View>("scenes");
+  const [proofRunning, setProofRunning] = useState(false);
+  const [proof, setProof] = useState<ProofProgress | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -103,7 +109,25 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
       .scriptRunning(projectId)
       .then(setRunning)
       .catch(() => setRunning(false));
+    api
+      .proofreadRunning(projectId)
+      .then(setProofRunning)
+      .catch(() => setProofRunning(false));
   }, [projectId]);
+
+  // Grammar check progress; suggestions appear as each batch finishes.
+  useEffect(() => {
+    const unlisten = onProofreadProgress((p) => {
+      if (p.project_id !== projectId) return;
+      setProof(p);
+      setProofRunning(p.stage === "running");
+      if (p.stage !== "running") setRetry(null);
+      void reload();
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [projectId, reload]);
 
   // Live progress from the Rust job.
   useEffect(() => {
@@ -239,6 +263,23 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
 
   const deleteScene = (id: string) => run(() => api.sceneDelete(projectId, id));
 
+  const checkGrammar = () =>
+    run(async () => {
+      setProof(null);
+      setRetry(null);
+      await api.proofreadStart(projectId);
+      setProofRunning(true);
+      return null;
+    });
+
+  /** Accepting replaces the scene text, so any unsaved draft of it is dropped. */
+  const acceptSuggestions = async (ids: string[]) => {
+    await run(() => api.proofreadAccept(projectId, ids));
+    setDraftState(null);
+  };
+
+  const dismissSuggestions = (ids: string[]) => run(() => api.proofreadDismiss(projectId, ids));
+
   const reorderTo = (ids: string[]) => run(() => api.scenesReorder(projectId, ids));
 
   const move = (id: string, delta: number) => {
@@ -276,6 +317,7 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
   }
 
   const editable = project.status === "script_draft";
+  const suggestionIds = scenes.filter((s) => s.proofread !== null).map((s) => s.id);
   const outline = project.outline;
   const chaptersTotal = outline?.chapters.length ?? 0;
   const chaptersDone = outline?.chapters.filter((c) => c.done).length ?? 0;
@@ -299,8 +341,20 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
         </Button>
       );
     }
+    if (proofRunning) {
+      return (
+        <Button icon={<Square {...ICON} />} onClick={() => void api.proofreadCancel(projectId)}>
+          {t("proof.stop")}
+        </Button>
+      );
+    }
     return (
       <>
+        {hasScenes && !incomplete && (
+          <Button icon={<SpellCheck {...ICON} />} onClick={() => void checkGrammar()}>
+            {t("proof.check")}
+          </Button>
+        )}
         {hasScenes && (
           <Button icon={<ListPlus {...ICON} />} onClick={() => void addScene()}>
             {t("script.addScene")}
@@ -378,6 +432,40 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
             onRetry={() => void generate(false)}
           />
         )}
+        {proofRunning && (
+          <>
+            <span className="t-small">{t("proof.progress", { done: proof?.checked ?? 0, total: proof?.total ?? 0 })}</span>
+            <ProgressBar
+              label={t("proof.check")}
+              value={proof && proof.total > 0 ? proof.checked / proof.total : undefined}
+            />
+            {retry && <RetryStatus key={retry.at} retry={retry.notice} receivedAt={retry.at} />}
+          </>
+        )}
+        {!proofRunning && proof?.stage === "failed" && (
+          <ErrorPanel kind={proof.error_kind} details={proof.error} onRetry={() => void checkGrammar()} />
+        )}
+        {!proofRunning && proof?.stage === "cancelled" && <Notice tone="warn">{t("proof.cancelled")}</Notice>}
+        {!proofRunning && proof?.stage === "done" && suggestionIds.length === 0 && (
+          <Notice tone="ok">{proof.total === 0 ? t("proof.nothingNew") : t("proof.allGood")}</Notice>
+        )}
+        {editable && suggestionIds.length > 0 && (
+          <Notice
+            tone="warn"
+            actions={
+              <>
+                <Button variant="pill" onClick={() => void acceptSuggestions(suggestionIds)}>
+                  {t("proof.acceptAll")}
+                </Button>
+                <Button variant="pill" onClick={() => void dismissSuggestions(suggestionIds)}>
+                  {t("proof.dismissAll")}
+                </Button>
+              </>
+            }
+          >
+            {t("proof.found", { n: suggestionIds.length })}
+          </Notice>
+        )}
         {!running && incomplete && finished?.stage !== "failed" && (
           <Notice tone="warn">{t("script.stopped", { done: chaptersDone, total: chaptersTotal })}</Notice>
         )}
@@ -411,11 +499,25 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
           >
             {t("look.title")}
           </button>
+          <button
+            role="tab"
+            className="tab"
+            aria-selected={view === "names"}
+            onClick={() => {
+              void flush();
+              setView("names");
+            }}
+          >
+            {t("names.title")}
+            {project.keep_terms.length > 0 && <span className="t-micro t-muted"> · {project.keep_terms.length}</span>}
+          </button>
         </div>
       )}
 
       {view === "look" && (hasScenes || project.visual_bible) ? (
         <VisualBibleEditor key={project.id} project={project} onChange={setProject} />
+      ) : view === "names" && (hasScenes || project.visual_bible) ? (
+        <KeepTermsEditor project={project} onChange={setProject} />
       ) : !hasScenes ? (
         !running && (
           <EmptyState
@@ -477,6 +579,11 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
                         <span className="t-muted">{t("script.emptyField")}</span>
                       )}
                     </span>
+                    {s.proofread && (
+                      <span className="scene-row__flag scene-row__flag--proof" title={t("proof.suggestion")}>
+                        <SpellCheck size={14} strokeWidth={1.5} aria-label={t("proof.suggestion")} />
+                      </span>
+                    )}
                     {s.fact_note && (
                       <span className="scene-row__flag" title={t("script.factNote")}>
                         <CircleAlert size={14} strokeWidth={1.5} aria-label={t("script.factNote")} />
@@ -527,6 +634,16 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
                   </div>
                 )}
               </div>
+
+              {selected.proofread && editable && (
+                <SuggestionCard
+                  before={{ narration: draft.narration, spoken_text: draft.spoken_text }}
+                  suggestion={selected.proofread}
+                  lang={lang}
+                  onAccept={() => void acceptSuggestions([selected.id])}
+                  onDismiss={() => void dismissSuggestions([selected.id])}
+                />
+              )}
 
               {selected.fact_note && (
                 <Notice tone="warn">

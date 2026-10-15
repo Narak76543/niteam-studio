@@ -34,6 +34,9 @@ pub async fn script_generate(
             editing::status_name(project.status).into(),
         )));
     }
+    if state.proofread_jobs.is_running(&project_id) {
+        return Err(to_cmd(ProjectError::Busy));
+    }
     let cancel = state.script_jobs.start(&project_id).map_err(to_cmd)?;
     if restart {
         let cleared = state

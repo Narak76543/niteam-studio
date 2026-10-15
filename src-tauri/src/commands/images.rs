@@ -368,6 +368,21 @@ pub async fn visual_bible_generate(
     generate_bible(&state, &project_id).await
 }
 
+/// Look & feel → "Change style": switches the preset and rewrites the Visual Bible for it.
+#[tauri::command]
+pub async fn project_set_style(
+    state: State<'_, AppState>,
+    project_id: String,
+    preset: String,
+) -> CmdResult<Project> {
+    state
+        .store
+        .update(&project_id, |p| editing::set_style(p, &preset))
+        .await
+        .map_err(to_cmd)?;
+    generate_bible(&state, &project_id).await
+}
+
 #[tauri::command]
 pub async fn project_set_scenes_per_image(
     state: State<'_, AppState>,

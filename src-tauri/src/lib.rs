@@ -38,6 +38,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, String> {
         voice_jobs: Arc::new(JobRegistry::default()),
         image_jobs: Arc::new(JobRegistry::default()),
         render_jobs: Arc::new(JobRegistry::default()),
+        proofread_jobs: Arc::new(JobRegistry::default()),
         ffmpeg_lock: Arc::new(tokio::sync::Mutex::new(())),
     })
 }
@@ -81,6 +82,13 @@ pub fn run() {
             commands::render::render_running,
             commands::render::render_open_output,
             commands::render::render_timeline,
+            commands::proofread::proofread_start,
+            commands::proofread::proofread_cancel,
+            commands::proofread::proofread_running,
+            commands::proofread::proofread_accept,
+            commands::proofread::proofread_dismiss,
+            commands::proofread::project_set_keep_terms,
+            commands::images::project_set_style,
             commands::render::scene_image_full,
             commands::render::render_set_subtitle_style,
             commands::generate::generate_start,

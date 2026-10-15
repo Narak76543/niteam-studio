@@ -18,6 +18,7 @@ pub struct AppState {
     pub voice_jobs: Arc<JobRegistry>,
     pub image_jobs: Arc<JobRegistry>,
     pub render_jobs: Arc<JobRegistry>,
+    pub proofread_jobs: Arc<JobRegistry>,
     /// One FFmpeg process at a time across the app (low-spec laptops).
     pub ffmpeg_lock: Arc<tokio::sync::Mutex<()>>,
 }

@@ -34,7 +34,7 @@ export function NewProjectPage({ initialPreset, hasKey, navigate }: Props) {
   const [language, setLanguage] = useState<Language>("km");
   const [minutes, setMinutes] = useState(DEFAULT_MINUTES);
   const [preset, setPreset] = useState<PresetId>(
-    initialPreset && isPresetId(initialPreset) ? initialPreset : "storybook_watercolor",
+    initialPreset && isPresetId(initialPreset) ? initialPreset : "stickman",
   );
   const [busy, setBusy] = useState(false);
 

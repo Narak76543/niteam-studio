@@ -1,5 +1,5 @@
 /** Style preset ids; must match `pipeline::presets::PRESETS` in Rust. */
-export const PRESET_IDS = ["storybook_watercolor", "cinematic_realistic", "flat_2d"] as const;
+export const PRESET_IDS = ["stickman", "storybook_watercolor", "cinematic_realistic", "flat_2d"] as const;
 
 export type PresetId = (typeof PRESET_IDS)[number];
 

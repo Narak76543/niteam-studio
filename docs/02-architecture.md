@@ -131,7 +131,8 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
     "provider": "cloudflare_flux", "gemini_model": "…", "steps": 4,
     "key_scene_provider": null, "scenes_per_image": 1
   },
-  "image_pause": null,                // { "resets_at_utc": "…", "done": 40, "total": 86 } while paused_quota
+  "image_pause": null,
+  "keep_terms": ["React Native"],     // names never translated (04 §4c), Script page → Names                // { "resets_at_utc": "…", "done": 40, "total": 86 } while paused_quota
   "outline": {                        // null until the outline call returns
     "title": "…", "hook": "…",
     "chapters": [ { "title": "…", "summary": "…", "scene_count": 5, "done": true } ]
@@ -159,7 +160,9 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
       "subs":    { "status": "pending", "hash": null,   // hashing::subs_hash the PNGs were drawn for
                    "lines": [ { "text": "line 1\nline 2", "start_ms": 0, "end_ms": 2400,
                                 "path": "scenes/s001/subs/000.png" } ] },  // one cue = ≤ 2 lines
-      "clip":    { "status": "pending", "path": null, "hash": null }   // scenes/<id>/clip.mkv
+      "clip":    { "status": "pending", "path": null, "hash": null },  // scenes/<id>/clip.mkv
+      "proofread": null,              // { narration, spoken_text, note } waiting for Accept/Dismiss
+      "proofread_hash": null          // text last checked by the proofreader (03 Step 1b)
     }
   ],
   "render": { "resolution": "1080p", "music": "default_calm.mp3", "music_volume": 0.12,
@@ -223,6 +226,10 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | `render_timeline(project_id)` | editor preview: per scene start, clip/voice/file length, pan, readiness, narration, Edge timings |
 | `scene_image_full(project_id, scene_id)` | `image_1080.png` bytes for the editor preview |
 | `render_set_subtitle_style(project_id, highlight)` | word-tracker colour `#RRGGBB` or null |
+| `proofread_start / proofread_cancel / proofread_running(project_id)` | grammar & phrasing check job (03 Step 1b) |
+| `proofread_accept / proofread_dismiss(project_id, scene_ids)` | apply / drop suggestions |
+| `project_set_keep_terms(project_id, terms)` | names that stay exactly as written |
+| `project_set_style(project_id, preset)` | switch style preset + rewrite the Visual Bible |
 | `encoders_detect()` | first working H.264 encoder; cached in `settings.render.encoder` |
 
 ## Events (Rust → UI)

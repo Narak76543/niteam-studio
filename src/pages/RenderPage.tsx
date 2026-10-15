@@ -125,7 +125,7 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
   const rendering = project.status === "rendering";
 
   return (
-    <div className="studio" data-theme="dark">
+    <div className="studio">
       <header className="studio__top">
         <IconButton
           label={t("editor.back")}

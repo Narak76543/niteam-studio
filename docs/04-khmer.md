@@ -92,6 +92,18 @@ and `30%` → សាមសិបភាគរយ); applied to every Khmer scene r
   when a break falls at a phrase end, and interpolates by grapheme count inside a phrase
   (`src/lib/subtitleTiming.ts`). This is one more reason to keep phrase spaces in `narration`.
 
+## 4c. Names stay as written
+
+Names of products, brands, companies, apps, websites, programming languages, frameworks,
+software, devices and technical terms (React Native, Android, iPhone, Google, YouTube,
+JavaScript, Wi-Fi, AI …) are **never translated or transliterated in `narration`** (subtitles):
+they stay in Latin letters with their usual capitalization. In `spoken_text` they are written
+in Khmer letters as Cambodians pronounce them, so the Khmer voice says them correctly. The
+project's **Names** list (`project.keep_terms`, Script page → Names) adds terms that must appear
+exactly as written. Rule text: `gemini::script::names_rule` (script prompts + proofreader); the
+proofreader also drops any correction that removes a listed name. Latin words inside Khmer
+subtitles use Kantumruy Pro's Latin glyphs.
+
 ## 5. Script quality
 
 - Ask the model for natural spoken Khmer, not a literal translation of English.

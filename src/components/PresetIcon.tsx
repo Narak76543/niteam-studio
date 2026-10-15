@@ -1,4 +1,4 @@
-import { Clapperboard, Palette, Shapes } from "lucide-react";
+import { Clapperboard, Palette, PersonStanding, Shapes } from "lucide-react";
 
 import type { PresetId } from "../lib/presets";
 
@@ -11,5 +11,7 @@ export function PresetIcon({ id, size = 24 }: { id: PresetId; size?: number }) {
       return <Shapes {...props} />;
     case "storybook_watercolor":
       return <Palette {...props} />;
+    case "stickman":
+      return <PersonStanding {...props} />;
   }
 }

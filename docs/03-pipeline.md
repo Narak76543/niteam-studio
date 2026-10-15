@@ -57,6 +57,30 @@ Validate the JSON with serde; on parse failure retry once with the error appende
 - Moods are an enum (`curious, dramatic, calm, hopeful, tense, joyful, somber, awe, playful`);
   unknown values become `calm`. `fact_note` holds uncertain claims for the user to check.
 
+## Step 1b — Grammar & phrasing check (Script page → "Check grammar")
+
+`pipeline/proofread.rs` + `gemini/proofread.rs`, owner request 2026-10-15.
+- Only in `script_draft`. Scenes are sent in batches of 15 (`scene_id`, `narration`,
+  `spoken_text`) through the same `script::request_json` path as the script (text model chain,
+  retries, `gemini-retry` scope `script`, one re-ask on invalid JSON). Schema:
+  `{fixes: [{scene_id (enum of the batch ids), narration, spoken_text, note}]}`.
+- Prompt: careful copy editor in the project language; fix spelling (Khmer coeng/vowels), grammar,
+  unnatural phrasing, narration ≠ spoken_text; **smallest change**, keep meaning/facts/length;
+  the names rule (04 §4c); return only scenes that need a change, `note` in the project language.
+- Each fix is stored on its scene as `scene.proofread = {narration, spoken_text, note}` (a
+  suggestion, never applied silently). `scene.proofread_hash` = hash of the text that was
+  checked (+ language + names list), so a re-run only sends changed scenes (resumable; saved
+  after every batch). A fix is dropped if the scene was edited meanwhile, if it changes
+  nothing, or if it removes a name from `keep_terms`. Thai/Lao letters are rejected.
+- UI: progress strip, scene-list marker, suggestion card with a grapheme-level diff
+  (`src/lib/textDiff.ts`), **Accept** / **Dismiss** per scene, **Accept all** / **Dismiss all**.
+  Accept goes through the normal edit path (voice etc. become outdated); Dismiss keeps the text
+  and the scene isn't checked again until it changes. Editing a scene drops its suggestion.
+- Events: `proofread-progress {project_id, stage: running|done|failed|cancelled, checked, total,
+  suggestions, error, error_kind}`. Commands: `proofread_start / _cancel / _running`,
+  `proofread_accept / proofread_dismiss(project_id, scene_ids)`. Script generation and the check
+  never run at the same time for a project.
+
 ## Step 2 — User review & approve
 
 UI only. On every edit, recompute `text_hash` (of `spoken_text` + voice settings) and

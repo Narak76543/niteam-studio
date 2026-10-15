@@ -8,6 +8,7 @@ pub mod jobs;
 pub mod khmer_numbers;
 pub mod presets;
 pub mod project;
+pub mod proofread;
 pub mod render_job;
 #[cfg(test)]
 mod render_e2e;

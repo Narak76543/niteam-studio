@@ -64,6 +64,10 @@ pub struct Project {
     /// Set while `status == PausedQuota`.
     #[serde(default)]
     pub image_pause: Option<ImagePause>,
+    /// Names that must stay exactly as written (React Native, Android, …): script prompts,
+    /// proofreading. Script page → Names.
+    #[serde(default)]
+    pub keep_terms: Vec<String>,
     #[serde(default)]
     pub scenes: Vec<Scene>,
     #[serde(default)]
@@ -143,6 +147,12 @@ pub struct Scene {
     pub image: ImageAsset,
     #[serde(default)]
     pub subs: SubsAsset,
+    /// Pending grammar/phrase suggestion from the proofreader (Script page), if any.
+    #[serde(default)]
+    pub proofread: Option<ProofSuggestion>,
+    /// `hashing::proof_hash` of the text the proofreader last checked (skip if unchanged).
+    #[serde(default)]
+    pub proofread_hash: Option<String>,
     #[serde(default)]
     pub clip: ClipAsset,
 }
@@ -266,6 +276,15 @@ impl Default for ImageSnapshot {
             scenes_per_image: 1,
         }
     }
+}
+
+/// A proofreader's correction for one scene, waiting for Accept / Dismiss.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProofSuggestion {
+    pub narration: String,
+    pub spoken_text: String,
+    /// Short explanation of what changed (project language).
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -455,6 +474,8 @@ impl Scene {
             voice: VoiceAsset::default(),
             image: ImageAsset::default(),
             subs: SubsAsset::default(),
+            proofread: None,
+            proofread_hash: None,
             clip: ClipAsset::default(),
         }
     }
@@ -509,6 +530,7 @@ pub(crate) mod tests {
             visual_bible: None,
             image_settings: ImageSnapshot::default(),
             image_pause: None,
+            keep_terms: Vec::new(),
             scenes: vec![],
             render: RenderSettings::default(),
         }

@@ -88,6 +88,21 @@ fn schema() -> Value {
     })
 }
 
+/// Extra rules so characters and places fit the chosen style.
+fn style_rules(style_prompt: &str) -> &'static str {
+    if super::presets::is_stick_figure(style_prompt) {
+        "STICK-FIGURE STYLE: every person is a simple stick figure (round head, dot eyes, line body). \
+Describe characters ONLY by one or two simple, bold identifying props or colour accents that a stick figure \
+can carry (e.g. `stick figure with a red-and-white checked krama scarf and a straw hat`, `stick figure \
+with a small blue laptop`). Never describe skin, faces, hair texture, body build or realistic clothing \
+detail. Describe places as simple line drawings with a few key shapes and at most two flat colour accents \
+(e.g. `simple line drawing of a temple with three towers, light orange accent`). Keep `style` a \
+stick-figure doodle style.\n"
+    } else {
+        ""
+    }
+}
+
 fn prompt(project: &Project) -> String {
     let outline = project.outline.as_ref().map_or(String::new(), |o| {
         o.chapters
@@ -103,7 +118,8 @@ TOPIC: {topic}\n\
 TITLE: {title}\n\
 HOOK: {hook}\n\
 OUTLINE:\n{outline}\n\
-CHOSEN ART STYLE: {style}\n\n\
+CHOSEN ART STYLE: {style}\n\
+{style_rules}\n\
 Write everything in ENGLISH, with positive phrasing only (describe what is there, never what is absent).\n\
 - `style`: one line expanding the chosen art style (medium, light, palette, texture). Keep its medium.\n\
 - `characters`: every person or animal that appears in more than one scene, with a short snake_case key \
@@ -118,6 +134,7 @@ Never ask for text, letters or signs in images.",
         topic = project.topic,
         title = project.title,
         style = project.style.style_prompt,
+        style_rules = style_rules(&project.style.style_prompt),
     )
 }
 

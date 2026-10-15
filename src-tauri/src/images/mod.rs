@@ -12,6 +12,8 @@ pub mod gemini;
 pub mod plan;
 pub mod postprocess;
 pub mod prompt;
+#[cfg(test)]
+mod style_probe;
 pub mod provider;
 
 use std::time::Duration;

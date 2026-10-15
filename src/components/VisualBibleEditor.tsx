@@ -8,6 +8,7 @@ import { Notice } from "./Notice";
 import { useToast } from "./toast";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage } from "../lib/api";
+import { PRESET_IDS, isPresetId, presetKey, type PresetId } from "../lib/presets";
 import type { Project, VisualBible } from "../lib/types";
 
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
@@ -62,8 +63,59 @@ export function VisualBibleEditor({ project, onChange }: Props) {
   const [draft, setDraft] = useState<Draft | null>(stored ? toDraft(stored) : null);
   const [busy, setBusy] = useState<"saving" | "generating" | null>(null);
   const [confirmRegenerate, setConfirmRegenerate] = useState(false);
-
   const locked = project.status === "rendering";
+  const currentPreset: PresetId = isPresetId(project.style.preset) ? project.style.preset : "stickman";
+  const [preset, setPreset] = useState<PresetId>(currentPreset);
+  const [confirmStyle, setConfirmStyle] = useState(false);
+
+  const applyStyle = async () => {
+    setConfirmStyle(false);
+    setBusy("generating");
+    try {
+      const p = await api.projectSetStyle(project.id, preset);
+      onChange(p);
+      if (p.visual_bible) setDraft(toDraft(p.visual_bible));
+    } catch (e) {
+      toast.show(errorMessage(e), "danger");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const styleRow = (
+    <div className="field">
+      <span className="field__label">{t("look.preset")}</span>
+      <div className="row">
+        <select
+          className="select"
+          value={preset}
+          disabled={busy !== null || locked}
+          onChange={(e) => isPresetId(e.target.value) && setPreset(e.target.value)}
+        >
+          {PRESET_IDS.map((id) => (
+            <option key={id} value={id}>
+              {t(presetKey(id))}
+            </option>
+          ))}
+        </select>
+        <Button disabled={busy !== null || locked || preset === currentPreset} onClick={() => setConfirmStyle(true)}>
+          {t("look.applyPreset")}
+        </Button>
+      </div>
+      <span className="t-small">{t("look.presetHint")}</span>
+    </div>
+  );
+
+  const styleDialog = confirmStyle && (
+    <ConfirmDialog
+      title={t("look.applyPresetTitle", { style: t(presetKey(preset)) })}
+      body={t("look.applyPresetBody")}
+      confirmLabel={t("look.applyPreset")}
+      onConfirm={() => void applyStyle()}
+      onCancel={() => setConfirmStyle(false)}
+    />
+  );
+
   const dirty = draft !== null && stored !== null && JSON.stringify(toBible(draft)) !== JSON.stringify(stored);
 
   const save = async () => {
@@ -97,16 +149,20 @@ export function VisualBibleEditor({ project, onChange }: Props) {
 
   if (!draft) {
     return (
-      <EmptyState
-        icon={<Palette size={18} strokeWidth={1.5} />}
-        title={t("look.empty.title")}
-        body={t("look.empty.body")}
-        action={
-          <Button variant="primary" disabled={busy !== null || locked} onClick={() => void generate()}>
-            {busy === "generating" ? t("look.generating") : t("look.generate")}
-          </Button>
-        }
-      />
+      <section className="editor look" aria-label={t("look.title")}>
+        {styleRow}
+        <EmptyState
+          icon={<Palette size={18} strokeWidth={1.5} />}
+          title={t("look.empty.title")}
+          body={t("look.empty.body")}
+          action={
+            <Button variant="primary" disabled={busy !== null || locked} onClick={() => void generate()}>
+              {busy === "generating" ? t("look.generating") : t("look.generate")}
+            </Button>
+          }
+        />
+        {styleDialog}
+      </section>
     );
   }
 
@@ -185,6 +241,7 @@ export function VisualBibleEditor({ project, onChange }: Props) {
       </div>
 
       <Notice>{t("look.intro")}</Notice>
+      {styleRow}
       {dirty && <Notice tone="warn">{t("look.staleNote")}</Notice>}
 
       <label className="field">
@@ -228,6 +285,7 @@ export function VisualBibleEditor({ project, onChange }: Props) {
         <span className="t-small">{t("look.seedHint")}</span>
       </label>
 
+      {styleDialog}
       {confirmRegenerate && (
         <ConfirmDialog
           title={t("look.regenerateTitle")}

@@ -5,6 +5,7 @@ pub mod client;
 pub mod image;
 pub mod interactions;
 pub mod models;
+pub mod proofread;
 pub mod retry;
 pub mod script;
 pub mod tts;

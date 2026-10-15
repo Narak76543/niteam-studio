@@ -92,6 +92,7 @@ pub fn new_project(input: &NewProjectInput, tts_model: &str) -> Result<Project, 
         visual_bible: None,
         image_settings: ImageSnapshot::default(),
         image_pause: None,
+        keep_terms: Vec::new(),
         scenes: vec![],
         render: RenderSettings::default(),
     })
@@ -144,8 +145,14 @@ pub fn apply_scene_edit(p: &mut Project, edit: &SceneEdit) -> Result<(), Project
         "calm".to_owned()
     };
     if let Some(scene) = p.scenes.get_mut(idx) {
-        scene.narration = normalize(&edit.narration);
-        scene.spoken_text = normalize_spoken(&edit.spoken_text);
+        let narration = normalize(&edit.narration);
+        let spoken = normalize_spoken(&edit.spoken_text);
+        if narration != scene.narration || spoken != scene.spoken_text {
+            // A proofreading suggestion was for the old text.
+            scene.proofread = None;
+        }
+        scene.narration = narration;
+        scene.spoken_text = spoken;
         scene.image_prompt = normalize(&edit.image_prompt);
         scene.mood = mood;
     }
@@ -264,6 +271,18 @@ pub fn update_bible(p: &mut Project, bible: &VisualBible) -> Result<(), ProjectE
     });
     visual_bible::prune_scene_keys(p);
     hashing::mark_all_images_stale(p);
+    Ok(())
+}
+
+/// Switches the art style preset (Look & feel). The Visual Bible is rewritten for it next
+/// (`visual_bible_generate`), which marks the images whose prompt changed as outdated.
+pub fn set_style(p: &mut Project, preset_id: &str) -> Result<(), ProjectError> {
+    allows_image_edits(p)?;
+    let preset = presets::find(preset_id).ok_or_else(|| invalid("Unknown style preset."))?;
+    p.style = Style {
+        preset: preset.id.to_owned(),
+        style_prompt: preset.style_prompt.to_owned(),
+    };
     Ok(())
 }
 
@@ -450,5 +469,16 @@ mod tests {
         assert_eq!(p.scenes[0].narration, "ស្រូវ");
         assert_eq!(p.scenes[0].spoken_text, "ស្រូវ");
         assert_eq!(p.scenes[0].mood, "calm");
+    }
+
+    #[test]
+    fn set_style_switches_preset_but_not_while_rendering() {
+        let mut p = sample();
+        set_style(&mut p, "stickman").unwrap();
+        assert_eq!(p.style.preset, "stickman");
+        assert!(p.style.style_prompt.contains("stick figure"));
+        assert!(set_style(&mut p, "nope").is_err());
+        p.status = ProjectStatus::Rendering;
+        assert!(set_style(&mut p, "flat_2d").is_err());
     }
 }

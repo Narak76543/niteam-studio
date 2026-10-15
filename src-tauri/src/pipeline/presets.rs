@@ -11,6 +11,14 @@ pub struct StylePreset {
 }
 
 pub const PRESETS: &[StylePreset] = &[
+    // Default (owner's choice, 2026-10-15).
+    StylePreset {
+        id: "stickman",
+        label: "Stickman",
+        style_prompt: "simple hand-drawn stick figure doodle, bold clean black marker lines, flat pure white \
+                       background filling the whole frame, stick figures with round heads and simple dot eyes, \
+                       minimal flat colour accents, whiteboard explainer style, lots of white space",
+    },
     StylePreset {
         id: "storybook_watercolor",
         label: "Storybook watercolor",
@@ -33,4 +41,22 @@ pub const PRESETS: &[StylePreset] = &[
 
 pub fn find(id: &str) -> Option<&'static StylePreset> {
     PRESETS.iter().find(|p| p.id == id)
+}
+
+/// Stick-figure styles need simple, prop-based character descriptions (visual bible).
+pub fn is_stick_figure(style_prompt: &str) -> bool {
+    let s = style_prompt.to_ascii_lowercase();
+    s.contains("stick figure") || s.contains("stickman") || s.contains("stick-figure")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stickman_is_first_and_detected() {
+        assert_eq!(PRESETS[0].id, "stickman");
+        assert!(is_stick_figure(PRESETS[0].style_prompt));
+        assert!(!is_stick_figure(PRESETS[1].style_prompt));
+    }
 }

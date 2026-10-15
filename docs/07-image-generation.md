@@ -75,6 +75,17 @@ Settings: `image.provider`, `image.gemini_model`, `image.steps` (4–8, default 
   in Settings."
 - Request 16:9 directly. Pass up to 3 reference images (approved style/character images).
 
+### 1c. Style presets
+
+`pipeline/presets.rs`: **`stickman` (default since 2026-10-15, owner's choice)**,
+`storybook_watercolor`, `cinematic_realistic`, `flat_2d`. Stickman prompt: "simple hand-drawn
+stick figure doodle, bold clean black marker lines, flat pure white background filling the
+whole frame, stick figures with round heads and simple dot eyes, minimal flat colour accents,
+whiteboard explainer style, lots of white space". (Do not say "on white paper": Flux then draws a
+photo of a sheet of paper on a wall.) Checked with Flux Schnell on 2026-10-15: clean doodles,
+props (cap, scarf, hat) stay recognisable. Look & feel → **Style** switches an existing project
+(`project_set_style`: new preset + Visual Bible rewritten for it; images become outdated).
+
 ## 2. Visual Bible (consistency)
 
 Generated **once per project**, right after the script, by the text model. Stored in
@@ -96,6 +107,11 @@ Generated **once per project**, right after the script, by the text model. Store
 
 Script JSON per scene gains: `"characters": ["farmer"]`, `"place": "village"`,
 `"shot": "wide|medium|close|detail|aerial"`, `"key_scene": bool`.
+
+For **stick-figure styles** (`presets::is_stick_figure`) the bible prompt adds: characters are
+stick figures described ONLY by one or two bold props / colour accents ("stick figure with a
+red-and-white checked krama scarf and a straw hat"), never skin, faces, hair or body detail;
+places are simple line drawings with at most two flat colour accents.
 
 Rules for the script model:
 - Every recurring person/place gets **one** bible entry; scenes refer to it by key.

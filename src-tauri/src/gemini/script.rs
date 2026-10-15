@@ -27,6 +27,8 @@ pub struct ScriptBrief<'a> {
     pub language: Language,
     pub target_minutes: u32,
     pub style_label: &'a str,
+    /// Names the user wants kept exactly as written (Script page → Names).
+    pub keep_terms: &'a [String],
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -99,7 +101,7 @@ impl Validate for OutlineReply {
 
 /// Thai (U+0E00..U+0E7F) and Lao (U+0E80..U+0EFF) letters never belong in Khmer or English
 /// narration, but lighter models sometimes mix them into Khmer words.
-fn foreign_script(text: &str) -> Option<char> {
+pub(crate) fn foreign_script(text: &str) -> Option<char> {
     text.chars().find(|c| ('\u{0E00}'..='\u{0EFF}').contains(c))
 }
 
@@ -193,7 +195,40 @@ pub fn chapter_schema(scene_count: usize, bible: &BibleKeys) -> Value {
     })
 }
 
-fn language_rules(language: Language) -> &'static str {
+/// Product / brand / technology names stay in their original Latin spelling in the
+/// narration (subtitles); the spoken text spells them for the voice. Shared with the
+/// proofreader.
+pub fn names_rule(language: Language, keep_terms: &[String]) -> String {
+    let base = match language {
+        Language::Km => {
+            "- NAMES STAY AS WRITTEN: names of products, brands, companies, apps, websites, programming languages, \
+frameworks, software, devices and technical terms (for example React Native, Android, iPhone, Google, YouTube, \
+JavaScript, Wi-Fi, AI) stay EXACTLY as written, in Latin letters with their usual capitalization, in `narration` \
+and in titles. Never translate them and never transliterate them into Khmer letters there. In `spoken_text`, \
+write them in Khmer letters the way Cambodians pronounce them, so the Khmer voice says them correctly."
+        }
+        Language::En => {
+            "- NAMES STAY AS WRITTEN: names of products, brands, companies, apps, websites, programming languages, \
+frameworks, software, devices and technical terms (for example React Native, Android, iPhone, JavaScript) keep \
+their exact official spelling and capitalization in `narration`, `spoken_text` and titles."
+        }
+    };
+    let terms: Vec<&str> = keep_terms.iter().map(|t| t.trim()).filter(|t| !t.is_empty()).collect();
+    if terms.is_empty() {
+        base.to_owned()
+    } else {
+        format!(
+            "{base}\n- These names must appear EXACTLY as written (same letters and capitalization) wherever they occur in `narration`: {}.",
+            terms.join(", ")
+        )
+    }
+}
+
+fn language_rules(brief: &ScriptBrief) -> String {
+    format!("{}\n{}", language_rules_base(brief.language), names_rule(brief.language, brief.keep_terms))
+}
+
+fn language_rules_base(language: Language) -> &'static str {
     match language {
         Language::Km => {
             "LANGUAGE: Khmer.\n\
@@ -232,7 +267,7 @@ The last chapter wraps up the story with a satisfying conclusion.",
         minutes = brief.target_minutes,
         topic = brief.topic,
         style = brief.style_label,
-        rules = language_rules(brief.language),
+        rules = language_rules(brief),
     )
 }
 
@@ -330,7 +365,7 @@ historical figures only as statues, carvings or generic figures.\n\
         topic = brief.topic,
         hook = ctx.hook,
         chapter_title = ctx.chapters.get(ctx.index).map(|c| c.0).unwrap_or_default(),
-        rules = language_rules(brief.language),
+        rules = language_rules(brief),
         scenes = ctx.scene_count,
         moods = MOODS.join(", "),
     )
@@ -432,7 +467,20 @@ mod tests {
             language: Language::Km,
             target_minutes: 3,
             style_label: "storybook watercolor",
+            keep_terms: &[],
         }
+    }
+
+    #[test]
+    fn names_stay_in_latin_in_narration_and_user_terms_are_listed() {
+        let terms = vec!["React Native".to_owned(), " ".to_owned(), "Android".to_owned()];
+        let km = names_rule(Language::Km, &terms);
+        assert!(km.contains("Latin letters"));
+        assert!(km.contains("Never translate"));
+        assert!(km.ends_with("in `narration`: React Native, Android."), "{km}");
+        assert!(!names_rule(Language::En, &[]).contains("must appear EXACTLY"));
+        let b = ScriptBrief { keep_terms: &terms, ..brief() };
+        assert!(outline_prompt(&b, 2, 9).contains("React Native, Android"));
     }
 
     #[test]

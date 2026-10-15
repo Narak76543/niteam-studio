@@ -125,12 +125,18 @@ wrapped in a WAV header). Same retry rules as all Gemini calls (5 attempts).
 
 ## Step 4 — Images
 
-**Model:** Gemini's current image-generation model (check docs; keep ID in settings).
+**Specified in [`07-image-generation.md`](07-image-generation.md)** — providers (Cloudflare
+Flux Schnell default, Gemini Nano Banana paid), Visual Bible, prompt building,
+post-processing, budget, quota pause, caching. Summary:
 
-- Prompt = `style_prompt + ", " + image_prompt + ", 16:9, no text, no watermark"`.
-- Request 16:9 if supported; otherwise generate and center-crop to 16:9.
-- Save as PNG; then create `image_1080.png` scaled so it is **~12 % larger** than the
-  output frame (2150×1210 for 1080p) — needed for the pan motion.
+- Provider per scene: `image.provider`, or `image.key_scene_provider` for key scenes.
+- Prompt = style + shot phrase + subject (bible descriptions inlined) + place + culture notes
+  + composition phrase (square providers) + "clean image without any lettering", ≤ 2,048 chars.
+- Seed = `visual_bible.seed` + scene number; Regenerate uses a new random seed.
+- Raw image saved; square → center-crop 16:9; Lanczos3 upscale to the pan size
+  (2150×1210 for 1080p, 1434×806 for 720p); 384×216 `thumb.jpg`.
+- Key scenes first; Cloudflare 2 at a time; cached by prompt hash.
+- Daily Cloudflare allowance used up → `paused_quota`, resume after 00:00 UTC.
 - Safety blocks: mark `failed` with the reason; the user edits the prompt and retries.
 
 ## Retry / rate limits (all Gemini calls)

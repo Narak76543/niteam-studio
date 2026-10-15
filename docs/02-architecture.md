@@ -48,8 +48,11 @@ nitean-studio/
 │     ├─ commands/   project.rs  script.rs  generate.rs  render.rs  settings.rs
 │     ├─ gemini/     client.rs  transport.rs  retry.rs  script.rs  tts.rs  image.rs  models.rs
 │     ├─ tts/        mod.rs (TtsEngine)  edge.rs  gemini.rs  audio.rs  voices.rs
+│     ├─ images/     provider.rs (ImageProvider)  cloudflare.rs  gemini.rs  prompt.rs
+│     │              postprocess.rs  budget.rs   (see 07-image-generation.md)
+│     ├─ net/        transport.rs (HTTP behind a trait; mocked in tests)
 │     ├─ pipeline/   project.rs  store.rs  editing.rs  hashing.rs  presets.rs  script_job.rs
-│     │              jobs.rs  voice_job.rs  khmer_numbers.rs
+│     │              jobs.rs  voice_job.rs  image_job.rs  visual_bible.rs  khmer_numbers.rs
 │     │              scheduler.rs  render.rs  ffmpeg.rs  encoders.rs  audio.rs
 │     └─ storage/    paths.rs  secrets.rs  settings.rs  atomic.rs  log.rs
 └─ package.json  vite.config.ts  tsconfig.json
@@ -82,11 +85,15 @@ harmless; sidecar file names must use the matching target triple.
   - `projects\<project-id>\`
     - `project.json` — single source of truth (see data model)
     - `scenes\<scene-id>\voice.mp3` (Edge) or `voice.wav` (Gemini), `words.json` (Edge
-      phrase/word timings), `image.png`, `subs\000.png …`, `clip.mp4`
+      phrase/word timings), `image_raw.jpg|png` (provider original), `image_1080.png` or
+      `image_720.png` (16:9, pan size), `thumb.jpg` (384×216), `subs\000.png …`, `clip.mp4`
     - `output\final.mp4`, `output\thumbnail.png`
     - `logs\pipeline.log` (no secrets)
   - `logs\app.log` — app-level events such as key tests (no secrets)
-- API key: `keyring` crate, service `NiteanStudio`, user `gemini_api_key`.
+- Secrets: `keyring` crate, service `NiteanStudio`:
+  - user `gemini_api_key` — Gemini API key
+  - user `cloudflare_api_token` — Cloudflare API token (Workers AI)
+  The Cloudflare **account ID** is not secret → `settings.json` (`image.cloudflare_account_id`).
 
 Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
 
@@ -110,8 +117,17 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
     "rate": 0, "pitch": 0,            // Edge only (% / Hz)
     "model": "gemini-3.8-flash-tts", "direction": "calm storyteller"  // Gemini only
   },
-  "status": "script_draft",           // see state machine
+  "status": "script_draft",           // see state machine (incl. "paused_quota")
   "created_at": "…", "updated_at": "…",
+  "visual_bible": {                   // 07 §2; generated with the script, editable
+    "style": "…", "characters": { "farmer": "…" }, "places": { "village": "…" },
+    "culture_notes": "…", "seed": 1847
+  },
+  "image_settings": {                 // snapshot of Settings → Images used for hashing
+    "provider": "cloudflare_flux", "gemini_model": "…", "steps": 4,
+    "key_scene_provider": null, "scenes_per_image": 1
+  },
+  "image_pause": null,                // { "resets_at_utc": "…", "done": 40, "total": 86 } while paused_quota
   "outline": {                        // null until the outline call returns
     "title": "…", "hook": "…",
     "chapters": [ { "title": "…", "summary": "…", "scene_count": 5, "done": true } ]
@@ -126,9 +142,16 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
       "image_prompt": "…",            // English, WITHOUT the style prompt
       "mood": "curious",              // one of gemini::script::MOODS
       "fact_note": null,              // model's "please check this claim" note, or null
+      "characters": ["farmer"],       // visual_bible.characters keys (07 §2)
+      "place": "village",             // visual_bible.places key or null
+      "shot": "wide",                 // wide | medium | close | detail | aerial
+      "key_scene": true,              // scene 1, each chapter's first, last scene
       "voice":   { "status": "pending", "path": null, "duration_ms": null, "error": null,
                    "error_kind": null, "text_hash": null, "words_path": null },
-      "image":   { "status": "pending", "path": null, "error": null, "prompt_hash": null },
+      "image":   { "status": "pending", "path": null, "raw_path": null, "thumb_path": null,
+                   "provider": null, "seed": null, "shared_from": null,
+                   "error": null, "error_kind": null, "prompt_hash": null },
+                   // prompt_hash = sha256(provider_id + model + final_prompt + seed + steps) (07 §8)
       "subs":    { "status": "pending", "lines": [ { "text": "…", "start_ms": 0, "end_ms": 2400, "path": "subs/000.png" } ] },
       "clip":    { "status": "pending", "path": null }
     }
@@ -151,6 +174,10 @@ script_draft ──approve──▶ generating ──all done──▶ review �
      ▲                        │ (failures stay per-scene)  ▲              │
      └──────── edit script ───┴────────────────────────────┴── cancel ────┘
 ```
+
+`paused_quota`: the image job stopped because the Cloudflare daily allowance ran out
+(07 §6). Finished images are kept; `image_pause.resets_at_utc` says when to resume. Resume
+goes back to `generating`. Voices can still be generated while paused.
 
 Script generation runs while the status stays `script_draft` (tracked in memory by
 `ScriptJobs`). Scene edit/add/delete/reorder only work in `script_draft`. Approve requires
@@ -175,6 +202,13 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | `scene_regenerate(project_id, scene_id, what: "voice"\|"image")` | single redo (Phase 2: voice) |
 | `scene_voice_audio(project_id, scene_id)` | raw MP3/WAV bytes for playback (only `scenes/…` paths) |
 | `voices_catalog()`, `voice_preview(language, voice)` | voice lists; speak a sample with unsaved settings |
+| `cloudflare_token_set / _exists / _clear`, `cloudflare_test()` | keyring token; 1-step test image |
+| `images_estimate(project_id)` | counts per provider, neurons, % of daily allowance, Gemini cost |
+| `images_start / images_cancel / images_running(project_id)` | image job (also resumes `paused_quota`) |
+| `scene_image_thumb(project_id, scene_id)` | `thumb.jpg` bytes for the grid |
+| `scene_image_prompt_update(project_id, scene_id, image_prompt)` | edit a prompt after approval |
+| `visual_bible_update(project_id, bible)`, `visual_bible_generate(project_id)` | Look & feel |
+| `project_set_scenes_per_image(project_id, n)` | 1 or 2 (07 §5) |
 | `subs_save(project_id, scene_id, lines_with_png_bytes)` | frontend hands rendered subtitle PNGs to Rust |
 | `render_start / render_cancel(project_id, options)` | FFmpeg render |
 | `encoders_detect()` | which H.264 encoders work on this machine |
@@ -184,7 +218,7 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 `script-progress` `{project_id, stage: outline|chapter|done|failed|cancelled, chapters_done, chapters_total, error, error_kind}`
 `gemini-retry` `{scope: script|key_test, project_id?, model, previous_model?, reason: busy|rate_limited|network|next_model, attempt, max_attempts, delay_ms, status?, error}`
 `scene-progress` `{project_id, scene_id, asset, status, duration_ms?, error?, error_kind?}`
-`generate-progress` `{project_id, stage: running|done|cancelled|failed, done, failed, total, error?, error_kind?}`
+`generate-progress` `{project_id, job: voice|image, stage: running|done|cancelled|failed|paused_quota, done, failed, total, error?, error_kind?, resets_at_utc?}`
 `render-progress` `{project_id, stage, scene_index, total, percent, eta_seconds}`
 `log` `{level, message}`
 

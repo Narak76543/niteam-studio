@@ -24,7 +24,7 @@ Goal: create a project and get an editable Khmer/English script from Gemini.
 **Test:** create a 3-minute Khmer project about "Where did rice come from?" → ~25
 scenes appear, editable, saved after restart. Key never appears in any file or log.
 
-## Phase 2 — Voice  ← **CURRENT**
+## Phase 2 — Voice  (built; awaiting the owner's test)
 
 - [x] `tts/` module: `TtsEngine` trait with `EdgeTts` (default) and `GeminiTts`
 - [x] Gemini TTS per scene, model selectable (flash / flash-lite), voice + direction
@@ -45,14 +45,42 @@ Edge TTS and play them back in the scene list; switch to Gemini TTS and regenera
 close the app mid-way through a 3-minute project; reopen → it resumes without redoing
 finished scenes.
 
-## Phase 3 — Images
+## Phase 3 — Images  ← **CURRENT** (started before Phase 2 was tested, by the owner's request)
 
-- [ ] `gemini/image.rs` with style prompt prefix, 16:9, enlarged `image_1080.png`
-- [ ] Safety-block handling with readable error
-- [ ] Scene grid: thumbnail, play audio, regenerate image/voice, edit prompt
-- [ ] Overall progress bar + per-scene status
+Spec: `docs/07-image-generation.md` (§7 quality check and §9 thumbnail are Phase 5).
 
-**Test:** all ~25 images generated in a consistent style; one regenerated individually.
+- [ ] `images/provider.rs`: `ImageProvider` trait, `ImageRequest`, `GeneratedImage`, `ImageError`
+      (quota / rate limit / safety / auth / transient / other)
+- [ ] Cloudflare Workers AI Flux Schnell provider (default): account ID in settings, API token
+      in keyring (`cloudflare_api_token`), base64 JPEG from `result.image`, daily-quota error →
+      `QuotaExhaustedDaily` (next 00:00 UTC); mocked-HTTP tests (success, auth, quota, 5xx retry)
+- [ ] Gemini Nano Banana provider (paid): 16:9 native, up to 3 reference images,
+      "Gemini image models need billing. Switch to Cloudflare Flux in Settings." on free tier
+- [ ] Settings → Images: provider, Cloudflare account ID + token (save / clear / **Test
+      connection** = 1-step "a small green leaf"), steps 4–8, Gemini model, key-scene provider,
+      Cloudflare concurrency (default 2), Flux license link
+- [ ] Visual Bible: generated once per project by the text model, stored as `visual_bible`,
+      editable in the Script page **Look & feel** tab; scenes gain `characters`, `place`,
+      `shot`, `key_scene` (shot varied, key scenes = first, chapter starts, last)
+- [ ] `images/prompt.rs` (pure): style, shot phrase, bible inlining, place, culture notes,
+      square composition phrase, "clean image without any lettering", positive phrasing,
+      2,048-char truncation (drop culture notes, then place), seed = bible seed + scene number;
+      unit tests
+- [ ] `images/postprocess.rs`: raw saved, square → 16:9 center crop, Lanczos3 upscale to
+      2150×1210 (1080p) / 1434×806 (720p), 384×216 `thumb.jpg`; unit tests
+- [ ] Image job: key scenes first, Cloudflare 2 at a time, cache by
+      `sha256(provider + model + prompt + seed + steps)`, Regenerate = new random seed
+- [ ] Budget: project option **Scenes per image** (1 or 2; pairs share one image) and an
+      estimate before generating ("N images · X Cloudflare (~P% of today's allowance) · Y Gemini (~$C)")
+- [ ] Quota pause: `paused_quota` status, progress saved, "Resume after 7:00 AM" in local time,
+      **Resume** button, "Ready to resume" once the reset time has passed; never switch accounts
+- [ ] Safety blocks → `failed` with a readable reason; the user edits the prompt and retries
+- [ ] Scene grid: thumbnail, play audio, regenerate image / voice, edit image prompt;
+      overall progress + per-scene image status
+
+**Test:** 1-minute Khmer project "How was Angkor Wat built?" → ~9 images with Cloudflare Flux
+in one consistent style (same characters/places look alike); one regenerated with a new seed;
+edit one image prompt → only that image becomes outdated; Look & feel edit → all images outdated.
 
 ## Phase 4 — Subtitles + first render
 

@@ -11,6 +11,8 @@ AI-generated illustrations with slow pan motion, burned-in subtitles and backgro
 3. `docs/03-pipeline.md` — each generation/render step in detail
 4. `docs/04-khmer.md` — Khmer text, TTS and subtitle rules (easy to get wrong)
 5. `docs/05-roadmap.md` — phases, acceptance criteria, **current phase**
+6. `docs/07-image-generation.md` — image providers (Cloudflare Flux default, Gemini paid),
+   Visual Bible, prompt building, post-processing, quota pause, caching
 
 Only work on the phase marked **CURRENT** in `docs/05-roadmap.md`. When it is done,
 stop and ask the human to test. Do not start the next phase on your own.
@@ -25,12 +27,21 @@ stop and ask the human to test. Do not start the next phase on your own.
   undocumented service that can break or be blocked at any time and its terms are unclear:
   keep it behind the `TtsEngine` trait, label it unofficial in the UI, show a clear
   "Edge TTS unavailable — switch to Gemini TTS in Settings" error, and keep Gemini TTS fully
-  working as the alternative. No other non-Gemini AI services.
-  - Store the key only via the `keyring` crate (Windows Credential Manager).
-  - Never log the key, never write it to project files.
-  - **Never rotate multiple keys/accounts to bypass rate limits** (violates Google's terms).
-    Handle 429 with backoff + a concurrency limit instead.
-- **Check the current Gemini API docs before writing any Gemini request code.**
+  working as the alternative.
+  **Exception 2 (images, `docs/07-image-generation.md`):** images default to **Cloudflare
+  Workers AI** (`@cf/black-forest-labs/flux-1-schnell`) with the user's own Cloudflare account
+  (free daily allowance); Gemini image models remain the paid alternative.
+  No other non-Gemini AI services.
+  - Store the Gemini key **and the Cloudflare API token** only via the `keyring` crate
+    (Windows Credential Manager; users `gemini_api_key`, `cloudflare_api_token`). The
+    Cloudflare **account ID** is not secret and lives in `settings.json`.
+  - Never log the key or token, never write them to project files.
+  - **Never rotate multiple keys/accounts/tokens to bypass rate limits or daily quotas**
+    (violates Google's and Cloudflare's terms). Handle 429 with backoff + a concurrency limit;
+    when the Cloudflare daily allowance is used up, **pause** (`paused_quota`) and resume after
+    the reset — never switch to another account or token.
+- **Check the current Gemini API docs before writing any Gemini request code**, and the
+  current Cloudflare Workers AI docs before changing the Cloudflare client.
   Do not guess request/response field names. Keep model IDs in config, not hard-coded.
 - **Khmer subtitles are rendered as PNGs in the WebView canvas**, never with
   FFmpeg `drawtext`/libass. See `docs/04-khmer.md`.

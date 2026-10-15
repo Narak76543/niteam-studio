@@ -6,10 +6,10 @@
 //! - response: `steps[{type:"model_output", content:[{type:"audio", data(base64), mime_type}]}]`
 //! - unary default output: WAV (RIFF, 24 kHz, mono, 16-bit PCM).
 
-use base64::Engine as _;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::GeminiError;
+use super::interactions::{Interaction, last_media};
 use super::client::{EndpointKind, GeminiClient};
 use super::retry::{MAX_ATTEMPTS, RetryHooks};
 use crate::storage::ApiKey;
@@ -97,34 +97,6 @@ struct VoiceChoice<'a> {
     voice: &'a str,
 }
 
-#[derive(Debug, Deserialize)]
-struct Interaction {
-    #[serde(default)]
-    status: Option<String>,
-    #[serde(default)]
-    steps: Vec<Step>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Step {
-    #[serde(rename = "type")]
-    kind: String,
-    #[serde(default)]
-    content: Vec<Content>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Content {
-    #[serde(rename = "type")]
-    kind: String,
-    #[serde(default)]
-    data: Option<String>,
-    #[serde(default)]
-    mime_type: Option<String>,
-    #[serde(default)]
-    sample_rate: Option<u32>,
-}
-
 /// Audio returned by Gemini TTS.
 pub struct SpeechAudio {
     pub bytes: Vec<u8>,
@@ -165,34 +137,12 @@ fn build_request<'a>(
     }
 }
 
-fn extract_audio(interaction: Interaction) -> Result<SpeechAudio, GeminiError> {
-    if let Some(status) = &interaction.status
-        && status != "completed"
-    {
-        return Err(GeminiError::BadResponse(format!(
-            "TTS interaction status '{status}'"
-        )));
-    }
-    let audio = interaction
-        .steps
-        .into_iter()
-        .filter(|s| s.kind == "model_output")
-        .flat_map(|s| s.content)
-        .rfind(|c| c.kind == "audio")
-        .ok_or_else(|| GeminiError::BadResponse("TTS answer contained no audio".into()))?;
-    let data = audio
-        .data
-        .ok_or_else(|| GeminiError::BadResponse("TTS audio had no data".into()))?;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(data.trim())
-        .map_err(|e| GeminiError::BadResponse(format!("TTS audio is not valid base64: {e}")))?;
-    if bytes.is_empty() {
-        return Err(GeminiError::BadResponse("TTS audio is empty".into()));
-    }
+fn extract_audio(interaction: &Interaction) -> Result<SpeechAudio, GeminiError> {
+    let media = last_media(interaction, "audio")?;
     Ok(SpeechAudio {
-        bytes,
-        mime_type: audio.mime_type.unwrap_or_else(|| "audio/wav".into()),
-        sample_rate: audio.sample_rate,
+        bytes: media.bytes,
+        mime_type: media.mime_type.unwrap_or_else(|| "audio/wav".into()),
+        sample_rate: media.sample_rate,
     })
 }
 
@@ -211,7 +161,7 @@ impl GeminiClient {
         let interaction: Interaction = self
             .create_interaction(key, model, EndpointKind::Tts, &body, hooks, MAX_ATTEMPTS)
             .await?;
-        extract_audio(interaction)
+        extract_audio(&interaction)
     }
 }
 
@@ -260,7 +210,7 @@ mod tests {
             ]}]
         }))
         .unwrap();
-        let a = extract_audio(i).unwrap();
+        let a = extract_audio(&i).unwrap();
         assert_eq!(a.bytes, vec![1, 2, 3]);
         assert_eq!(a.mime_type, "audio/wav");
     }
@@ -271,9 +221,9 @@ mod tests {
             {"type": "model_output", "content": [{"type": "text", "text": "hi"}]}
         ]}))
         .unwrap();
-        assert!(extract_audio(i).is_err());
+        assert!(extract_audio(&i).is_err());
         let i: Interaction =
             serde_json::from_value(json!({"status": "failed", "steps": []})).unwrap();
-        assert!(extract_audio(i).is_err());
+        assert!(extract_audio(&i).is_err());
     }
 }

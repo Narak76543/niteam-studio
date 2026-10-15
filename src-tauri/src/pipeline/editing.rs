@@ -6,7 +6,8 @@ use super::ProjectError;
 use super::hashing::{self, normalize, normalize_spoken};
 use super::presets;
 use super::project::{
-    Language, Project, ProjectStatus, RenderSettings, SCHEMA_VERSION, Scene, Style, VoiceSettings,
+    ImageSnapshot, Language, Project, ProjectStatus, RenderSettings, SCHEMA_VERSION, Scene, Style,
+    VoiceSettings,
 };
 use super::store::now;
 use crate::gemini::script::MOODS;
@@ -77,6 +78,9 @@ pub fn new_project(input: &NewProjectInput, tts_model: &str) -> Result<Project, 
         created_at: ts.clone(),
         updated_at: ts,
         outline: None,
+        visual_bible: None,
+        image_settings: ImageSnapshot::default(),
+        image_pause: None,
         scenes: vec![],
         render: RenderSettings::default(),
     })
@@ -97,6 +101,7 @@ pub fn status_name(s: ProjectStatus) -> &'static str {
         ProjectStatus::Review => "review",
         ProjectStatus::Rendering => "rendering",
         ProjectStatus::Done => "done",
+        ProjectStatus::PausedQuota => "paused_quota",
     }
 }
 
@@ -207,7 +212,10 @@ pub fn approve(p: &mut Project) -> Result<(), ProjectError> {
 /// "Edit script": back to script_draft from any later step except rendering.
 pub fn reopen(p: &mut Project) -> Result<(), ProjectError> {
     match p.status {
-        ProjectStatus::Generating | ProjectStatus::Review | ProjectStatus::Done => {
+        ProjectStatus::Generating
+        | ProjectStatus::Review
+        | ProjectStatus::Done
+        | ProjectStatus::PausedQuota => {
             p.status = ProjectStatus::ScriptDraft;
             Ok(())
         }

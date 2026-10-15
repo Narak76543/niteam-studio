@@ -1,5 +1,5 @@
-//! HTTP layer behind a trait so the retry/fallback logic can be tested with a mock.
-//! Production uses [`ReqwestTransport`].
+//! HTTP layer behind a trait so retry / fallback / quota logic can be tested with a mock.
+//! Production uses [`ReqwestTransport`]. Shared by the Gemini and Cloudflare clients.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -8,6 +8,7 @@ use std::time::Duration;
 use reqwest::header::{CONTENT_TYPE, HeaderValue, RETRY_AFTER};
 
 use crate::storage::ApiKey;
+use crate::storage::secrets::CloudflareToken;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -18,13 +19,30 @@ pub enum Method {
     Post,
 }
 
-/// One HTTP request. The key is sent as the `x-goog-api-key` header, never in the URL.
-/// No `Debug` derive: it holds the key.
+/// Credentials, always sent as a header (never in the URL, so they can't leak via errors).
+#[derive(Clone)]
+pub enum Auth {
+    /// Gemini: `x-goog-api-key: <key>`
+    GoogApiKey(ApiKey),
+    /// Cloudflare: `Authorization: Bearer <token>`
+    Bearer(CloudflareToken),
+}
+
+impl Auth {
+    fn header(&self) -> (&'static str, String) {
+        match self {
+            Self::GoogApiKey(k) => ("x-goog-api-key", k.expose().to_owned()),
+            Self::Bearer(t) => ("authorization", format!("Bearer {}", t.expose())),
+        }
+    }
+}
+
+/// One HTTP request. No `Debug` derive: it holds credentials.
 #[derive(Clone)]
 pub struct HttpRequest {
     pub method: Method,
     pub url: String,
-    pub api_key: ApiKey,
+    pub auth: Auth,
     /// JSON body for POST.
     pub body: Option<Vec<u8>>,
 }
@@ -86,10 +104,11 @@ pub fn parse_retry_after(value: Option<&HeaderValue>) -> Option<Duration> {
 impl Transport for ReqwestTransport {
     fn send(&self, request: HttpRequest) -> TransportFuture<'_> {
         Box::pin(async move {
-            let mut key = HeaderValue::from_str(request.api_key.expose()).map_err(|_| {
-                TransportError::Network("API key contains invalid characters".into())
+            let (name, value) = request.auth.header();
+            let mut auth = HeaderValue::from_str(&value).map_err(|_| {
+                TransportError::Network("the key or token contains invalid characters".into())
             })?;
-            key.set_sensitive(true);
+            auth.set_sensitive(true);
             let builder = match request.method {
                 Method::Get => self.http.get(&request.url),
                 Method::Post => self
@@ -99,7 +118,7 @@ impl Transport for ReqwestTransport {
                     .body(request.body.unwrap_or_default()),
             };
             let resp = builder
-                .header("x-goog-api-key", key)
+                .header(name, auth)
                 .send()
                 .await
                 .map_err(map_reqwest)?;
@@ -126,7 +145,7 @@ pub mod mock {
 
     pub struct MockTransport {
         responses: Mutex<VecDeque<Result<HttpResponse, TransportError>>>,
-        /// (method, url, had_key_header) of every request.
+        /// (method, url, had_auth_header) of every request.
         pub calls: Mutex<Vec<(Method, String, bool)>>,
     }
 
@@ -169,7 +188,7 @@ pub mod mock {
             self.calls.lock().unwrap().push((
                 request.method,
                 request.url.clone(),
-                !request.api_key.expose().is_empty(),
+                !request.auth.header().1.is_empty(),
             ));
             let next = self
                 .responses

@@ -39,12 +39,25 @@ pub fn text_hash(project: &Project, scene: &Scene) -> String {
     ])
 }
 
-/// Hash of everything that changes the image: style prompt + image prompt.
-pub fn prompt_hash(project: &Project, scene: &Scene) -> String {
-    sha(&[
-        &normalize(&project.style.style_prompt),
-        &normalize(&scene.image_prompt),
-    ])
+/// Hash of everything that changes the image (07 §8):
+/// provider + model + final prompt (style, bible, shot, place…) + seed + steps.
+pub fn prompt_hash(project: &Project, scene_index: usize) -> Option<String> {
+    crate::images::plan::plan_scene(project, scene_index).map(|p| p.hash)
+}
+
+/// Marks every done image whose plan changed (after a Visual Bible or settings change).
+pub fn mark_all_images_stale(project: &mut Project) {
+    for i in 0..project.scenes.len() {
+        let hash = prompt_hash(project, i);
+        if let (Some(hash), Some(scene)) = (hash, project.scenes.get_mut(i))
+            && is_outdated(scene.image.status, scene.image.prompt_hash.as_deref(), &hash)
+        {
+            scene.image.status = AssetStatus::Stale;
+            if scene.clip.status == AssetStatus::Done {
+                scene.clip.status = AssetStatus::Stale;
+            }
+        }
+    }
 }
 
 /// Marks done/failed assets of `scene_index` stale if their input changed.
@@ -54,7 +67,7 @@ pub fn mark_stale(project: &mut Project, scene_index: usize) {
         return;
     };
     let th = text_hash(project, scene);
-    let ph = prompt_hash(project, scene);
+    let ph = prompt_hash(project, scene_index).unwrap_or_default();
     let Some(scene) = project.scenes.get_mut(scene_index) else {
         return;
     };

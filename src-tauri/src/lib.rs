@@ -1,6 +1,8 @@
 mod commands;
 mod error;
 mod gemini;
+mod images;
+mod net;
 mod pipeline;
 mod state;
 mod storage;

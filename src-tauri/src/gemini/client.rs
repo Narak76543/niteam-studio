@@ -14,8 +14,8 @@ use tokio::sync::Semaphore;
 use super::GeminiError;
 use super::models::{ErrorEnvelope, GenerateContentRequest, GenerateContentResponse, ModelInfo};
 use super::retry::{self, MAX_ATTEMPTS, RetryHooks, RetryNotice, RetryReason, TEXT_CHAIN_ATTEMPTS};
-use super::transport::{
-    HttpRequest, HttpResponse, Method, ReqwestTransport, Transport, TransportError,
+use crate::net::transport::{
+    Auth, HttpRequest, HttpResponse, Method, ReqwestTransport, Transport, TransportError,
 };
 use crate::storage::ApiKey;
 use crate::storage::settings::ConcurrencySettings;
@@ -106,7 +106,7 @@ impl GeminiClient {
         let request = HttpRequest {
             method: Method::Get,
             url: format!("{}/models/{}", self.base_url, model),
-            api_key: key.clone(),
+            auth: Auth::GoogApiKey(key.clone()),
             body: None,
         };
         self.call(EndpointKind::Text, model, request, hooks, MAX_ATTEMPTS)
@@ -128,7 +128,7 @@ impl GeminiClient {
         let request = HttpRequest {
             method: Method::Post,
             url: format!("{}/models/{}:generateContent", self.base_url, model),
-            api_key: key.clone(),
+            auth: Auth::GoogApiKey(key.clone()),
             body: Some(body),
         };
         self.call(kind, model, request, hooks, max_attempts).await
@@ -149,7 +149,7 @@ impl GeminiClient {
         let request = HttpRequest {
             method: Method::Post,
             url: format!("{}/interactions", self.base_url),
-            api_key: key.clone(),
+            auth: Auth::GoogApiKey(key.clone()),
             body: Some(body),
         };
         self.call(kind, model, request, hooks, max_attempts).await
@@ -293,7 +293,7 @@ mod tests {
 
     use super::*;
     use crate::gemini::models::Content;
-    use crate::gemini::transport::mock::{MockTransport, status, status_retry_after};
+    use crate::net::transport::mock::{MockTransport, status, status_retry_after};
 
     const OK_BODY: &str = r#"{"candidates":[{"content":{"role":"model","parts":[{"text":"hi"}]},"finishReason":"STOP"}]}"#;
     const BUSY_BODY: &str = r#"{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}"#;

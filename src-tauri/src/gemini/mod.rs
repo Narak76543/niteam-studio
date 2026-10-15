@@ -2,10 +2,11 @@
 //! `generateContent` / `models.get` REST reference (ai.google.dev/api), checked 2026-10-15.
 
 pub mod client;
+pub mod image;
+pub mod interactions;
 pub mod models;
 pub mod retry;
 pub mod script;
-pub mod transport;
 pub mod tts;
 
 pub use client::GeminiClient;

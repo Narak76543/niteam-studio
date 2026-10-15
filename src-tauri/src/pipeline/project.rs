@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use std::collections::BTreeMap;
+
+use crate::images::provider::ProviderId;
 use crate::tts::EngineKind;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -21,6 +24,8 @@ pub enum ProjectStatus {
     Review,
     Rendering,
     Done,
+    /// Image job stopped: Cloudflare daily allowance used up (`image_pause` says until when).
+    PausedQuota,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -50,6 +55,15 @@ pub struct Project {
     /// Script plan; chapters flip to `done` as their scenes arrive (resume point).
     #[serde(default)]
     pub outline: Option<Outline>,
+    /// Look & feel shared by every image (`docs/07-image-generation.md` §2).
+    #[serde(default)]
+    pub visual_bible: Option<VisualBible>,
+    /// Image settings snapshot used for the cache hash (07 §8) + project image options.
+    #[serde(default)]
+    pub image_settings: ImageSnapshot,
+    /// Set while `status == PausedQuota`.
+    #[serde(default)]
+    pub image_pause: Option<ImagePause>,
     #[serde(default)]
     pub scenes: Vec<Scene>,
     #[serde(default)]
@@ -111,6 +125,18 @@ pub struct Scene {
     /// Claim the model was unsure about; shown to the user for checking.
     #[serde(default)]
     pub fact_note: Option<String>,
+    /// Visual Bible character keys shown in this scene.
+    #[serde(default)]
+    pub characters: Vec<String>,
+    /// Visual Bible place key.
+    #[serde(default)]
+    pub place: Option<String>,
+    #[serde(default)]
+    pub shot: Shot,
+    /// Scene 1, each chapter's first scene and the last scene (generated first, may use the
+    /// key-scene provider).
+    #[serde(default)]
+    pub key_scene: bool,
     #[serde(default)]
     pub voice: VoiceAsset,
     #[serde(default)]
@@ -140,9 +166,108 @@ pub struct VoiceAsset {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ImageAsset {
     pub status: AssetStatus,
+    /// Pan-size 16:9 image: `scenes/<id>/image_1080.png` (or `image_720.png`).
     pub path: Option<String>,
+    /// Provider original: `scenes/<id>/image_raw.jpg|png`.
+    #[serde(default)]
+    pub raw_path: Option<String>,
+    /// 384×216 `scenes/<id>/thumb.jpg` for the grid.
+    #[serde(default)]
+    pub thumb_path: Option<String>,
+    /// Provider that made it (`cloudflare_flux` / `gemini_nano_banana`).
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// Seed override from "Regenerate"; `None` = bible seed + scene number.
+    #[serde(default)]
+    pub seed: Option<u32>,
+    /// With "2 scenes per image": the scene whose image this one reuses.
+    #[serde(default)]
+    pub shared_from: Option<String>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub error_kind: Option<String>,
+    /// sha256(provider + model + final prompt + seed + steps).
     pub prompt_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct VisualBible {
+    pub style: String,
+    #[serde(default)]
+    pub characters: BTreeMap<String, String>,
+    #[serde(default)]
+    pub places: BTreeMap<String, String>,
+    #[serde(default)]
+    pub culture_notes: String,
+    pub seed: u32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Shot {
+    Wide,
+    #[default]
+    Medium,
+    Close,
+    Detail,
+    Aerial,
+}
+
+impl Shot {
+    pub const ALL: [Shot; 5] = [Shot::Wide, Shot::Medium, Shot::Close, Shot::Detail, Shot::Aerial];
+
+    pub fn parse(s: &str) -> Option<Shot> {
+        match s.trim().to_lowercase().as_str() {
+            "wide" => Some(Shot::Wide),
+            "medium" => Some(Shot::Medium),
+            "close" => Some(Shot::Close),
+            "detail" => Some(Shot::Detail),
+            "aerial" => Some(Shot::Aerial),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Shot::Wide => "wide",
+            Shot::Medium => "medium",
+            Shot::Close => "close",
+            Shot::Detail => "detail",
+            Shot::Aerial => "aerial",
+        }
+    }
+}
+
+/// Image settings the project's images were made with + project image options.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ImageSnapshot {
+    pub provider: ProviderId,
+    pub gemini_model: String,
+    pub steps: u8,
+    pub key_scene_provider: Option<ProviderId>,
+    /// 1 (default) or 2: consecutive scene pairs share one image (07 §5).
+    pub scenes_per_image: u8,
+}
+
+impl Default for ImageSnapshot {
+    fn default() -> Self {
+        Self {
+            provider: ProviderId::CloudflareFlux,
+            gemini_model: String::new(),
+            steps: 4,
+            key_scene_provider: None,
+            scenes_per_image: 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImagePause {
+    /// RFC 3339, next 00:00 UTC.
+    pub resets_at_utc: String,
+    pub done: usize,
+    pub total: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -282,6 +407,10 @@ impl Scene {
             image_prompt: String::new(),
             mood: "calm".into(),
             fact_note: None,
+            characters: vec![],
+            place: None,
+            shot: Shot::default(),
+            key_scene: false,
             voice: VoiceAsset::default(),
             image: ImageAsset::default(),
             subs: SubsAsset::default(),
@@ -336,6 +465,9 @@ pub(crate) mod tests {
             created_at: String::new(),
             updated_at: String::new(),
             outline: None,
+            visual_bible: None,
+            image_settings: ImageSnapshot::default(),
+            image_pause: None,
             scenes: vec![],
             render: RenderSettings::default(),
         }

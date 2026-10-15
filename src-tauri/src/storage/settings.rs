@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::{AppPaths, StorageError, atomic};
 use crate::pipeline::editing::DEFAULT_VOICE_DIRECTION;
 use crate::pipeline::project::{Language, VoiceSettings};
+use crate::images::provider::ProviderId;
 use crate::tts::{EngineKind, voices};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -18,6 +19,57 @@ pub struct Settings {
     pub models: ModelSettings,
     pub concurrency: ConcurrencySettings,
     pub voice: VoiceDefaults,
+    pub image: ImageSettings,
+}
+
+/// Settings → Images (`docs/07-image-generation.md` §1).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ImageSettings {
+    pub provider: ProviderId,
+    /// Gemini image model (paid only).
+    pub gemini_model: String,
+    /// Flux Schnell steps, 4–8.
+    pub steps: u8,
+    /// Optional better provider for hook / chapter-start / ending scenes.
+    pub key_scene_provider: Option<ProviderId>,
+    /// Cloudflare account ID (not secret; the API token is in the keyring).
+    pub cloudflare_account_id: String,
+    /// Cloudflare requests at a time.
+    pub cloudflare_concurrency: usize,
+}
+
+impl Default for ImageSettings {
+    fn default() -> Self {
+        Self {
+            provider: ProviderId::CloudflareFlux,
+            gemini_model: "gemini-3.1-flash-lite-image".into(),
+            steps: 4,
+            key_scene_provider: None,
+            cloudflare_account_id: String::new(),
+            cloudflare_concurrency: 2,
+        }
+    }
+}
+
+impl ImageSettings {
+    fn validate(&self) -> Result<(), StorageError> {
+        let bad = |what: &str| Err(StorageError::InvalidSetting(what.to_owned()));
+        if !(4..=8).contains(&self.steps) {
+            return bad("image steps must be 4–8");
+        }
+        if self.gemini_model.is_empty() || !is_model_id(&self.gemini_model) {
+            return bad("Gemini image model");
+        }
+        let id = self.cloudflare_account_id.trim();
+        if !id.is_empty() && !(id.len() == 32 && id.chars().all(|c| c.is_ascii_hexdigit())) {
+            return bad("Cloudflare account ID (32 hexadecimal characters)");
+        }
+        if !(1..=4).contains(&self.cloudflare_concurrency) {
+            return bad("Cloudflare concurrency must be 1–4");
+        }
+        Ok(())
+    }
 }
 
 /// Voice engine and voices (Settings → Voice). Resolved per project language with
@@ -103,7 +155,6 @@ pub struct ModelSettings {
     pub text_chain: Vec<String>,
     pub tts: String,
     pub tts_lite: String,
-    pub image: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -123,6 +174,7 @@ impl Default for Settings {
             models: ModelSettings::default(),
             concurrency: ConcurrencySettings::default(),
             voice: VoiceDefaults::default(),
+            image: ImageSettings::default(),
         }
     }
 }
@@ -138,7 +190,6 @@ impl Default for ModelSettings {
             ],
             tts: "gemini-3.8-flash-tts".into(),
             tts_lite: "gemini-3.8-flash-lite-tts".into(),
-            image: "gemini-3.1-flash-image".into(),
         }
     }
 }
@@ -188,13 +239,14 @@ impl Settings {
         let models =
             chain
                 .iter()
-                .chain([&self.models.tts, &self.models.tts_lite, &self.models.image]);
+                .chain([&self.models.tts, &self.models.tts_lite]);
         for m in models {
             if m.is_empty() || !is_model_id(m) {
                 return Err(StorageError::InvalidSetting(format!("model id '{m}'")));
             }
         }
         self.voice.validate()?;
+        self.image.validate()?;
         let c = &self.concurrency;
         for n in [c.text, c.tts, c.image] {
             if n == 0 || n > MAX_CONCURRENCY {
@@ -268,6 +320,19 @@ mod tests {
             ..VoiceDefaults::default()
         };
         assert!(v.validate().is_err());
+    }
+
+    #[test]
+    fn image_settings_validation() {
+        let mut s = ImageSettings::default();
+        assert!(s.validate().is_ok());
+        s.steps = 9;
+        assert!(s.validate().is_err());
+        let mut s = ImageSettings::default();
+        s.cloudflare_account_id = "0123456789abcdef0123456789abcdef".into();
+        assert!(s.validate().is_ok());
+        s.cloudflare_account_id = "not-an-id".into();
+        assert!(s.validate().is_err());
     }
 
     #[test]

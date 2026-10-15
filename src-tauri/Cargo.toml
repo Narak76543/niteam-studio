@@ -41,6 +41,9 @@ rand = "0.8"
 msedge-tts = { version = "0.4", default-features = false, features = ["tokio-runtime"] }
 unicode-segmentation = "1"
 base64 = "0.22"
+async-trait = "0.1"
+# JPEG/PNG decode + encode, crop, Lanczos3 resize (images/postprocess.rs)
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }

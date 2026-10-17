@@ -22,6 +22,16 @@ pub struct Part {
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thought: Option<bool>,
+    /// Inline file (PDF pages), base64 (`docs/10-document-source.md` §3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inline_data: Option<InlineData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InlineData {
+    pub mime_type: String,
+    pub data: String,
 }
 
 impl Content {
@@ -39,7 +49,25 @@ impl Content {
             parts: vec![Part {
                 text: Some(text.into()),
                 thought: None,
+                inline_data: None,
             }],
+        }
+    }
+
+    /// A user turn with a PDF before the instructions (the order the PDF guide recommends).
+    pub fn user_with_pdf(pdf: &[u8], text: impl Into<String>) -> Self {
+        use base64::Engine as _;
+        let data = base64::engine::general_purpose::STANDARD.encode(pdf);
+        Self {
+            role: Some("user".into()),
+            parts: vec![
+                Part {
+                    text: None,
+                    thought: None,
+                    inline_data: Some(InlineData { mime_type: "application/pdf".into(), data }),
+                },
+                Part { text: Some(text.into()), thought: None, inline_data: None },
+            ],
         }
     }
 
@@ -49,6 +77,7 @@ impl Content {
             parts: vec![Part {
                 text: Some(text.into()),
                 thought: None,
+                inline_data: None,
             }],
         }
     }

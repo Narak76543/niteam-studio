@@ -44,6 +44,7 @@ base64 = "0.22"
 async-trait = "0.1"
 # JPEG/PNG decode + encode, crop, Lanczos3 resize (images/postprocess.rs)
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+lopdf = "0.45.0"
 
 # DXGI adapter list for local GPU detection (docs/08-local-gpu.md §2). Same version Tauri uses.
 [target.'cfg(windows)'.dependencies]

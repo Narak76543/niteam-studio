@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowUp,
+  BookOpenText,
   CircleAlert,
   GripVertical,
   ListPlus,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ProjectStatusBadge } from "../components/Badge";
+import { Badge, ProjectStatusBadge } from "../components/Badge";
 import { Button, IconButton } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EmptyState } from "../components/EmptyState";
@@ -23,6 +24,7 @@ import { KeepTermsEditor } from "../components/KeepTermsEditor";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { SceneThumb } from "../components/SceneThumb";
+import { SourceReview } from "../components/SourceReview";
 import { ProgressBar } from "../components/ProgressBar";
 import { RetryStatus } from "../components/RetryStatus";
 import { SuggestionCard } from "../components/SuggestionCard";
@@ -31,6 +33,7 @@ import { VisualBibleEditor } from "../components/VisualBibleEditor";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage, onGeminiRetry, onProofreadProgress, onScriptProgress } from "../lib/api";
 import type { Navigate } from "../lib/route";
+import { pageRanges } from "../lib/sourceReview";
 import {
   MOODS,
   SHOTS,
@@ -49,7 +52,11 @@ const ICON = { size: 16, strokeWidth: 1.5 } as const;
 type Tab = "narration" | "spoken";
 type View = "scenes" | "look" | "names";
 type SaveState = "idle" | "saving" | "saved";
-type Confirm = { kind: "regenerate" } | { kind: "deleteScene"; id: string; order: number } | null;
+type Confirm =
+  | { kind: "regenerate" }
+  | { kind: "deleteScene"; id: string; order: number }
+  | { kind: "backToPoints" }
+  | null;
 type Finished = Pick<ScriptProgress, "stage" | "error" | "error_kind"> | null;
 type Retry = { notice: GeminiRetry; at: number } | null;
 
@@ -317,6 +324,28 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
     );
   }
 
+  // "From document": reading and point review come before the script.
+  if (project.source && project.source.stage !== "confirmed") {
+    return (
+      <div className="page">
+        <PageHeader
+          breadcrumb={[{ label: t("script.breadcrumb"), onClick: () => navigate({ name: "projects" }) }]}
+          title={project.title}
+          titleLang={project.language}
+        />
+        <SourceReview
+          key={project.source.stage}
+          project={project}
+          onProject={setProject}
+          onConfirmed={(p) => {
+            setProject(p);
+            void generate(false);
+          }}
+        />
+      </div>
+    );
+  }
+
   const editable = project.status === "script_draft";
   const suggestionIds = scenes.filter((s) => s.proofread !== null).map((s) => s.id);
   const outline = project.outline;
@@ -359,6 +388,11 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
         {hasScenes && (
           <Button icon={<ListPlus {...ICON} />} onClick={() => void addScene()}>
             {t("script.addScene")}
+          </Button>
+        )}
+        {project.source && (
+          <Button icon={<BookOpenText {...ICON} />} onClick={() => setConfirm({ kind: "backToPoints" })}>
+            {t("source.backToPoints")}
           </Button>
         )}
         {(complete || (hasScenes && !outline)) && (
@@ -646,6 +680,18 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
                 />
               )}
 
+              {project.source && (
+                <div className="row t-small">
+                  {selected.general_knowledge ? (
+                    <Badge tone="info">{t("source.generalKnowledge")}</Badge>
+                  ) : selected.source_pages.length > 0 ? (
+                    <span>{t("source.scenePages", { pages: pageRanges(selected.source_pages) })}</span>
+                  ) : (
+                    <Badge tone="warn">{t("source.noPages")}</Badge>
+                  )}
+                </div>
+              )}
+
               {selected.fact_note && (
                 <Notice tone="warn">
                   <strong>{t("script.factNote")}:</strong> <span lang={lang}>{selected.fact_note}</span>
@@ -822,6 +868,20 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
             setConfirm(null);
             pending.current = null;
             void generate(true);
+          }}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+      {confirm?.kind === "backToPoints" && (
+        <ConfirmDialog
+          title={t("source.backTitle")}
+          body={t("source.backBody")}
+          confirmLabel={t("source.backToPoints")}
+          danger={hasScenes}
+          onConfirm={() => {
+            setConfirm(null);
+            pending.current = null;
+            void run(() => api.sourceReopen(projectId));
           }}
           onCancel={() => setConfirm(null)}
         />

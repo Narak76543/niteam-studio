@@ -15,6 +15,8 @@ export type AssetStatus = "pending" | "running" | "done" | "failed" | "stale";
 export interface ModelSettings {
   /** Text models in fallback order: 3 tries each, then the next one. */
   text_chain: string[];
+  /** Reads "From document" PDFs (free-tier Flash; docs/10-document-source.md). */
+  document: string[];
   tts: string;
   tts_lite: string;
 }
@@ -226,7 +228,7 @@ export type RetryReason = "busy" | "rate_limited" | "network" | "next_model";
 
 /** Payload of the `gemini-retry` event. */
 export interface GeminiRetry {
-  scope: "script" | "key_test" | "voice" | "image";
+  scope: "script" | "key_test" | "voice" | "image" | "source";
   project_id: string | null;
   model: string;
   /** For `next_model`: the model that just gave up. */
@@ -435,6 +437,10 @@ export interface Scene {
   /** Pending proofreading suggestion (Script page). */
   proofread: ProofSuggestion | null;
   proofread_hash: string | null;
+  /** "From document" projects: PDF pages the scene's claims come from. */
+  source_pages: number[];
+  /** Background explanation, not a claim from the document. */
+  general_knowledge: boolean;
 }
 
 export interface ProofSuggestion {
@@ -516,8 +522,103 @@ export interface Project {
   keep_terms: string[];
   /** VoxCPM2 Voice Profile for this project (null = the default). */
   voice_profile: string | null;
+  /** "From document" projects (docs/10-document-source.md). */
+  source: SourceDoc | null;
   scenes: Scene[];
   render: RenderSettings;
+}
+
+export type Audience = "general" | "students" | "experts";
+export type SourceStage = "reading" | "review" | "confirmed";
+
+export interface SourceSection {
+  heading: string;
+  notes: string;
+  pages: number[];
+}
+
+export interface SourceChunk {
+  from: number;
+  to: number;
+  mode: "text" | "pdf" | null;
+  sections: SourceSection[];
+  done: boolean;
+}
+
+export interface SourceItem {
+  id: string;
+  /** Key terms only. */
+  term: string;
+  text: string;
+  pages: number[];
+  selected: boolean;
+  note: string;
+}
+
+export interface SourceSummary {
+  title: string;
+  authors: string;
+  year: string;
+  key_points: SourceItem[];
+  facts: SourceItem[];
+  terms: SourceItem[];
+}
+
+export interface QuotaPause {
+  resets_at_utc: string;
+  daily: boolean;
+}
+
+export interface SourceDoc {
+  file_name: string;
+  size_bytes: number;
+  page_count: number;
+  page_from: number;
+  page_to: number;
+  audience: Audience;
+  focus: string;
+  stage: SourceStage;
+  chunks: SourceChunk[];
+  summary: SourceSummary | null;
+  pause: QuotaPause | null;
+  credit: string;
+}
+
+/** `source_pdf_info`: the picked file. */
+export interface PdfInfo {
+  file_name: string;
+  size_bytes: number;
+  page_count: number;
+  needs_range: boolean;
+  max_pages: number;
+}
+
+export interface NewDocumentInput {
+  path: string;
+  language: Language;
+  target_minutes: number;
+  style_preset: string;
+  audience: Audience;
+  focus: string;
+  page_from: number | null;
+  page_to: number | null;
+}
+
+export interface ReviewEdit {
+  key_point_order: string[];
+  items: { id: string; selected: boolean; note: string }[];
+}
+
+/** Payload of `source-progress`. */
+export interface SourceProgress {
+  project_id: string;
+  stage: "reading" | "summarizing" | "done" | "paused" | "failed" | "cancelled";
+  chunks_done: number;
+  chunks_total: number;
+  resets_at_utc: string | null;
+  daily: boolean;
+  error: string | null;
+  error_kind: string | null;
 }
 
 export interface ProjectSummary {

@@ -71,6 +71,9 @@ pub struct Project {
     /// VoxCPM2 Voice Profile for this project (`None` = the default in Settings → Voices).
     #[serde(default)]
     pub voice_profile: Option<String>,
+    /// "From document" projects: the PDF's summary and reading state.
+    #[serde(default)]
+    pub source: Option<SourceDoc>,
     #[serde(default)]
     pub scenes: Vec<Scene>,
     #[serde(default)]
@@ -158,6 +161,12 @@ pub struct Scene {
     pub proofread_hash: Option<String>,
     #[serde(default)]
     pub clip: ClipAsset,
+    /// "From document" projects: PDF pages the scene's claims come from.
+    #[serde(default)]
+    pub source_pages: Vec<u32>,
+    /// Background explanation that is not a claim from the document.
+    #[serde(default)]
+    pub general_knowledge: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -292,6 +301,147 @@ pub struct ProofSuggestion {
     pub spoken_text: String,
     /// Short explanation of what changed (project language).
     pub note: String,
+}
+
+/// The document a "From document" project is made from (`docs/10-document-source.md` §2).
+/// The PDF itself is `source/document.pdf` in the project folder.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SourceDoc {
+    /// Original file name (UI, credit line).
+    pub file_name: String,
+    pub size_bytes: u64,
+    /// Pages of the whole file.
+    pub page_count: u32,
+    pub sha256: String,
+    /// Pages read, 1-based and inclusive (at most `source::pdf::MAX_PAGES`).
+    pub page_from: u32,
+    pub page_to: u32,
+    pub audience: Audience,
+    /// Optional, e.g. "explain only the results section".
+    #[serde(default)]
+    pub focus: String,
+    pub stage: SourceStage,
+    /// One Gemini call each; `done` chunks are skipped on resume.
+    pub chunks: Vec<SourceChunk>,
+    #[serde(default)]
+    pub summary: Option<SourceSummary>,
+    /// Set while the reading job waits for the free-tier quota.
+    #[serde(default)]
+    pub pause: Option<QuotaPause>,
+    /// "Source: …" line for the video description (set on confirm).
+    #[serde(default)]
+    pub credit: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Audience {
+    #[default]
+    General,
+    Students,
+    Experts,
+}
+
+impl Audience {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::General => "a general audience (no prior knowledge)",
+            Self::Students => "students (some background, explain the key terms)",
+            Self::Experts => "experts in the field (precise, technical)",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceStage {
+    /// Reading job not finished (or paused / failed: run it again to resume).
+    Reading,
+    /// Summary ready; the user picks the points. Nothing else is generated yet.
+    Review,
+    /// Points confirmed; the script is written from them.
+    Confirmed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SourceChunk {
+    pub from: u32,
+    pub to: u32,
+    /// How the chunk was sent (set when it is read).
+    #[serde(default)]
+    pub mode: Option<ChunkMode>,
+    #[serde(default)]
+    pub sections: Vec<SourceSection>,
+    /// Title / authors / year if these pages show them ("" otherwise).
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub authors: String,
+    #[serde(default)]
+    pub year: String,
+    #[serde(default)]
+    pub done: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChunkMode {
+    /// The locally extracted text (saves quota).
+    Text,
+    /// The PDF pages (scanned or garbled text).
+    Pdf,
+}
+
+/// Notes on one section of the document, in English, with the pages they come from.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SourceSection {
+    pub heading: String,
+    pub notes: String,
+    pub pages: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct SourceSummary {
+    pub title: String,
+    #[serde(default)]
+    pub authors: String,
+    #[serde(default)]
+    pub year: String,
+    /// In the order the user wants them in the video.
+    pub key_points: Vec<SourceItem>,
+    #[serde(default)]
+    pub facts: Vec<SourceItem>,
+    #[serde(default)]
+    pub terms: Vec<SourceItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SourceItem {
+    pub id: String,
+    /// Key terms only: the term as the document writes it.
+    #[serde(default)]
+    pub term: String,
+    /// The point, fact or term explanation, in the project language.
+    pub text: String,
+    pub pages: Vec<u32>,
+    #[serde(default = "yes")]
+    pub selected: bool,
+    /// The user's note for the script writer.
+    #[serde(default)]
+    pub note: String,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// Free-tier quota wait (`docs/10-document-source.md` §5).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QuotaPause {
+    /// RFC 3339 UTC: when trying again makes sense.
+    pub resets_at_utc: String,
+    /// Daily quota (midnight Pacific) rather than the per-minute rate limit.
+    pub daily: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -490,6 +640,8 @@ impl Scene {
             proofread: None,
             proofread_hash: None,
             clip: ClipAsset::default(),
+            source_pages: vec![],
+            general_knowledge: false,
         }
     }
 }
@@ -545,6 +697,7 @@ pub(crate) mod tests {
             image_pause: None,
             keep_terms: Vec::new(),
             voice_profile: None,
+            source: None,
             scenes: vec![],
             render: RenderSettings::default(),
         }

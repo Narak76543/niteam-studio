@@ -32,6 +32,8 @@ pub struct ScriptBrief<'a> {
     pub figures: Figures,
     /// Names the user wants kept exactly as written (Script page → Names).
     pub keep_terms: &'a [String],
+    /// "From document" projects: `document::source_block` (selected points, rules).
+    pub source: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -71,6 +73,11 @@ pub struct SceneReply {
     pub shot: String,
     #[serde(default)]
     pub key_scene: bool,
+    /// "From document" projects only (10 §6).
+    #[serde(default)]
+    pub source_pages: Vec<u32>,
+    #[serde(default)]
+    pub general_knowledge: bool,
 }
 
 pub const SHOTS: &[&str] = &["wide", "medium", "close", "detail", "aerial"];
@@ -160,7 +167,21 @@ pub fn outline_schema(chapter_count: usize) -> Value {
     })
 }
 
-pub fn chapter_schema(scene_count: usize, bible: &BibleKeys) -> Value {
+pub fn chapter_schema(scene_count: usize, bible: &BibleKeys, with_source: bool) -> Value {
+    let mut schema = scene_schema(scene_count, bible);
+    if with_source {
+        let item = &mut schema["properties"]["scenes"]["items"];
+        item["properties"]["source_pages"] = json!({ "type": "array", "items": { "type": "integer" } });
+        item["properties"]["general_knowledge"] = json!({ "type": "boolean" });
+        if let Some(req) = item["required"].as_array_mut() {
+            req.push(json!("source_pages"));
+            req.push(json!("general_knowledge"));
+        }
+    }
+    schema
+}
+
+fn scene_schema(scene_count: usize, bible: &BibleKeys) -> Value {
     let character_keys: Vec<&str> = bible.characters.iter().map(|c| c.0).collect();
     let mut place_keys: Vec<&str> = bible.places.iter().map(|p| p.0).collect();
     place_keys.push("");
@@ -255,12 +276,22 @@ storytelling: curious, vivid, warm, never dry. Facts must be accurate; when a cl
 disputed or a simplification, say so in that scene's `fact_note` (otherwise leave it empty). \
 Reply with JSON only, matching the given schema.";
 
+/// The source document block plus the rule for the outline ("" for topic projects).
+fn outline_source(brief: &ScriptBrief) -> String {
+    brief.source.map_or(String::new(), |s| {
+        format!(
+            "\n{s}\nPlan the chapters around the KEY POINTS of the source document, in their order: every point \
+is covered and nothing outside the document is presented as its content.\n"
+        )
+    })
+}
+
 pub fn outline_prompt(brief: &ScriptBrief, chapter_count: usize, scene_count: usize) -> String {
     format!(
         "Plan a {minutes}-minute narrated explainer video.\n\
 TOPIC: {topic}\n\
 VISUAL STYLE (for your information only): {style}\n\
-{rules}\n\n\
+{rules}\n{source}\n\
 Return:\n\
 - `title`: a catchy video title.\n\
 - `hook`: the surprising question or fact that opens the video in the first 10 seconds.\n\
@@ -271,6 +302,7 @@ The last chapter wraps up the story with a satisfying conclusion.",
         topic = brief.topic,
         style = brief.style_label,
         rules = language_rules(brief),
+        source = outline_source(brief),
     )
 }
 
@@ -382,7 +414,7 @@ FULL OUTLINE:\n{outline}\n\
 CURRENT CHAPTER: {number}. {chapter_title}\n\
 {previous}{position}\n\n\
 {bible}\n\
-{rules}\n\n\
+{rules}\n{source}\n\
 Write exactly {scenes} scenes. For each scene:\n\
 - `narration`: one or two short sentences (about 6–8 seconds when spoken).\n\
 - `spoken_text`: the narration written for text-to-speech (see language rules).\n\
@@ -393,7 +425,14 @@ Write exactly {scenes} scenes. For each scene:\n\
 - `place`: the Visual Bible place key where the scene happens, or \"\" if none fits.\n\
 - `shot`: one of {shots}. Vary shots: never more than 2 consecutive scenes with the same shot.\n\
 {previous_shots}\
-- `key_scene`: {key_rule}.",
+- `key_scene`: {key_rule}.{source_fields}",
+        source = brief.source.map_or(String::new(), |s| format!("\n{s}")),
+        source_fields = if brief.source.is_some() {
+            "\n- `source_pages`: page numbers from the source the scene's claims come from ([] if none).\n\
+- `general_knowledge`: true only for background explanation that is not from the document."
+        } else {
+            ""
+        },
         bible = bible_section(&ctx.bible),
         image_rules = image_prompt_rules(brief.figures),
         shots = SHOTS.join(", "),
@@ -432,10 +471,23 @@ pub async fn request_json<T: DeserializeOwned + Validate>(
     schema: Value,
     hooks: &RetryHooks,
 ) -> Result<(T, String), GeminiError> {
-    let mut contents = vec![Content::user(prompt)];
+    request_json_with(client, key, chain, SYSTEM_PROMPT, Content::user(prompt), schema, hooks).await
+}
+
+/// [`request_json`] with its own system prompt and first turn (e.g. a PDF + instructions).
+pub async fn request_json_with<T: DeserializeOwned + Validate>(
+    client: &GeminiClient,
+    key: &ApiKey,
+    chain: &ModelChain,
+    system: &str,
+    first: Content,
+    schema: Value,
+    hooks: &RetryHooks,
+) -> Result<(T, String), GeminiError> {
+    let mut contents = vec![first];
     let mut last_error = String::new();
     for attempt in 0..2 {
-        let (raw, model) = generate_text(client, key, chain, &contents, &schema, hooks).await?;
+        let (raw, model) = generate_text(client, key, chain, system, &contents, &schema, hooks).await?;
         match parse_reply::<T>(&raw) {
             Ok(v) => return Ok((v, model)),
             Err(e) if attempt == 0 => {
@@ -455,13 +507,14 @@ async fn generate_text(
     client: &GeminiClient,
     key: &ApiKey,
     chain: &ModelChain,
+    system: &str,
     contents: &[Content],
     schema: &Value,
     hooks: &RetryHooks,
 ) -> Result<(String, String), GeminiError> {
     let build = |legacy: bool| GenerateContentRequest {
         contents: contents.to_vec(),
-        system_instruction: Some(Content::system(SYSTEM_PROMPT)),
+        system_instruction: Some(Content::system(system)),
         generation_config: Some(GenerationConfig::json(schema.clone(), legacy)),
     };
     let legacy = USE_LEGACY_JSON_FIELDS.load(Ordering::Relaxed);
@@ -505,7 +558,36 @@ mod tests {
             style_label: "storybook watercolor",
             figures: Figures::Free,
             keep_terms: &[],
+            source: None,
         }
+    }
+
+    #[test]
+    fn source_projects_get_the_source_block_and_page_fields() {
+        let ctx = ChapterContext {
+            title: "T",
+            hook: "H",
+            chapters: vec![("A", "a")],
+            index: 0,
+            scene_count: 3,
+            previous_narration: None,
+            previous_shots: vec![],
+            bible: BibleKeys { characters: vec![], places: vec![] },
+        };
+        let block = "SOURCE DOCUMENT: \"Rice\"\nSOURCE RULES: never add facts";
+        let b = ScriptBrief { source: Some(block), ..brief() };
+        assert!(outline_prompt(&b, 2, 9).contains("SOURCE DOCUMENT: \"Rice\""));
+        assert!(outline_prompt(&b, 2, 9).contains("Plan the chapters around the KEY POINTS"));
+        let chapter = chapter_prompt(&b, &ctx);
+        assert!(chapter.contains("SOURCE RULES: never add facts"));
+        assert!(chapter.contains("`general_knowledge`: true only for background"));
+        assert!(!outline_prompt(&brief(), 2, 9).contains("SOURCE DOCUMENT"));
+        assert!(!chapter_prompt(&brief(), &ctx).contains("source_pages"));
+        let with = chapter_schema(3, &ctx.bible, true);
+        let required = with["properties"]["scenes"]["items"]["required"].as_array().unwrap();
+        assert!(required.contains(&json!("source_pages")) && required.contains(&json!("general_knowledge")));
+        let without = chapter_schema(3, &ctx.bible, false);
+        assert!(without["properties"]["scenes"]["items"]["properties"]["source_pages"].is_null());
     }
 
     #[test]

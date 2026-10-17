@@ -17,6 +17,8 @@ AI-generated illustrations with slow pan motion, burned-in subtitles and backgro
    VRAM tiers, model profiles + downloads, SD 1.5 prompt adapter) — **Phase 6 only**
 8. `docs/09-voice-profiles.md` — local VoxCPM2 voices (audio.cpp server), Voice Profiles,
    design / clone / import, sentence chunking, timings, GPU sharing
+9. `docs/10-document-source.md` — "Video from a document": PDF reading (text first, PDF pages
+   as fallback), Source summary review, free-tier quota pause, page refs, credit line
 
 Only work on the phase marked **CURRENT** in `docs/05-roadmap.md`. When it is done,
 stop and ask the human to test. Do not start the next phase on your own.

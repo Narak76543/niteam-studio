@@ -4,9 +4,13 @@ Read this first when continuing. Details live in the numbered docs; this file is
 "what is done / what is next" list.
 
 **2026-10-17:** the 2026-10-16 work below is committed (`5e47a1f` Z-Image profiles, `421ab84`
-settings patch fix, `cc58dac` image prompts / UI pass / voice refs). **Not committed yet:** the
-Soft 2D Explainer preset + culture-notes fix — brief, results and next steps in
-`docs/tasks/soft-2d-explainer-style.md`; waiting for the owner to review the contact sheets.
+settings patch fix, `cc58dac` image prompts / UI pass / voice refs). Soft 2D Explainer preset
+(`ec2b957`) and culture-notes fix (`96f930d`) committed; owner approved the look. Brief and
+results: `docs/tasks/soft-2d-explainer-style.md`.
+
+**"Video from a document"** built 2026-10-17 (spec `docs/10-document-source.md`, roadmap
+section of the same name), not committed yet: waiting for the owner's OK and UI test. Note:
+the free tier gave gemini-3.8-flash a 20-requests/day limit during testing.
 
 ## Done (committed on `main`)
 

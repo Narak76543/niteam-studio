@@ -8,11 +8,12 @@ use super::ProjectError;
 use super::hashing::{normalize, normalize_spoken};
 use super::presets;
 use super::project::Shot;
-use super::project::{Outline, OutlineChapter, Project, ProjectStatus, Scene};
+use super::project::{Outline, OutlineChapter, Project, ProjectStatus, Scene, SourceStage};
 use super::store::ProjectStore;
 use super::visual_bible;
 use crate::gemini::client::ModelChain;
 use crate::gemini::retry::RetryHooks;
+use crate::gemini::document;
 use crate::gemini::script::{
     self, BibleKeys, ChapterContext, ChapterReply, MOODS, OutlineReply, SceneReply, ScriptBrief,
 };
@@ -123,12 +124,16 @@ impl ScriptJob<'_> {
         if project.status != ProjectStatus::ScriptDraft {
             return Err(ProjectError::WrongState("generating".into()));
         }
+        if project.source.as_ref().is_some_and(|s| s.stage != SourceStage::Confirmed) {
+            return Err(ProjectError::WrongState("source_review".into()));
+        }
         let style_label = presets::find(&project.style.preset).map_or("", |p| p.label);
+        let source = source_text(&project);
 
         if project.outline.is_none() {
             emit(progress(id, ScriptStage::Outline, 0, 0));
             let plan = plan_scenes(project.target_minutes);
-            let brief = brief(&project, style_label);
+            let brief = brief(&project, style_label, source.as_deref());
             let total_scenes: u32 = plan.iter().sum();
             let (reply, model): (OutlineReply, String) = script::request_json(
                 self.client,
@@ -227,13 +232,13 @@ impl ScriptJob<'_> {
                             .collect(),
                     }),
             };
-            let brief = brief(&project, style_label);
+            let brief = brief(&project, style_label, source.as_deref());
             let (reply, model): (ChapterReply, String) = script::request_json(
                 self.client,
                 self.key,
                 self.models,
                 script::chapter_prompt(&brief, &ctx),
-                script::chapter_schema(ctx.scene_count, &ctx.bible),
+                script::chapter_schema(ctx.scene_count, &ctx.bible, source.is_some()),
                 self.hooks,
             )
             .await?;
@@ -266,7 +271,15 @@ fn progress(id: &str, stage: ScriptStage, done: usize, total: usize) -> ScriptPr
     }
 }
 
-fn brief<'a>(p: &'a Project, style_label: &'a str) -> ScriptBrief<'a> {
+/// `document::source_block` for "From document" projects.
+fn source_text(p: &Project) -> Option<String> {
+    let s = p.source.as_ref()?;
+    let summary = s.summary.as_ref()?;
+    let sections: Vec<_> = s.chunks.iter().flat_map(|c| c.sections.iter().cloned()).collect();
+    Some(document::source_block(summary, &sections, s.audience, &s.focus))
+}
+
+fn brief<'a>(p: &'a Project, style_label: &'a str, source: Option<&'a str>) -> ScriptBrief<'a> {
     ScriptBrief {
         topic: &p.topic,
         language: p.language,
@@ -274,6 +287,7 @@ fn brief<'a>(p: &'a Project, style_label: &'a str) -> ScriptBrief<'a> {
         style_label,
         figures: super::presets::figures(&p.style.style_prompt),
         keep_terms: &p.keep_terms,
+        source,
     }
 }
 
@@ -350,6 +364,15 @@ fn append_chapter(p: &mut Project, index: usize, replies: Vec<SceneReply>) {
             .map(|_| place);
         scene.shot = Shot::parse(&r.shot).unwrap_or_default();
         scene.key_scene = r.key_scene;
+        if let Some(s) = &p.source {
+            let mut pages: Vec<u32> =
+                r.source_pages.iter().copied().filter(|n| (s.page_from..=s.page_to).contains(n)).collect();
+            pages.sort_unstable();
+            pages.dedup();
+            // General knowledge is not a claim from the document: no page refs.
+            scene.source_pages = if r.general_knowledge { vec![] } else { pages };
+            scene.general_knowledge = r.general_knowledge;
+        }
         new_scenes.push(scene);
     }
     p.scenes.splice(insert_at..insert_at, new_scenes);
@@ -396,8 +419,46 @@ mod tests {
                 place: String::new(),
                 shot: "wide".into(),
                 key_scene: false,
+                source_pages: vec![],
+                general_knowledge: false,
             })
             .collect()
+    }
+
+    #[test]
+    fn source_projects_keep_page_refs_inside_the_read_range() {
+        use crate::pipeline::project::{Audience, SourceDoc};
+        let mut p = sample();
+        p.source = Some(SourceDoc {
+            file_name: "a.pdf".into(),
+            size_bytes: 1,
+            page_count: 40,
+            sha256: String::new(),
+            page_from: 11,
+            page_to: 20,
+            audience: Audience::General,
+            focus: String::new(),
+            stage: SourceStage::Confirmed,
+            chunks: vec![],
+            summary: None,
+            pause: None,
+            credit: String::new(),
+        });
+        let mut replies = reply(2);
+        replies[0].source_pages = vec![14, 3, 14, 12];
+        replies[1].general_knowledge = true;
+        replies[1].source_pages = vec![13];
+        append_chapter(&mut p, 0, replies);
+        assert_eq!(p.scenes[0].source_pages, vec![12, 14]);
+        assert!(!p.scenes[0].general_knowledge);
+        assert!(p.scenes[1].general_knowledge);
+        assert!(p.scenes[1].source_pages.is_empty());
+        // Topic projects ignore the fields.
+        let mut q = sample();
+        let mut r = reply(1);
+        r[0].source_pages = vec![5];
+        append_chapter(&mut q, 0, r);
+        assert!(q.scenes[0].source_pages.is_empty());
     }
 
     #[test]

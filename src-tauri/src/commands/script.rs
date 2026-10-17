@@ -8,7 +8,7 @@ use crate::gemini::GeminiError;
 use crate::gemini::client::ModelChain;
 use crate::pipeline::ProjectError;
 use crate::pipeline::editing::{self, SceneEdit};
-use crate::pipeline::project::{Project, ProjectStatus};
+use crate::pipeline::project::{Project, ProjectStatus, SourceStage};
 use crate::pipeline::script_job::ScriptJob;
 use crate::state::AppState;
 use crate::storage::log::LogFile;
@@ -34,8 +34,11 @@ pub async fn script_generate(
             editing::status_name(project.status).into(),
         )));
     }
-    if state.proofread_jobs.is_running(&project_id) {
+    if state.proofread_jobs.is_running(&project_id) || state.source_jobs.is_running(&project_id) {
         return Err(to_cmd(ProjectError::Busy));
+    }
+    if project.source.as_ref().is_some_and(|s| s.stage != SourceStage::Confirmed) {
+        return Err("Confirm the key points of the document first.".into());
     }
     let cancel = state.script_jobs.start(&project_id).map_err(to_cmd)?;
     if restart {
@@ -56,7 +59,7 @@ pub async fn script_generate(
     let store = state.store.clone();
     let jobs = state.script_jobs.clone();
     let client = state.gemini.clone();
-    let models = ModelChain::new(&state.settings.read().await.models.text_chain);
+    let models = ModelChain::new(&state.settings.read().await.models.script_chain(project.source.is_some()));
     let log = LogFile::new(state.paths.project_log(&project_id)).redacting(key.expose());
     let hooks = retry_hooks(
         app.clone(),

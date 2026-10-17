@@ -16,6 +16,10 @@ mod render_e2e;
 #[cfg(test)]
 mod style_trial;
 pub mod script_job;
+pub mod source_edit;
+pub mod source_job;
+#[cfg(test)]
+mod source_trial;
 pub mod store;
 pub mod subs;
 pub mod visual_bible;
@@ -44,6 +48,8 @@ pub enum ProjectError {
     Storage(#[from] StorageError),
     #[error(transparent)]
     Gemini(#[from] GeminiError),
+    #[error(transparent)]
+    Pdf(#[from] crate::source::pdf::PdfError),
 }
 
 impl ProjectError {

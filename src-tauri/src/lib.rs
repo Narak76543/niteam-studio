@@ -6,6 +6,7 @@ mod local;
 mod net;
 mod pipeline;
 mod render;
+mod source;
 mod state;
 mod storage;
 mod tts;
@@ -47,6 +48,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, String> {
         render_jobs: Arc::new(JobRegistry::default()),
         proofread_jobs: Arc::new(JobRegistry::default()),
         prompt_jobs: Arc::new(JobRegistry::default()),
+        source_jobs: Arc::new(JobRegistry::default()),
         install_jobs: Arc::new(JobRegistry::default()),
         ffmpeg_lock: Arc::new(tokio::sync::Mutex::new(())),
         voice_server: Arc::new(tts::voxcpm_server::VoxServer::default()),
@@ -109,6 +111,15 @@ pub fn run() {
             commands::local::local_verify,
             commands::local::local_delete,
             commands::local::local_select,
+            commands::source::source_pdf_info,
+            commands::source::project_create_from_document,
+            commands::source::source_read,
+            commands::source::source_read_cancel,
+            commands::source::source_read_running,
+            commands::source::source_review_save,
+            commands::source::source_confirm,
+            commands::source::source_reopen,
+            commands::source::source_reread,
             commands::local::local_offer_dismiss,
             commands::local::local_benchmark,
             commands::render::scene_image_full,

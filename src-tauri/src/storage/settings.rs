@@ -191,6 +191,9 @@ pub struct ModelSettings {
     /// Text models in fallback order. Each gets 3 attempts (429 / 5xx / timeouts retried),
     /// then the next one is tried. Old `text` / `text_fallback` fields are ignored on load.
     pub text_chain: Vec<String>,
+    /// Reads "From document" PDFs (10 §3). Free-tier models only; Flash, because the
+    /// Flash-Lite models invented facts on a scanned Khmer test page (2026-10-17).
+    pub document: Vec<String>,
     pub tts: String,
     pub tts_lite: String,
 }
@@ -220,6 +223,20 @@ impl Default for Settings {
     }
 }
 
+impl ModelSettings {
+    /// Script models: "From document" projects try the document models first, because the
+    /// Flash-Lite models changed a number from the paper (28.4 → "29.4" BLEU, 2026-10-17).
+    pub fn script_chain(&self, from_document: bool) -> Vec<String> {
+        let mut chain: Vec<String> = if from_document { self.document.clone() } else { vec![] };
+        for m in &self.text_chain {
+            if !chain.contains(m) {
+                chain.push(m.clone());
+            }
+        }
+        chain
+    }
+}
+
 // Defaults from the Gemini models page (checked 2026-10-15). Users can change them in Settings.
 impl Default for ModelSettings {
     fn default() -> Self {
@@ -229,6 +246,7 @@ impl Default for ModelSettings {
                 "gemini-3.1-flash-lite".into(),
                 "gemini-3.8-flash".into(),
             ],
+            document: vec!["gemini-3.8-flash".into()],
             tts: "gemini-3.8-flash-tts".into(),
             tts_lite: "gemini-3.8-flash-lite-tts".into(),
         }
@@ -338,6 +356,15 @@ fn merge(target: &mut serde_json::Value, patch: &serde_json::Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn document_projects_write_scripts_with_the_document_model_first() {
+        let m = ModelSettings::default();
+        assert_eq!(m.script_chain(false), m.text_chain);
+        let doc = m.script_chain(true);
+        assert_eq!(doc[0], "gemini-3.8-flash");
+        assert_eq!(doc.len(), m.text_chain.len(), "no duplicates");
+    }
 
     #[test]
     fn a_patch_changes_only_its_own_fields() {

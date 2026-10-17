@@ -7,6 +7,14 @@ is unchanged.
 > **Before implementing any Gemini call, read the current Gemini API docs** for that
 > model (request schema, response shape, limits). Model IDs come from `settings.json`.
 
+## Step 0 — Read the document ("From a document" projects only)
+
+`docs/10-document-source.md`: 50-page chunks, extracted text when it passes the quality check
+(else the chunk's PDF pages), section notes → Source summary → user review. Resumable per
+chunk; free-tier quota pauses the job. The script (Step 1) then gets the selected points as a
+source block and writes `source_pages` / `general_knowledge` per scene; its model chain starts
+with `models.document`.
+
 ## Step 1 — Script generation
 
 **Input:** topic, language, target minutes, style preset.

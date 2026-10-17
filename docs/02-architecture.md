@@ -48,6 +48,7 @@ nitean-studio/
 │     ├─ error.rs
 │     ├─ commands/   project.rs  script.rs  generate.rs  render.rs  settings.rs  voices.rs
 │     ├─ gemini/     client.rs  transport.rs  retry.rs  script.rs  tts.rs  image.rs  models.rs
+│     │              document.rs (PDF reading prompts, source block, credit; 10)
 │     ├─ tts/        mod.rs (TtsEngine)  edge.rs  gemini.rs  audio.rs  voices.rs
 │     │              voxcpm.rs  voxcpm_server.rs  chunker.rs  wav.rs  profiles.rs  (09)
 │     ├─ images/     provider.rs (ImageProvider)  cloudflare.rs  gemini.rs  prompt.rs
@@ -56,7 +57,8 @@ nitean-studio/
 │     ├─ net/        transport.rs (HTTP behind a trait; mocked in tests)
 │     ├─ pipeline/   project.rs  store.rs  editing.rs  hashing.rs  presets.rs  script_job.rs
 │     │              jobs.rs  voice_job.rs  image_job.rs  visual_bible.rs  khmer_numbers.rs
-│     │              subs.rs  render_job.rs
+│     │              subs.rs  render_job.rs  source_job.rs  source_edit.rs  (10)
+│     ├─ source/     pdf.rs (lopdf: pages, ranges, text)  quality.rs  reset.rs  (10)
 │     │              scheduler.rs  render.rs  ffmpeg.rs  encoders.rs  audio.rs
 │     └─ storage/    paths.rs  secrets.rs  settings.rs  atomic.rs  log.rs
 └─ package.json  vite.config.ts  tsconfig.json
@@ -176,6 +178,11 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
 }
 ```
 
+"From a document" projects also have `"source": { … }` (file, page range, audience, focus,
+reading stage, chunks with section notes, the reviewed summary, quota pause, credit line) and
+per scene `"source_pages": [3, 4]`, `"general_knowledge": false`; the PDF is
+`projects/<id>/source/document.pdf`. Full shape: `10-document-source.md` §2.
+
 All text is NFC-normalized and trimmed on save; `spoken_text` also loses zero-width spaces.
 
 Asset `status`: `pending | running | done | failed | stale`.
@@ -193,6 +200,9 @@ script_draft ──approve──▶ generating ──all done──▶ review �
 `paused_quota`: the image job stopped because the Cloudflare daily allowance ran out
 (07 §6). Finished images are kept; `image_pause.resets_at_utc` says when to resume. Resume
 goes back to `generating`. Voices can still be generated while paused.
+
+"From a document" projects stay in `script_draft` while the PDF is read and reviewed
+(`source.stage`: `reading → review → confirmed`); `script_generate` refuses until confirmed.
 
 Script generation runs while the status stays `script_draft` (tracked in memory by
 `ScriptJobs`). Scene edit/add/delete/reorder only work in `script_draft`. Approve requires
@@ -238,6 +248,9 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | `project_set_style(project_id, preset)` | switch style preset + rewrite the Visual Bible |
 | `voices_status`, `voices_model_install / _verify / _delete`, `voice_design_samples`, `voice_design_sample_audio`, `voice_profile_create_design / _import / _update / _duplicate / _delete / _preview / _reference_audio / _set_default`, `project_set_voice_profile` | local voices (VoxCPM2) and Voice Profiles — see `09-voice-profiles.md` §7 |
 | `encoders_detect()` | first working H.264 encoder; cached in `settings.render.encoder` |
+| `source_pdf_info(path)`, `project_create_from_document(input)` | "From a document": file check (pages, size, range needed) / create the project and copy the PDF (10) |
+| `source_read / _cancel / _running(project_id)` | reading job (resumes after a quota pause); event `source-progress` |
+| `source_review_save / source_confirm(project_id, edit)`, `source_reopen`, `source_reread` | review edits, confirm (credit + keep terms), back to the points, read again |
 
 ## Events (Rust → UI)
 
@@ -246,6 +259,7 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 `scene-progress` `{project_id, scene_id, asset, status, duration_ms?, error?, error_kind?}`
 `generate-progress` `{project_id, job: voice|image, stage: running|done|cancelled|failed|paused_quota, done, failed, total, error?, error_kind?, resets_at_utc?}`
 `render-progress` `{project_id, stage: clips|concat|done|failed|cancelled, scene_index, total, percent, eta_seconds, output_path?, error?, error_kind?}`
+`source-progress` `{project_id, stage: reading|summarizing|done|paused|failed|cancelled, chunks_done, chunks_total, resets_at_utc?, daily, error?, error_kind?}`
 `log` `{level, message}`
 
 ## Concurrency

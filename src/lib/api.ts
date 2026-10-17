@@ -18,6 +18,10 @@ import type {
   ImageCatalog,
   ProofProgress,
   RewriteProgress,
+  NewDocumentInput,
+  PdfInfo,
+  ReviewEdit,
+  SourceProgress,
   RenderProgress,
   TimelineScene,
   SubsTask,
@@ -72,6 +76,22 @@ export const api = {
     invoke<Project>("scenes_reorder", { projectId, sceneIds }),
   scriptApprove: (projectId: string) => invoke<Project>("script_approve", { projectId }),
   scriptReopen: (projectId: string) => invoke<Project>("script_reopen", { projectId }),
+
+  // "From document" (docs/10-document-source.md)
+  sourcePdfInfo: (path: string) => invoke<PdfInfo>("source_pdf_info", { path }),
+  projectCreateFromDocument: (input: NewDocumentInput) => invoke<Project>("project_create_from_document", { input }),
+  sourceRead: (projectId: string) => invoke<null>("source_read", { projectId }),
+  sourceReadCancel: (projectId: string) => invoke<null>("source_read_cancel", { projectId }),
+  sourceReadRunning: (projectId: string) => invoke<boolean>("source_read_running", { projectId }),
+  sourceReviewSave: (projectId: string, edit: ReviewEdit) => invoke<Project>("source_review_save", { projectId, edit }),
+  sourceConfirm: (projectId: string, edit: ReviewEdit) => invoke<Project>("source_confirm", { projectId, edit }),
+  sourceReopen: (projectId: string) => invoke<Project>("source_reopen", { projectId }),
+  sourceReread: (projectId: string) => invoke<Project>("source_reread", { projectId }),
+  /** One PDF, or null when cancelled. */
+  pickPdfFile: async (): Promise<string | null> => {
+    const picked = await openDialog({ multiple: false, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+    return typeof picked === "string" ? picked : null;
+  },
 
   // "Improve image prompts" (Scenes page)
   imagePromptsRewrite: (projectId: string) => invoke<null>("image_prompts_rewrite", { projectId }),
@@ -202,6 +222,10 @@ export function onSceneProgress(cb: (p: SceneProgress) => void): Promise<Unliste
 
 export function onGenerateProgress(cb: (p: GenerateProgress) => void): Promise<UnlistenFn> {
   return listen<GenerateProgress>("generate-progress", (e) => cb(e.payload));
+}
+
+export function onSourceProgress(cb: (p: SourceProgress) => void): Promise<UnlistenFn> {
+  return listen<SourceProgress>("source-progress", (e) => cb(e.payload));
 }
 
 export function onPromptRewriteProgress(cb: (p: RewriteProgress) => void): Promise<UnlistenFn> {

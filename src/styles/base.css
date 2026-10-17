@@ -1838,3 +1838,116 @@ input[type="range"] {
   flex-direction: column;
   gap: 2px;
 }
+
+/* ---------- From document: review (docs/10-document-source.md §6) ---------- */
+.source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  max-width: 880px;
+}
+.card.source {
+  gap: var(--s-3);
+}
+.source__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s-4);
+}
+.source__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  min-width: 0;
+}
+.source__points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.source-point {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--s-3);
+  align-items: start;
+}
+.source-point > input[type="checkbox"],
+.source-tick > input[type="checkbox"] {
+  margin-top: 4px;
+  accent-color: var(--ink);
+}
+.source-point--off .source-point__body > p {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+.source-point__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.source-point__body > p {
+  margin: 0;
+}
+.source-point__order {
+  display: flex;
+  flex-direction: column;
+}
+.page-chip {
+  height: 22px;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+.page-chip[aria-pressed="true"] {
+  border-color: var(--ink);
+  color: var(--text);
+}
+.source-notes {
+  border-left: 2px solid var(--border-strong);
+  padding-left: var(--s-3);
+  color: var(--text-muted);
+}
+.source-notes p {
+  margin: 0 0 var(--s-1);
+}
+.source-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.source-tick {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--s-3);
+  align-items: start;
+  cursor: pointer;
+}
+.source__footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  padding: var(--s-3) 0;
+  background: var(--bg-shell);
+  border-top: 1px solid var(--border);
+}
+.source__footer > .t-small {
+  margin-right: auto;
+}
+.textarea--short {
+  min-height: 56px;
+}
+.input--number {
+  width: 88px;
+}

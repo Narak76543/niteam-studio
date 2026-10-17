@@ -196,6 +196,27 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
               </p>
             </section>
           )}
+          {project.source?.credit && (
+            <section className="panel-section" aria-label={t("source.credit")}>
+              <h3 className="panel-section__title">{t("source.credit")}</h3>
+              <p className="t-small" lang={lang}>
+                {project.source.credit}
+              </p>
+              <Button
+                variant="pill"
+                onClick={() => {
+                  const credit = project.source?.credit ?? "";
+                  navigator.clipboard
+                    .writeText(credit)
+                    .then(() => toast.show(t("source.copied"), "ok"))
+                    .catch((e: unknown) => toast.show(errorMessage(e), "danger"));
+                }}
+              >
+                {t("source.copy")}
+              </Button>
+              <span className="t-micro t-muted">{t("source.creditHint")}</span>
+            </section>
+          )}
           <p className="t-micro t-muted studio__keys">{t("editor.keys")}</p>
         </aside>
       </div>

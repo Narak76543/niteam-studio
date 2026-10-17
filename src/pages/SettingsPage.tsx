@@ -135,7 +135,8 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props
   const chain = models.text_chain;
   const modelsDirty =
     SINGLE_MODEL_FIELDS.some((f) => models[f] !== settings.models[f]) ||
-    JSON.stringify(chain) !== JSON.stringify(settings.models.text_chain);
+    JSON.stringify(chain) !== JSON.stringify(settings.models.text_chain) ||
+    JSON.stringify(models.document) !== JSON.stringify(settings.models.document);
   const setChain = (next: string[]) => setModels({ ...models, text_chain: next });
   const moveModel = (i: number, delta: number) => {
     const next = [...chain];
@@ -277,7 +278,8 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props
               onSubmit={(e) => {
                 e.preventDefault();
                 const text_chain = chain.map((m) => m.trim()).filter(Boolean);
-                void persist({ ...settings, models: { ...models, text_chain } });
+                const document = models.document.map((m) => m.trim()).filter(Boolean);
+                void persist({ ...settings, models: { ...models, text_chain, document } });
               }}
             >
               <div className="field">
@@ -338,6 +340,17 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props
                     />
                   </label>
                 ))}
+                <label className="field">
+                  <span className="t-small">{t("settings.models.document")}</span>
+                  <input
+                    className="input"
+                    lang="en"
+                    spellCheck={false}
+                    value={models.document.join(", ")}
+                    onChange={(e) => setModels({ ...models, document: e.target.value.split(",").map((m) => m.trim()) })}
+                  />
+                  <span className="t-micro t-muted">{t("settings.models.documentHint")}</span>
+                </label>
               </div>
               <div className="row">
                 <Button type="submit" disabled={!modelsDirty}>

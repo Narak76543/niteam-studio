@@ -140,6 +140,26 @@ Spec: `docs/09-voice-profiles.md`.
 Khmer project with it: same voice in every scene, natural pauses, subtitles follow the
 sentences; switch a project to another voice → its scenes become outdated.
 
+## Video from a document  (owner request 2026-10-17; built, awaiting the owner's test)
+
+Spec: `docs/10-document-source.md`. Free tier only.
+
+- [x] New project → "From a document": PDF pick (≤ 50 MB), page range for > 150 pages, video
+      language, length, audience, focus, style; free-tier privacy note
+- [x] Reading job: 50-page chunks, local text when clean (Khmer checked), PDF pages otherwise
+      (mode logged per chunk), section notes → Source summary with page refs; resumable
+- [x] Free-tier quota: daily / per-minute 429 pauses the job with the reset time, resume from the
+      last finished chunk, no key switching; reading model in Settings → Models (Flash)
+- [x] Review screen: tick, reorder, notes, page notes; nothing generated before confirm
+- [x] Script from the selected points only (no added facts; general knowledge flagged; English
+      terms kept in Khmer); scenes keep source pages (Script page editor)
+- [x] "Source: …" credit line with Copy (editor side panel)
+- [ ] Owner test
+
+**Test:** make a 3-minute Khmer video from an English paper and one from a Khmer PDF: check the
+summary against the PDF, untick / reorder points and confirm, check the scenes' page refs and
+that no scene adds facts; copy the credit line.
+
 ## Later / ideas (not scheduled)
 
 - Word-level subtitle timing
@@ -261,3 +281,11 @@ _Add one line per finished phase: date — phase — notes._
   watermark). Bible `culture_notes` is now one short phrase that fits every scene. Tested on
   local Z-Image with two 6-scene Khmer history projects (3 seeds each): consistent characters,
   no text; 28 s / image at 1024×576 (1280×720: 55 s, not adopted). Not yet tested in the app UI.
+- 2026-10-17 — **Video from a document** (spec `docs/10-document-source.md`): PDF → Gemini
+  section notes per 50-page chunk (extracted text when clean, PDF pages for scanned / garbled
+  chunks, e.g. most Khmer PDFs) → reviewed Source summary → script from the selected points with
+  page refs and a general-knowledge flag → credit line. Free tier only: reading on
+  gemini-3.8-flash (Flash-Lite got Khmer scan details wrong), daily / per-minute quota pauses and
+  resumes from the last chunk. Live-tested on an English paper, a Khmer text PDF and a Khmer scan.
+- 2026-10-17 — Subtitles: regular weight (400) and smaller (44 px at 1080p, 29 px at 720p; was
+  600 / 56 px), thinner outline. `SUBS_VERSION` 3, so existing subtitle PNGs are redrawn.

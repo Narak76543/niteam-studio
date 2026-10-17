@@ -2099,3 +2099,8 @@ input[type="range"] {
   background: var(--bg-subtle);
   border: 1px solid var(--border);
 }
+.diagram-preview {
+  max-width: 100%;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+}

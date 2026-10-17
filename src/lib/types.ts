@@ -138,6 +138,19 @@ export interface SceneVisual {
   render_hash: string | null;
 }
 
+/** A diagram / code picture for the UI to draw (`pipeline::drawn::DrawTask`). */
+export interface DrawTask {
+  scene_id: string;
+  kind: "diagram" | "code";
+  hash: string;
+  diagram: DiagramSpec | null;
+  code: CodeSpec | null;
+  width: number;
+  height: number;
+  /** Top of the subtitle band in frame pixels. */
+  band_top: number;
+}
+
 /** `scene_visual_update` payload. */
 export interface VisualEdit {
   kind: VisualKind;

@@ -21,6 +21,7 @@ import type {
   VisualEdit,
   VisualKind,
 } from "../lib/types";
+import { drawDiagram } from "../lib/diagramRender";
 import { assetId, cropAt, licenseLabel } from "../lib/visuals";
 
 const ICON = { size: 14, strokeWidth: 1.5 } as const;
@@ -83,6 +84,7 @@ export function VisualDialog({ project, scene, onClose, onChanged }: Props) {
   const [consent, setConsent] = useState(false);
   const [preview, setPreview] = useState<{ url: string; w: number; h: number } | null>(null);
   const [focus, setFocus] = useState<[number, number]>(v.focus ?? [0.5, 0.5]);
+  const [diagramView, setDiagramView] = useState<{ url: string | null; error: string | null }>({ url: null, error: null });
 
   const media: StockMedia = kind === "stock_video" ? "video" : "photo";
   const sources = media === "video" ? VIDEO_SOURCES : PHOTO_SOURCES;
@@ -121,6 +123,27 @@ export function VisualDialog({ project, scene, onClose, onChanged }: Props) {
   }, [project.id, scene.id, chosen, hasFile]);
 
   /** Runs a change; true when it worked. */
+  // Live diagram preview (same drawing as the video, smaller), redrawn after typing stops.
+  useEffect(() => {
+    if (kind !== "diagram") return;
+    let alive = true;
+    let url: string | null = null;
+    const timer = window.setTimeout(() => {
+      drawDiagram(diagram.mermaid, 960, 540, 408)
+        .then((png) => {
+          if (!alive) return;
+          url = URL.createObjectURL(new Blob([png], { type: "image/png" }));
+          setDiagramView({ url, error: null });
+        })
+        .catch((e: unknown) => alive && setDiagramView({ url: null, error: errorMessage(e) }));
+    }, 500);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [kind, diagram.mermaid]);
+
   const run = async (label: string, fn: () => Promise<Project>): Promise<boolean> => {
     setBusy(label);
     try {
@@ -348,6 +371,39 @@ export function VisualDialog({ project, scene, onClose, onChanged }: Props) {
             <textarea className="textarea textarea--code" lang="en" spellCheck={false} value={diagram.mermaid} onChange={(e) => setDiagram({ ...diagram, mermaid: e.target.value })} />
             <span className="t-small">{t("visual.mermaidHint")}</span>
           </label>
+        )}
+        {kind === "diagram" && (
+          <section className="focus-section">
+            {diagramView.url && <img className="diagram-preview" src={diagramView.url} alt={t("visual.diagramPreview")} />}
+            {diagramView.error && (
+              <Notice
+                tone="danger"
+                actions={
+                  <Button
+                    variant="pill"
+                    disabled={busy !== null}
+                    onClick={() =>
+                      void (async () => {
+                        // Save the current text first so Gemini fixes what the user sees.
+                        const saved = await run("save", () => api.sceneVisualUpdate(project.id, scene.id, edit({ kind: "diagram" })).catch(() => api.projectGet(project.id)));
+                        if (!saved) return;
+                        await run("fix", async () => {
+                          const p = await api.diagramFix(project.id, scene.id, diagramView.error ?? "");
+                          const fixed = p.scenes.find((s) => s.id === scene.id)?.visual.diagram;
+                          if (fixed) setDiagram(fixed);
+                          return p;
+                        });
+                      })()
+                    }
+                  >
+                    {busy === "fix" ? t("visual.fixing") : t("visual.fixWithGemini")}
+                  </Button>
+                }
+              >
+                {t("visual.diagramError")} <span className="t-micro">{diagramView.error}</span>
+              </Notice>
+            )}
+          </section>
         )}
 
         {kind === "code" && (

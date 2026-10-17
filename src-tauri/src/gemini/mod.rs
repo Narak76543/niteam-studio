@@ -2,6 +2,7 @@
 //! `generateContent` / `models.get` REST reference (ai.google.dev/api), checked 2026-10-15.
 
 pub mod client;
+pub mod diagram_fix;
 pub mod document;
 pub mod image;
 pub mod image_prompts;

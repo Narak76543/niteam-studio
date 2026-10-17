@@ -19,6 +19,7 @@ import { VisualDialog } from "../components/VisualDialog";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage, onGenerateProgress, onGeminiRetry, onPromptRewriteProgress, onSceneProgress } from "../lib/api";
 import { mimeForPath, onPlayingChange, playAudio, stopAudio } from "../lib/audioPlayer";
+import { prepareVisuals } from "../lib/prepareVisuals";
 import { isRealWorld } from "../lib/presets";
 import type { Navigate } from "../lib/route";
 import type { GeminiRetry, GenerateProgress, ImageEstimate, Project, RewriteProgress, Scene, SceneProgress } from "../lib/types";
@@ -180,6 +181,23 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       .then((running) => setRewrite((r) => ({ ...r, running })))
       .catch(() => undefined);
   }, [projectId]);
+
+  // Real-world projects: draw diagram / code pictures whenever some are pending.
+  const drawing = useRef(false);
+  const needsDrawing =
+    project !== null &&
+    isRealWorld(project.style.preset) &&
+    project.scenes.some((s) => (s.visual.kind === "diagram" || s.visual.kind === "code") && s.visual.status === "pending");
+  useEffect(() => {
+    if (!needsDrawing || drawing.current) return;
+    drawing.current = true;
+    prepareVisuals(projectId)
+      .then(() => reload())
+      .catch((e: unknown) => toast.show(errorMessage(e), "danger"))
+      .finally(() => {
+        drawing.current = false;
+      });
+  }, [needsDrawing, projectId, reload, toast]);
 
   useEffect(() => onPlayingChange(setPlaying), []);
   useEffect(() => () => stopAudio(), []);
@@ -390,6 +408,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   const allReady =
     scenes.length > 0 && voices.todo === 0 && (realWorld ? scenes.every(visualReady) : images.todo === 0);
   const editing = scenes.find((s) => s.id === visualEdit) ?? null;
+  const drawPending = realWorld && scenes.some((s) => (s.visual.kind === "diagram" || s.visual.kind === "code") && s.visual.status === "pending");
 
   return (
     <div className="page">
@@ -484,6 +503,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
         {jobStrip("image", t("images.title"), startImages)}
         {jobStrip("visual", t("visual.jobTitle"), startVisuals)}
         {realWorld && !anyRunning && toCheck > 0 && <Notice>{t("visual.toCheck", { n: toCheck })}</Notice>}
+        {drawPending && <span className="t-small t-muted">{t("visual.drawing")}</span>}
         {rewriteStrip()}
         {scenes.length > 0 && (
           <ImagesPanel

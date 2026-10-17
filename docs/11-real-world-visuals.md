@@ -9,9 +9,9 @@ Per scene the visual is one of `ai_image` (the image providers, fallback), `real
 `stock_video`, `diagram`, `code`, `screenshot`. Subtitles and the render pipeline stay as they
 are.
 
-Status: **steps 1–4 built** (data model, Settings, clients, cache, licence filter, ranking,
+Status: **steps 1–5 built** (data model, Settings, clients, cache, licence filter, ranking,
 downloads; style preset + script fields; "Find photos & clips" job, picker, credits; render
-of photos, clips, screenshots). Diagrams, code: next steps.
+of photos, clips, screenshots; diagrams). Code scenes: next step.
 
 ## 1. Data model
 
@@ -221,4 +221,29 @@ keep the pan over `image_1080.png` and their old clip hash.
   for the frame / the drawn picture. Clips preview as their poster (still).
 - Checked with the real FFmpeg (`clip::tests::real_ffmpeg_renders_every_input_kind`,
   ignored by default): zoom, still and a 1 s clip looped to a 2.95 s scene, all 1920×1080.
+
+## 10. Diagrams (`src/lib/diagramRender.ts`, `pipeline/drawn.rs`)
+
+- Drawn in the WebView like the subtitles: `visuals_draw_plan` lists diagram / code scenes whose
+  picture is missing or outdated (hash of the text + resolution + `DRAW_VERSION`; a failed
+  drawing is not retried until its text changes); the UI draws a frame-size PNG and sends it
+  with `visual_draw_save` → `scenes/<id>/visual.png` + `visual_thumb.jpg`; a failure is stored
+  with `visual_draw_failed` (`error_kind: "diagram"`). Drawing runs automatically on the Scenes
+  page whenever a diagram / code scene is pending, and again before export.
+- Mermaid 11.17.2 (MIT), loaded only when a diagram is drawn (`import("mermaid")`, own chunk).
+  `htmlLabels: false` (plain SVG text — an SVG with `<foreignObject>` can't be copied to a
+  canvas), `securityLevel: "strict"`, theme `base` with the video palette (warm background
+  `#F7F4EF`, white nodes, coral borders, timeline sections `cScale0…7` in soft tints).
+- Fonts: both Kantumruy Pro files (Khmer + Latin, variable weight 100–700) are embedded in the
+  SVG as base64 `@font-face` so the rasterised picture shapes Khmer exactly like the app —
+  including **bold** (timeline titles); Mermaid measures labels with the same font after
+  `document.fonts.load` of both weights.
+- Layout: the diagram is scaled into the area above the subtitle band with a 6 % margin, at
+  most ×2.6 (small diagrams stay readable, not huge).
+- Picker: live preview (redrawn 0.5 s after typing stops); a diagram that doesn't parse shows
+  Mermaid's error and **Fix with Gemini** (`diagram_fix`: one text request with the error,
+  reply must start with an allowed header; the scene is then redrawn).
+- Checked by bundling `drawDiagram` with Vite and running it in Edge (WebView2's engine):
+  Khmer flowchart, Khmer timeline with bold title and section colours, sequence diagram all
+  correct; broken Mermaid rejected.
 

@@ -9,6 +9,8 @@ import { useToast } from "../toast";
 import { useI18n } from "../../i18n/context";
 import { api, errorMessage, onRenderProgress } from "../../lib/api";
 import { prepareSubtitles } from "../../lib/prepareSubtitles";
+import { prepareVisuals } from "../../lib/prepareVisuals";
+import { isRealWorld } from "../../lib/presets";
 import type { Project, RenderProgress, Settings } from "../../lib/types";
 import { formatTime } from "../../lib/timeline";
 
@@ -65,6 +67,8 @@ export function ExportDialog({ project, settings, totalMs, resume, onClose, onFi
     cancelSubs.current = false;
     try {
       setPhase({ kind: "subs", done: 0, total: 0 });
+      // Real-world projects: diagrams / code pictures first (normally drawn on the Scenes page).
+      if (isRealWorld(project.style.preset)) await prepareVisuals(projectId, undefined, () => cancelSubs.current);
       await prepareSubtitles(
         projectId,
         project.language,

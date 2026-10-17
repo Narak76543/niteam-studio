@@ -677,5 +677,10 @@
   "visual.credits": "Credits",
   "visual.creditsHint": "Paste this into the video description.",
   "error.stock_no_results.title": "No photo found",
-  "error.stock_no_results.body": "Search with other words in the scene's picture editor, or let the scene use an AI image."
+  "error.stock_no_results.body": "Search with other words in the scene's picture editor, or let the scene use an AI image.",
+  "visual.drawing": "Drawing diagrams and code…",
+  "visual.diagramPreview": "Diagram preview",
+  "visual.diagramError": "This diagram can't be drawn:",
+  "visual.fixWithGemini": "Fix with Gemini",
+  "visual.fixing": "Fixing…"
 }

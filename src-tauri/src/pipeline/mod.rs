@@ -1,5 +1,6 @@
 //! Project state and generation pipeline.
 
+pub mod drawn;
 pub mod editing;
 pub mod events;
 pub mod hashing;

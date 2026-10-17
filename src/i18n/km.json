@@ -677,5 +677,10 @@
   "visual.credits": "ឈ្មោះម្ចាស់រូបភាព",
   "visual.creditsHint": "បិទភ្ជាប់អត្ថបទនេះក្នុងការពិពណ៌នាវីដេអូ។",
   "error.stock_no_results.title": "រកមិនឃើញរូបថត",
-  "error.stock_no_results.body": "ស្វែងរកដោយពាក្យផ្សេងក្នុងកម្មវិធីកែរូបភាពរបស់ឈុត ឬទុកឱ្យឈុតប្រើរូបភាព AI។"
+  "error.stock_no_results.body": "ស្វែងរកដោយពាក្យផ្សេងក្នុងកម្មវិធីកែរូបភាពរបស់ឈុត ឬទុកឱ្យឈុតប្រើរូបភាព AI។",
+  "visual.drawing": "កំពុងគូរដ្យាក្រាម និងកូដ…",
+  "visual.diagramPreview": "មើលដ្យាក្រាមជាមុន",
+  "visual.diagramError": "មិនអាចគូរដ្យាក្រាមនេះបាន៖",
+  "visual.fixWithGemini": "កែដោយ Gemini",
+  "visual.fixing": "កំពុងកែ…"
 }

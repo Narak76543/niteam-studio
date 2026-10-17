@@ -13,4 +13,5 @@ pub mod script;
 pub mod settings;
 pub mod source;
 pub mod stock;
+pub mod visuals;
 pub mod voices;

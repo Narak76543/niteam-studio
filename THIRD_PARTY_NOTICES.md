@@ -43,10 +43,17 @@ unicode-segmentation, unicode-normalization, windows-rs. Full list: `src-tauri/C
 (`cargo tree`).
 
 Main JavaScript packages: React and React DOM (MIT), lucide-react icons (ISC),
-@tauri-apps/api and plugins (MIT/Apache-2.0). Full list: `package-lock.json`.
+@tauri-apps/api and plugins (MIT/Apache-2.0), **Mermaid** 11.17.2 (MIT, diagrams in
+real-world videos). Full list: `package-lock.json`.
 
 ## Online services (not bundled)
 
 The app calls these services with the user's own account: Google Gemini API,
 Cloudflare Workers AI (`@cf/black-forest-labs/flux-1-schnell`), and Microsoft Edge
 "Read aloud" (Edge TTS, unofficial). Their terms are set by each provider.
+
+"Real-world Tech Explainer" videos search and download stock photos and clips from
+**Wikimedia Commons**, **Openverse**, **Pixabay** and (optional) **Pexels**. Each file keeps
+its own licence (CC0, public domain, CC BY, CC BY-SA if allowed, Pexels License, Pixabay
+Content License), recorded per project in `assets/assets.json` and listed in the video's
+Credits block. Photos provided by Pexels: <https://www.pexels.com>.

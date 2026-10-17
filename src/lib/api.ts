@@ -8,6 +8,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type {
+  DrawTask,
   StockCandidate,
   StockMedia,
   StockSource,
@@ -156,6 +157,14 @@ export const api = {
   visualsStart: (projectId: string, sceneId: string | null) => invoke<null>("visuals_start", { projectId, sceneId }),
   visualsCancel: (projectId: string) => invoke<null>("visuals_cancel", { projectId }),
   visualsRunning: (projectId: string) => invoke<boolean>("visuals_running", { projectId }),
+  visualsDrawPlan: (projectId: string) => invoke<DrawTask[]>("visuals_draw_plan", { projectId }),
+  visualDrawSave: (projectId: string, sceneId: string, hash: string, pngBase64: string) =>
+    invoke<Project>("visual_draw_save", { projectId, sceneId, hash, pngBase64 }),
+  visualDrawFailed: (projectId: string, sceneId: string, hash: string, error: string) =>
+    invoke<Project>("visual_draw_failed", { projectId, sceneId, hash, error }),
+  /** "Fix with Gemini" for a diagram that doesn't parse (uses one Gemini text request). */
+  diagramFix: (projectId: string, sceneId: string, error: string) =>
+    invoke<Project>("diagram_fix", { projectId, sceneId, error }),
   /** One JPEG/PNG image, or null when cancelled. */
   pickImageFile: async (): Promise<string | null> => {
     const picked = await openDialog({ multiple: false, filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg"] }] });

@@ -173,7 +173,8 @@ Free sources only: Pexels (optional), Pixabay, Openverse, Wikimedia Commons (CLA
       "Find photos & clips" job (auto-pick by ranking, marked Check, pause/resume, AI fallback)
 - [x] Step 4: render — photo zoom with focus and zoom limit (no zoom on low-res), stock video
       (cover crop, loop), screenshot; editor preview; zoompan exception documented (03 6a)
-- [ ] Step 5: diagrams (Mermaid in the WebView, Khmer labels, bold font, timeline colours)
+- [x] Step 5: diagrams (Mermaid in the WebView, Khmer labels, bold font, timeline colours,
+      live preview, Fix with Gemini)
 - [ ] Step 6: code / terminal scenes (Shiki, typed out)
 - [ ] Test video "How the internet reaches Cambodia (undersea cables)"
 - [ ] Owner test
@@ -334,4 +335,8 @@ _Add one line per finished phase: date — phase — notes._
   the photo's pixels; stock clips cover-cropped and looped; drawn stills), `clip.rs` inputs
   Image{Pan|Zoom|Still} / Video, render readiness + hashes, editor preview zoom/still.
   Real FFmpeg check for every input kind.
+- 2026-10-17 — **Real-world Tech Explainer, step 5**: diagrams drawn in the WebView with Mermaid
+  (lazy-loaded, both Kantumruy weights embedded, timeline colours), draw plan / save / failure
+  commands, automatic drawing on the Scenes page and before export, live preview and
+  "Fix with Gemini" in the picker.
 

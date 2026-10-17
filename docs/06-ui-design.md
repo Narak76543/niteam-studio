@@ -72,7 +72,12 @@ Put these in `src/styles/tokens.css` and use them everywhere. **No raw hex value
 }
 ```
 
-**Light mode only** (owner's decision, 2026-10-15): there is no dark theme.
+**Light and dark mode** (dark added at the owner's request, 2026-10-17; the 2026-10-15
+"light only" decision is replaced). Settings → Appearance: *Same as Windows* (default,
+follows the Windows app mode live) / *Light* / *Dark*, stored as `settings.theme`
+(`null` | `"light"` | `"dark"`). `src/lib/theme.ts` sets `data-theme` on `<html>`; the dark
+values are the `:root[data-theme="dark"]` block in `tokens.css` (timeline cue/voice and text
+diff colours are tokens too). The video frame stays black in both.
 
 ## 3. Typography
 
@@ -182,7 +187,7 @@ dotted `--border-strong` for comparison, ring markers. Keep to at most one chart
 | New project wizard | Single centered card, max 640 px, 3 steps with a thin stepper | Generate script |
 | Script | Two-column: scene list (left) + editor (right); narration vs spoken text tabs | Approve script |
 | Scenes | Scene card grid + right panel for the selected scene | Generate all / Continue |
-| Render (editor) | CapCut-style, light like the rest of the app (only the video frame is black): top bar with **Export**; centre live preview (canvas: image pan + voice + subtitles with word tracker, play/pause, prev/next scene, Space / ← →); right panel (subtitle font, word tracker on/off + colour swatches, current scene); bottom timeline (ruler, video thumbnails, subtitle cues, voice blocks, draggable playhead, zoom). Export dialog: settings → progress with % and ETA → Open video / Show in folder | Export |
+| Render (editor) | CapCut-style, same theme as the rest of the app (only the video frame is black): top bar with **Export**; centre live preview (canvas: image pan + voice + subtitles with word tracker, play/pause, prev/next scene, Space / ← →); right panel (subtitle font, word tracker on/off + colour swatches, current scene); bottom timeline (ruler, video thumbnails, subtitle cues, voice blocks, draggable playhead, zoom). Export dialog: settings → progress with % and ETA → Open video / Show in folder | Export |
 | Settings | Section list on the left (sticky, highlights the current section; a chip row below 1200 px) + grouped form rows, API key field masked with Test/Clear pills | — |
 
 ### Updates 2026-10-16

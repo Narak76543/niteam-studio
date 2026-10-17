@@ -294,3 +294,7 @@ _Add one line per finished phase: date — phase — notes._
   Uninstall keeps user data (`NiteanStudio` folders and keyring entries). Installer is
   English only (NSIS has no Khmer). Unsigned. Repo pushed to GitHub with README and
   THIRD_PARTY_NOTICES.md.
+- 2026-10-17 — **Dark mode + cleaner local voices**: Settings → Appearance (Same as Windows /
+  Light / Dark, `settings.theme`), dark tokens in `tokens.css`. VoxCPM2 output: 8 ms fades at
+  each sentence and a pause expander that turns the copied reference hiss down 12–15 dB
+  between words (measured on a real scene); speech unchanged.

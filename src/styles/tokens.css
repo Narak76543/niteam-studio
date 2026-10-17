@@ -32,6 +32,14 @@
   --danger: #D64545;  --danger-soft: #FBEAEA;
   --info:   #3B6FD8;  --info-soft:   #EAF0FB;
 
+  /* editor timeline + text diff */
+  --cue-bg: #FFF4CC;  --cue-border: #E3C04D;  --cue-text: #5C4700;
+  --voice-a: #CFEADC; --voice-b: #E4F4EB;     --voice-border: #7CC4A0;
+  --diff-ins-bg: #D9F2E3; --diff-ins-text: #12583A;
+  --diff-del-bg: #FDE2DE; --diff-del-text: #8A2A1C;
+
+  color-scheme: light;
+
   /* radius */
   --r-xs: 6px;  --r-sm: 8px;  --r-md: 12px;  --r-lg: 16px;  --r-xl: 22px;  --r-pill: 999px;
 
@@ -67,4 +75,25 @@
   --lh-body: 1.75;
   --lh-small: 1.7;
   --lh-micro: 1.5;
+}
+
+/* Dark mode: Settings → Appearance (`settings.theme`); App.tsx sets data-theme on <html>. */
+:root[data-theme="dark"] {
+  --bg-app: #0E0E0D; --bg-shell: #161615; --bg-sidebar: #121211;
+  --bg-subtle: #1B1B1A; --bg-hover: #242422; --bg-selected: #262624;
+  --border: #2C2C2A; --border-strong: #3D3D3A;
+  --text: #F2F1EE; --text-muted: #A3A29E; --text-faint: #75746F; --text-inverse: #141414;
+  --ink: #F2F1EE; --ink-hover: #FFFFFF;
+  --accent: #EE6A54; --accent-soft: #3A1E19;
+  --ok:     #4CC27E;  --ok-soft:     #15291D;
+  --warn:   #E8A23A;  --warn-soft:   #2E2414;
+  --danger: #EC6A6A;  --danger-soft: #331A1A;
+  --info:   #6F98EC;  --info-soft:   #18233A;
+  --cue-bg: #3A3220;  --cue-border: #8A7224;  --cue-text: #F5E6B0;
+  --voice-a: #2F5D4A; --voice-b: #24463A;     --voice-border: #3F7A61;
+  --diff-ins-bg: #173A27; --diff-ins-text: #9BE0B8;
+  --diff-del-bg: #44201A; --diff-del-text: #F4B0A4;
+  --shadow-pop: 0 8px 24px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.35);
+  --backdrop: rgba(0,0,0,.55);
+  color-scheme: dark;
 }

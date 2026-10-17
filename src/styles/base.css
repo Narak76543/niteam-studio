@@ -1317,7 +1317,7 @@ input[type="range"] {
   }
 }
 
-/* ---------- editor (Render page, CapCut-style, light; only the video frame is black) ---------- */
+/* ---------- editor (Render page, CapCut-style, app theme; only the video frame is black) ---------- */
 .studio {
   flex: 1;
   min-height: 0;
@@ -1642,9 +1642,9 @@ input[type="range"] {
   top: 5px;
   bottom: 5px;
   border-radius: var(--r-xs);
-  background: #fff4cc;
-  border: 1px solid #e3c04d;
-  color: #5c4700;
+  background: var(--cue-bg);
+  border: 1px solid var(--cue-border);
+  color: var(--cue-text);
   font-size: 11px;
   line-height: 24px;
   padding: 0 6px;
@@ -1657,8 +1657,8 @@ input[type="range"] {
   top: 8px;
   bottom: 8px;
   border-radius: var(--r-xs);
-  background: repeating-linear-gradient(90deg, #cfeadc 0 2px, #e4f4eb 2px 4px);
-  border: 1px solid #7cc4a0;
+  background: repeating-linear-gradient(90deg, var(--voice-a) 0 2px, var(--voice-b) 2px 4px);
+  border: 1px solid var(--voice-border);
 }
 .tl__playhead {
   position: absolute;
@@ -1733,13 +1733,13 @@ input[type="range"] {
 }
 .diff__ins {
   text-decoration: none;
-  background: #d9f2e3;
-  color: #12583a;
+  background: var(--diff-ins-bg);
+  color: var(--diff-ins-text);
   border-radius: 3px;
 }
 .diff__del {
-  background: #fde2de;
-  color: #8a2a1c;
+  background: var(--diff-del-bg);
+  color: var(--diff-del-text);
   border-radius: 3px;
 }
 .scene-row__flag--proof {

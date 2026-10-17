@@ -7,6 +7,7 @@ import { I18nProvider } from "./i18n/I18nProvider";
 import { api, errorMessage } from "./lib/api";
 import type { Route } from "./lib/route";
 import { settingsPatch } from "./lib/settingsPatch";
+import { useTheme } from "./lib/theme";
 import type { Language, ProjectSummary, Settings } from "./lib/types";
 import { NewProjectPage } from "./pages/NewProjectPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
@@ -78,6 +79,7 @@ export default function App() {
   );
 
   const lang: Language = settings?.ui_language ?? detectLanguage();
+  useTheme(settings?.theme ?? null);
 
   // Sections build `next` from this copy; only what they changed is sent and merged.
   const saveSettings = useCallback(

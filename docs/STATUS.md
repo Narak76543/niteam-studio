@@ -16,6 +16,11 @@ results: `docs/tasks/soft-2d-explainer-style.md`.
 section of the same name), committed (`2d04431`); owner UI test still to do. Note:
 the free tier gave gemini-3.8-flash a 20-requests/day limit during testing.
 
+**2026-10-17 (later):** dark mode (Settings → Appearance) and VoxCPM2 pause-hiss cleanup.
+Owner to test: switch Appearance to Dark and walk every page; regenerate the voice of one
+project and compare. Profiles *Vannda* and *ChhingChang* have noisy reference clips (pause
+level −36…−45 dBFS); a cleaner recording gives a cleaner voice.
+
 ## Done (committed on `main`)
 
 | Commit | What |

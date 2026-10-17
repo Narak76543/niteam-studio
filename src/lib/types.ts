@@ -1,6 +1,7 @@
 // Mirrors the Rust serde types (src-tauri/src/**). Field names are snake_case on the wire.
 
 export type Language = "km" | "en";
+export type Theme = "light" | "dark";
 
 export type ProjectStatus =
   | "script_draft"
@@ -124,6 +125,7 @@ export interface ConcurrencySettings {
 export interface Settings {
   schema_version: number;
   ui_language: Language | null;
+  theme: Theme | null;
   output_dir: string | null;
   models: ModelSettings;
   concurrency: ConcurrencySettings;

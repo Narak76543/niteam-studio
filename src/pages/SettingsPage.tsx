@@ -17,7 +17,7 @@ import { VoiceProfilesSection } from "../components/VoiceProfilesSection";
 import { VoiceSettingsSection } from "../components/VoiceSettingsSection";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage, onGeminiRetry } from "../lib/api";
-import type { GeminiRetry, Language, ModelSettings, Settings } from "../lib/types";
+import type { GeminiRetry, Language, ModelSettings, Settings, Theme } from "../lib/types";
 
 const AI_STUDIO_KEY_URL = "https://aistudio.google.com/apikey";
 const SINGLE_MODEL_FIELDS = ["tts", "tts_lite"] as const;
@@ -131,6 +131,11 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props
     { value: "km", label: "ខ្មែរ" },
     { value: "en", label: "English" },
   ];
+  const themeOptions: { value: Theme | null; label: string }[] = [
+    { value: null, label: t("settings.theme.auto") },
+    { value: "light", label: t("settings.theme.light") },
+    { value: "dark", label: t("settings.theme.dark") },
+  ];
 
   const chain = models.text_chain;
   const modelsDirty =
@@ -238,6 +243,28 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props
                     lang={o.value ?? undefined}
                     aria-pressed={settings.ui_language === o.value}
                     onClick={() => void persist({ ...settings, ui_language: o.value })}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Appearance */}
+          <div className="settings-row">
+            <div className="settings-row__intro">
+              <h2 className="t-h3">{t("settings.theme.title")}</h2>
+              <p className="t-small">{t("settings.theme.body")}</p>
+            </div>
+            <div className="settings-row__control">
+              <div className="segmented" role="group" aria-label={t("settings.theme.title")}>
+                {themeOptions.map((o) => (
+                  <button
+                    key={o.value ?? "auto"}
+                    type="button"
+                    aria-pressed={settings.theme === o.value}
+                    onClick={() => void persist({ ...settings, theme: o.value })}
                   >
                     {o.label}
                   </button>

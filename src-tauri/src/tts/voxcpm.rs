@@ -35,6 +35,14 @@ const MAX_ATTEMPTS: u64 = 3;
 const MAX_SPLIT_DEPTH: u32 = 3;
 const TARGET_RMS_DBFS: f64 = -18.0;
 const PEAK_DBFS: f64 = -1.0;
+/// Fade at both ends of each piece (no click where it was trimmed).
+const FADE_MS: u64 = 8;
+/// Pause hiss cleanup after normalising (`wav::quiet_pauses`): speech sits around −18 dBFS,
+/// the model's background hiss around −45…−55 dBFS.
+const PAUSE_THRESHOLD_DBFS: f64 = -40.0;
+const PAUSE_RATIO: f64 = 3.0;
+const PAUSE_RANGE_DB: f64 = 24.0;
+const PAUSE_RELEASE_MS: u64 = 30;
 
 pub type SpeakFuture<'a> = Pin<Box<dyn Future<Output = Result<Vec<u8>, VoxError>> + Send + 'a>>;
 /// Text + trimmed audio of each piece a chunk ended up as.
@@ -155,7 +163,8 @@ impl VoxCpmTts {
             if cancel.is_cancelled() {
                 return Err(TtsError::Cancelled);
             }
-            for (piece_text, p) in self.piece(chunk, 0, cancel).await.map_err(to_tts)? {
+            for (piece_text, mut p) in self.piece(chunk, 0, cancel).await.map_err(to_tts)? {
+                wav::fade_edges(&mut p, FADE_MS);
                 if out.rate == 0 {
                     out.rate = p.rate;
                     out.samples.extend(wav::silence(p.rate, LEAD_MS));
@@ -170,6 +179,7 @@ impl VoxCpmTts {
             }
         }
         wav::normalize(&mut out, TARGET_RMS_DBFS, PEAK_DBFS);
+        wav::quiet_pauses(&mut out, PAUSE_THRESHOLD_DBFS, PAUSE_RATIO, PAUSE_RANGE_DB, PAUSE_RELEASE_MS);
         Ok((out, words))
     }
 }

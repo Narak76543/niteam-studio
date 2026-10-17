@@ -142,9 +142,99 @@ pub fn normalize(p: &mut Pcm, target_dbfs: f64, peak_dbfs: f64) {
     }
 }
 
+/// Fades the first and last `ms` in and out, so a trimmed piece starts and stops without a
+/// click.
+pub fn fade_edges(p: &mut Pcm, ms: u64) {
+    let n = ((u64::from(p.rate) * ms / 1000) as usize).min(p.samples.len() / 2);
+    let len = p.samples.len();
+    for i in 0..n {
+        let g = i as f64 / n as f64;
+        for at in [i, len - 1 - i] {
+            p.samples[at] = (f64::from(p.samples[at]) * g).round() as i16;
+        }
+    }
+}
+
+/// Downward expander for the hiss the model leaves in pauses (it copies the reference clip's
+/// background): 10 ms frames quieter than `threshold_dbfs` are turned down by `ratio - 1` dB
+/// per dB below it, at most `range_db`. A frame counts as loud when it or a neighbour is, so
+/// word onsets and endings are kept; the gain opens at once, closes over `release_ms` and is
+/// interpolated per sample (no zipper noise).
+pub fn quiet_pauses(p: &mut Pcm, threshold_dbfs: f64, ratio: f64, range_db: f64, release_ms: u64) {
+    let frame = (p.rate as usize / 100).max(1);
+    let levels: Vec<f64> = p.samples.chunks(frame).map(frame_dbfs).collect();
+    let alpha = 1.0 - (-10.0 / release_ms.max(1) as f64).exp();
+    let mut gains = Vec::with_capacity(levels.len());
+    let mut prev = 0.0_f64;
+    for i in 0..levels.len() {
+        let near = levels[i.saturating_sub(1)..(i + 2).min(levels.len())].iter().copied().fold(f64::MIN, f64::max);
+        let target = -((threshold_dbfs - near).max(0.0) * (ratio - 1.0)).min(range_db);
+        prev = if target >= prev { target } else { prev + (target - prev) * alpha };
+        gains.push(10f64.powf(prev / 20.0));
+    }
+    for (i, chunk) in p.samples.chunks_mut(frame).enumerate() {
+        let (from, to) = (gains[i], gains.get(i + 1).copied().unwrap_or(gains[i]));
+        let n = chunk.len() as f64;
+        for (j, v) in chunk.iter_mut().enumerate() {
+            let g = from + (to - from) * j as f64 / n;
+            *v = (f64::from(*v) * g).round() as i16;
+        }
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
+
+    /// Deterministic low-level noise (LCG), `amp` of full scale.
+    fn hiss(rate: u32, ms: u64, amp: f64) -> Vec<i16> {
+        let mut x: u32 = 12_345;
+        (0..(u64::from(rate) * ms / 1000))
+            .map(|_| {
+                x = x.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                (amp * 32767.0 * (f64::from(x >> 16) / 32768.0 - 1.0)) as i16
+            })
+            .collect()
+    }
+
+    /// A/B listening: `VOICE_IN` (a scene's voice.wav) → `VOICE_OUT` with the pause cleanup
+    /// the VoxCPM2 engine applies (keep in step with `voxcpm.rs`). Run with `--ignored`.
+    #[test]
+    #[ignore = "needs a voice file"]
+    fn clean_a_real_voice_file() {
+        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("set {k}"));
+        let mut p = parse(&std::fs::read(var("VOICE_IN")).unwrap()).unwrap();
+        quiet_pauses(&mut p, -40.0, 3.0, 24.0, 30);
+        std::fs::write(var("VOICE_OUT"), to_wav(&p)).unwrap();
+    }
+
+    #[test]
+    fn fades_edges_without_touching_the_middle() {
+        let mut p = tone(48_000, 0, 200, 0.5);
+        let mid = p.samples[4800];
+        fade_edges(&mut p, 10);
+        assert_eq!(p.samples[0], 0);
+        assert!(p.samples[p.samples.len() - 1].abs() < 200);
+        assert_eq!(p.samples[4800], mid);
+    }
+
+    #[test]
+    fn quiets_hiss_in_pauses_but_keeps_speech() {
+        // speech (-9 dBFS tone) · 400 ms hiss at about -50 dBFS · speech
+        let rate = 48_000;
+        let word = tone(rate, 0, 300, 0.5).samples;
+        let mut samples = word.clone();
+        samples.extend(hiss(rate, 400, 0.005));
+        samples.extend(&word);
+        let mut p = Pcm { rate, samples };
+        let before = p.clone();
+        quiet_pauses(&mut p, -40.0, 3.0, 24.0, 30);
+        let w = word.len();
+        let pause = |q: &Pcm| frame_dbfs(&q.samples[w + 9_600..w + 14_400]);
+        assert!(pause(&p) < pause(&before) - 15.0, "{} → {}", pause(&before), pause(&p));
+        assert_eq!(p.samples[..w - 480], before.samples[..w - 480], "speech untouched");
+        assert_eq!(p.samples[p.samples.len() - w + 480..], before.samples[before.samples.len() - w + 480..]);
+    }
 
     /// `ms` of a 440 Hz tone at `amp`, surrounded by `pad_ms` of silence.
     pub fn tone(rate: u32, pad_ms: u64, ms: u64, amp: f64) -> Pcm {

@@ -14,6 +14,8 @@ pub struct Settings {
     pub schema_version: u32,
     /// "km" | "en"; `None` = follow the Windows display language.
     pub ui_language: Option<String>,
+    /// "light" | "dark"; `None` = follow the Windows app mode.
+    pub theme: Option<String>,
     /// Where finished videos are copied. `None` = inside the project folder.
     pub output_dir: Option<String>,
     pub models: ModelSettings,
@@ -211,6 +213,7 @@ impl Default for Settings {
         Self {
             schema_version: 1,
             ui_language: None,
+            theme: None,
             output_dir: None,
             models: ModelSettings::default(),
             concurrency: ConcurrencySettings::default(),
@@ -281,6 +284,12 @@ impl Settings {
             return Err(StorageError::InvalidSetting(format!(
                 "ui_language '{lang}'"
             )));
+        }
+        if let Some(theme) = &self.theme
+            && theme != "light"
+            && theme != "dark"
+        {
+            return Err(StorageError::InvalidSetting(format!("theme '{theme}'")));
         }
         let chain = &self.models.text_chain;
         if chain.is_empty() || chain.len() > MAX_TEXT_CHAIN {
@@ -407,6 +416,10 @@ mod tests {
         let mut s = Settings::default();
         s.concurrency.tts = 0;
         assert!(s.validate().is_err());
+        let s = Settings { theme: Some("blue".into()), ..Settings::default() };
+        assert!(s.validate().is_err());
+        let s = Settings { theme: Some("dark".into()), ..Settings::default() };
+        assert!(s.validate().is_ok());
         let mut s = Settings::default();
         s.models.text_chain.clear();
         assert!(s.validate().is_err(), "chain must not be empty");

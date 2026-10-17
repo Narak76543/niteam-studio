@@ -79,7 +79,13 @@ NVIDIA, AMD and Intel without a CUDA install; the bundled zip has no CUDA DLLs.
    length (`audio::suspicious_length`), retry with seed+1, up to 3 takes; the last take is kept
    and the voice job flags the scene as usual.
 4. Out of GPU memory → split the piece in two halves (up to 3 levels).
-5. Join: 80 ms lead, 220 ms between pieces; normalise to −18 dBFS RMS, peak ≤ −1 dBFS.
+5. Join: each piece faded in/out over 8 ms (no click at the trim), 80 ms lead, 220 ms between
+   pieces; normalise to −18 dBFS RMS, peak ≤ −1 dBFS; then quiet the pauses
+   (`wav::quiet_pauses`): the model copies the reference clip's background hiss (measured
+   −45…−55 dBFS between words), so 10 ms frames below −40 dBFS (with both neighbours) are
+   turned down 2 dB per dB below, at most 24 dB, gain opens at once and closes over 30 ms.
+   Speech frames are untouched. Scenes made before 2026-10-17 keep the old audio until their
+   voice is regenerated.
 6. Result: `voice.wav` + `words.json` with **one entry per piece** (sentence timings). The
    subtitle word tracker uses them like Edge's Khmer phrase timings.
 

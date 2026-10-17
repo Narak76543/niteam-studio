@@ -7,6 +7,7 @@
 pub mod assets;
 pub mod cache;
 pub mod commons;
+pub mod credits;
 pub mod license;
 pub mod openverse;
 pub mod pexels;

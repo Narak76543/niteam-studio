@@ -10,6 +10,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   StockCandidate,
   StockMedia,
+  StockSource,
+  VisualEdit,
   StockSearchOutcome,
   StockTestOutcome,
   GeminiRetry,
@@ -133,10 +135,32 @@ export const api = {
   stockKeyExists: (source: "pexels" | "pixabay") => invoke<boolean>("stock_key_exists", { source }),
   stockKeyClear: (source: "pexels" | "pixabay") => invoke<null>("stock_key_clear", { source }),
   stockKeyTest: (source: "pexels" | "pixabay") => invoke<StockTestOutcome>("stock_key_test", { source }),
-  stockSearch: (projectId: string | null, query: string, keywords: string[], media: StockMedia, page: number) =>
-    invoke<StockSearchOutcome>("stock_search", { projectId, query, keywords, media, page }),
+  stockSearch: (
+    projectId: string | null,
+    query: string,
+    keywords: string[],
+    media: StockMedia,
+    page: number,
+    sources: StockSource[] | null,
+  ) => invoke<StockSearchOutcome>("stock_search", { projectId, query, keywords, media, page, sources }),
   stockPick: (projectId: string, sceneId: string, candidate: StockCandidate) =>
     invoke<Project>("stock_pick", { projectId, sceneId, candidate }),
+  sceneVisualUpdate: (projectId: string, sceneId: string, edit: VisualEdit) =>
+    invoke<Project>("scene_visual_update", { projectId, sceneId, edit }),
+  sceneScreenshotImport: (projectId: string, sceneId: string, path: string, consent: boolean) =>
+    invoke<Project>("scene_screenshot_import", { projectId, sceneId, path, consent }),
+  /** The chosen photo (or a clip's poster), ≤ 1280 px wide, JPEG bytes. */
+  sceneVisualPreview: (projectId: string, sceneId: string) =>
+    invoke<ArrayBuffer>("scene_visual_preview", { projectId, sceneId }),
+  projectCredits: (projectId: string) => invoke<string | null>("project_credits", { projectId }),
+  visualsStart: (projectId: string, sceneId: string | null) => invoke<null>("visuals_start", { projectId, sceneId }),
+  visualsCancel: (projectId: string) => invoke<null>("visuals_cancel", { projectId }),
+  visualsRunning: (projectId: string) => invoke<boolean>("visuals_running", { projectId }),
+  /** One JPEG/PNG image, or null when cancelled. */
+  pickImageFile: async (): Promise<string | null> => {
+    const picked = await openDialog({ multiple: false, filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg"] }] });
+    return typeof picked === "string" ? picked : null;
+  },
 
   // images (Phase 3)
   cloudflareTokenSet: (token: string) => invoke<null>("cloudflare_token_set", { token }),

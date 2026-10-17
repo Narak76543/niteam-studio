@@ -111,7 +111,9 @@ fn own_plan(project: &Project, scene: &Scene) -> ScenePlan {
 /// Plan for the scene at `index` (a shared scene gets its source's prompt/hash).
 pub fn plan_scene(project: &Project, index: usize) -> Option<ScenePlan> {
     let scene = project.scenes.get(index)?;
-    let src = source_index(index, project.image_settings.scenes_per_image);
+    // Real-world scenes each have their own visual: no image sharing.
+    let per_image = if crate::pipeline::presets::is_real_world(&project.style.preset) { 1 } else { project.image_settings.scenes_per_image };
+    let src = source_index(index, per_image);
     let source = project.scenes.get(src)?;
     let mut plan = own_plan(project, source);
     if src != index {
@@ -121,8 +123,11 @@ pub fn plan_scene(project: &Project, index: usize) -> Option<ScenePlan> {
     Some(plan)
 }
 
+/// Plans of the scenes that need a generated image (real-world scenes with a photo, clip,
+/// diagram or code are left out, `Scene::needs_ai_image`).
 pub fn plan_all(project: &Project) -> Vec<ScenePlan> {
     (0..project.scenes.len())
+        .filter(|&i| project.scenes[i].needs_ai_image())
         .filter_map(|i| plan_scene(project, i))
         .collect()
 }

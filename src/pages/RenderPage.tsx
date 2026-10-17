@@ -33,6 +33,15 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
   const [time, setTime] = useState(0);
   const [exportOpen, setExportOpen] = useState(false);
   const [resume, setResume] = useState(false);
+  /** Real-world projects: credits of the stock photos / clips used (docs/11 §3). */
+  const [credits, setCredits] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .projectCredits(projectId)
+      .then(setCredits)
+      .catch(() => setCredits(null));
+  }, [projectId]);
   const player = useRef<PlayerApi | null>(null);
 
   const reload = useCallback(async () => {
@@ -215,6 +224,26 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
                 {t("source.copy")}
               </Button>
               <span className="t-micro t-muted">{t("source.creditHint")}</span>
+            </section>
+          )}
+          {credits && (
+            <section className="panel-section" aria-label={t("visual.credits")}>
+              <h3 className="panel-section__title">{t("visual.credits")}</h3>
+              <pre className="credits t-micro" lang="en">
+                {credits}
+              </pre>
+              <Button
+                variant="pill"
+                onClick={() => {
+                  navigator.clipboard
+                    .writeText(credits)
+                    .then(() => toast.show(t("source.copied"), "ok"))
+                    .catch((e: unknown) => toast.show(errorMessage(e), "danger"));
+                }}
+              >
+                {t("source.copy")}
+              </Button>
+              <span className="t-micro t-muted">{t("visual.creditsHint")}</span>
             </section>
           )}
           <p className="t-micro t-muted studio__keys">{t("editor.keys")}</p>

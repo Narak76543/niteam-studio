@@ -23,6 +23,7 @@ mod source_trial;
 pub mod store;
 pub mod subs;
 pub mod visual_bible;
+pub mod visual_job;
 pub mod voice_job;
 
 pub use store::ProjectStore;

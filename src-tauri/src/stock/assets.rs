@@ -50,6 +50,9 @@ pub struct AssetRecord {
     pub restrictions: Vec<String>,
     pub sha256: String,
     pub bytes: u64,
+    /// Videos: preview picture `assets/<id>.poster.jpg` (thumbnails, picker), if it downloaded.
+    #[serde(default)]
+    pub poster: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -171,7 +174,17 @@ pub async fn ensure(assets_dir: &Path, c: &Candidate, dl: &dyn Downloader, cance
     if result.is_err() {
         let _ = std::fs::remove_file(&part);
     }
-    let record = result?;
+    let mut record = result?;
+    if c.media == Media::Video && !c.thumb_url.is_empty() {
+        let poster = assets_dir.join(format!("{id}.poster.jpg"));
+        let ok = dl.fetch(&c.thumb_url, None, MAX_PHOTO_BYTES, &poster, cancel).await.is_ok()
+            && std::fs::read(&poster).is_ok_and(|b| sniff(&b[..b.len().min(16)]).is_some_and(|e| e != "mp4"));
+        if ok {
+            record.poster = Some(format!("assets/{id}.poster.jpg"));
+        } else {
+            let _ = std::fs::remove_file(&poster);
+        }
+    }
     registry.upsert(record.clone());
     registry.save(assets_dir).map_err(|e| StockError::Download(e.to_string()))?;
     Ok(record)
@@ -208,7 +221,53 @@ fn finish(assets_dir: &Path, part: &Path, c: &Candidate, id: &str, bytes: u64) -
         restrictions: c.restrictions.clone(),
         sha256: hex::encode(Sha256::digest(&data)),
         bytes,
+        poster: None,
     })
+}
+
+/// The user's own screenshot or photo (consent given in the UI): copied into the assets
+/// folder as `user_<sha8>.jpg|png`, licence `own` (left out of the credits).
+pub fn import_own(assets_dir: &Path, source: &Path) -> Result<AssetRecord, StockError> {
+    let meta = std::fs::metadata(source).map_err(io)?;
+    if meta.len() > MAX_PHOTO_BYTES {
+        return Err(StockError::Download(format!("the file is larger than {} MB", MAX_PHOTO_BYTES / 1024 / 1024)));
+    }
+    let data = std::fs::read(source).map_err(io)?;
+    let ext = match sniff(&data[..data.len().min(16)]) {
+        Some(e @ ("jpg" | "png")) => e,
+        _ => return Err(StockError::Download("choose a JPEG or PNG image".into())),
+    };
+    let (width, height) = crate::images::postprocess::dimensions(&data).ok_or_else(|| StockError::Download("could not read the image size".into()))?;
+    let sha = hex::encode(Sha256::digest(&data));
+    let id = format!("user_{}", &sha[..12]);
+    std::fs::create_dir_all(assets_dir).map_err(io)?;
+    std::fs::write(assets_dir.join(format!("{id}.{ext}")), &data).map_err(io)?;
+    let title = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let record = AssetRecord {
+        id: id.clone(),
+        source: Source::User,
+        media: Media::Photo,
+        file: format!("assets/{id}.{ext}"),
+        title: title.clone(),
+        author: String::new(),
+        author_url: None,
+        license: License::new(super::license::LicenseCode::Own),
+        original_url: String::new(),
+        file_url: String::new(),
+        downloaded_at: chrono::Utc::now().to_rfc3339(),
+        width,
+        height,
+        duration_ms: None,
+        attribution: format!("{title} — own material"),
+        restrictions: vec![],
+        sha256: sha,
+        bytes: meta.len(),
+        poster: None,
+    };
+    let mut registry = AssetRegistry::load(assets_dir).map_err(|e| StockError::Download(e.to_string()))?;
+    registry.upsert(record.clone());
+    registry.save(assets_dir).map_err(|e| StockError::Download(e.to_string()))?;
+    Ok(record)
 }
 
 #[cfg(test)]
@@ -256,5 +315,39 @@ mod tests {
         assert!(ensure(&assets, &other, &html, &CancellationToken::new()).await.is_err());
         assert!(!assets.join("pixabay_2.part").exists(), "partial file removed");
         assert!(html.calls.lock().unwrap()[0].1.is_none(), "no contact details sent to Pixabay");
+    }
+
+    #[tokio::test]
+    async fn videos_keep_their_poster() {
+        struct ByUrl;
+        impl Downloader for ByUrl {
+            fn fetch<'a>(&'a self, url: &'a str, _ua: Option<String>, _m: u64, dest: &'a Path, _c: &'a CancellationToken) -> DownloadFuture<'a> {
+                let body: Vec<u8> = if url.ends_with(".mp4") { vec![0, 0, 0, 24, b'f', b't', b'y', b'p', b'm', b'p', b'4', b'2'] } else { vec![0xFF, 0xD8, 0xFF, 0xE0] };
+                Box::pin(async move {
+                    std::fs::write(dest, &body).unwrap();
+                    Ok(body.len() as u64)
+                })
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = candidate(Source::Pixabay, 1920, 1080, License::new(crate::stock::license::LicenseCode::Pixabay));
+        c.media = Media::Video;
+        c.file_url = "https://cdn.pixabay.com/video/m.mp4".into();
+        let r = ensure(&dir.path().join("assets"), &c, &ByUrl, &CancellationToken::new()).await.unwrap();
+        assert_eq!(r.file, "assets/pixabay_1.mp4");
+        assert_eq!(r.poster.as_deref(), Some("assets/pixabay_1.poster.jpg"));
+    }
+
+    #[test]
+    fn imports_own_images_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("my screen.png");
+        image::RgbImage::from_pixel(40, 30, image::Rgb([1, 2, 3])).save(&png).unwrap();
+        let r = import_own(&dir.path().join("assets"), &png).unwrap();
+        assert_eq!((r.source, r.license.code, r.width, r.height), (Source::User, crate::stock::license::LicenseCode::Own, 40, 30));
+        assert!(r.file.starts_with("assets/user_") && r.file.ends_with(".png"));
+        let txt = dir.path().join("x.txt");
+        std::fs::write(&txt, "hello").unwrap();
+        assert!(import_own(&dir.path().join("assets"), &txt).is_err());
     }
 }

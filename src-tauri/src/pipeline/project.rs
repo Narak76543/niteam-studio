@@ -238,9 +238,35 @@ pub struct SceneVisual {
     pub error: Option<String>,
     #[serde(default)]
     pub error_kind: Option<String>,
-    /// Final still (photo crop, diagram, code, screenshot): `scenes/<id>/visual.png|jpg`.
+    /// Final still (diagram, code): `scenes/<id>/visual.png`.
     #[serde(default)]
     pub render_path: Option<String>,
+    /// 384×216 grid thumbnail of the visual: `scenes/<id>/visual_thumb.jpg`.
+    #[serde(default)]
+    pub thumb_path: Option<String>,
+    /// Hash of what `render_path` was drawn from (diagram / code text); stale when it differs.
+    #[serde(default)]
+    pub render_hash: Option<String>,
+}
+
+impl SceneVisual {
+    /// Uses a downloaded stock file or the user's own file.
+    pub fn uses_asset(&self) -> bool {
+        matches!(self.kind, VisualKind::RealPhoto | VisualKind::StockVideo | VisualKind::Screenshot)
+    }
+}
+
+impl Scene {
+    /// Needs a picture from the image providers: AI-image scenes, and real-world scenes whose
+    /// photo/clip search found nothing usable (fallback).
+    pub fn needs_ai_image(&self) -> bool {
+        let v = &self.visual;
+        match v.kind {
+            VisualKind::AiImage => true,
+            VisualKind::RealPhoto | VisualKind::StockVideo => v.asset.is_none() && v.status == AssetStatus::Failed,
+            VisualKind::Diagram | VisualKind::Code | VisualKind::Screenshot => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

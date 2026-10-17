@@ -9,8 +9,9 @@ Per scene the visual is one of `ai_image` (the image providers, fallback), `real
 `stock_video`, `diagram`, `code`, `screenshot`. Subtitles and the render pipeline stay as they
 are.
 
-Status: **steps 1–2 built** (data model, Settings, clients, cache, licence filter, ranking,
-downloads; style preset + script fields). Picker UI, render, diagrams, code: next steps.
+Status: **steps 1–3 built** (data model, Settings, clients, cache, licence filter, ranking,
+downloads; style preset + script fields; "Find photos & clips" job, picker, credits). Render,
+diagrams, code: next steps.
 
 ## 1. Data model
 
@@ -27,7 +28,9 @@ Scene (`pipeline/project.rs`), `visual` (older projects load as `ai_image`):
   "focus": [0.5, 0.4],             // subject centre for the 16:9 crop, null = centre
   "auto_picked": false,            // chosen by ranking/Gemini, shown as "check" until confirmed
   "status": "done", "error": null, "error_kind": null,
-  "render_path": null              // final still: scenes/<id>/visual.png|jpg
+  "render_path": null,             // drawn still (diagram / code): scenes/<id>/visual.png
+  "render_hash": null,             // what render_path was drawn from (stale when it differs)
+  "thumb_path": "scenes/s004/visual_thumb.jpg"   // 384×216 crop around focus, grid thumbnail
 }
 ```
 
@@ -40,7 +43,9 @@ Scene (`pipeline/project.rs`), `visual` (older projects load as `ai_image`):
 Per project, `projects/<id>/assets/assets.json` + the files (`assets/<id>.jpg|png|mp4`),
 `AssetRecord` (`stock/assets.rs`): `id`, `source`, `media`, `file`, `title`, `author`,
 `author_url`, `license`, `original_url`, `file_url`, `downloaded_at`, `width`, `height`,
-`duration_ms`, `attribution` (ready credit line), `restrictions`, `sha256`, `bytes`.
+`duration_ms`, `attribution` (ready credit line), `restrictions`, `sha256`, `bytes`, `poster`
+(videos: `assets/<id>.poster.jpg`, the source's preview picture). The user's own screenshots are
+`user_<sha12>.jpg|png`, licence `own`, left out of the credits.
 A file is downloaded once (checked by its first bytes: JPEG / PNG / MP4; photos ≤ 40 MB,
 videos ≤ 200 MB) and reused by every scene and re-render.
 
@@ -126,7 +131,14 @@ used only when their key is stored; Commons and Openverse need none.
 | `stock_key_set / _exists / _clear(source)` | `pexels` / `pixabay` key in the keyring |
 | `stock_key_test(source)` | one live photo search; `{ok, results, error_kind, details}` |
 | `stock_search(project_id?, query, keywords, media, page)` | `{candidates, notices}`; frame width from the project resolution |
-| `stock_pick(project_id, scene_id, candidate)` | download once (+ `assets.json` record), set the scene's visual |
+| `stock_search(…, sources?)` | optional source filter (picker) |
+| `stock_pick(project_id, scene_id, candidate)` | download once (+ `assets.json` record), thumbnail, set the scene's visual, confirm |
+| `scene_visual_update(project_id, scene_id, edit)` | type, keywords, diagram, code, subject point (`focus`, re-crops the thumbnail), `confirm` |
+| `scene_screenshot_import(project_id, scene_id, path, consent)` | own JPEG/PNG (consent required) |
+| `scene_visual_preview(project_id, scene_id)` | chosen photo / poster ≤ 1280 px for the subject point |
+| `project_credits(project_id)` | Credits block or null |
+| `visuals_start(project_id, scene_id?) / visuals_cancel / visuals_running` | "Find photos & clips" job; events `scene-progress` (`asset: "visual"`), `generate-progress` (`job: "visual"`, `paused_quota` + `resets_at_utc`) |
+| `scene_image_thumb` | real-world scenes return the visual's thumbnail unless they fell back to an AI image |
 
 ## 6. Style preset and script
 
@@ -150,4 +162,41 @@ used only when their key is stored; Commons and Openverse need none.
 - `script_job::visual_from_reply` → `scene.visual`: keywords trimmed, de-duplicated, ≤ 4;
   a diagram that still has unusable Mermaid becomes a photo (or an AI image without keywords);
   unknown code languages become `text`; `type_out` on by default.
+
+## 7. "Find photos & clips" job (`pipeline/visual_job.rs`)
+
+- Scenes: `real_photo` / `stock_video` without a downloaded file (or the one scene asked for).
+  One at a time; saved after every scene (resumable).
+- Search: the first keyword, then the second; video scenes with no clip try photos (a photo is
+  better than an AI image). Ranking as in §4; the best **non-low-res** candidate is taken
+  (low-res only when nothing else), up to 3 download tries.
+- The pick is **downloaded right away** (so the video can be rendered) and marked
+  `auto_picked` ("Check" badge, "N pictures were chosen automatically" notice) until the user
+  presses **Looks good**, sets the subject point's scene, or picks another. *(Plan change: the
+  plan said "pre-selected, downloaded on confirm"; a 100-scene video would then need 100
+  clicks before it can render.)*
+- Nothing found → `visual.status = failed`, `error_kind = stock_no_results` → the scene uses an
+  AI image (`Scene::needs_ai_image`, image job + estimate only count those scenes). Real-world
+  projects never share one image between two scenes.
+- Every source rate-limited → `generate-progress` `paused_quota` with the earliest reset; the
+  scene stays pending; **Resume** continues. No key or account rotation.
+
+## 8. Scenes page and picker (`VisualDialog.tsx`)
+
+- Real-world projects: header button **Find photos & clips** (instead of "Improve image
+  prompts" / image prompts), progress strip, paused notice with Resume, "to check" notice.
+  Cards: thumbnail of the photo / clip poster (cropped around the subject point), badges for
+  type, **Check**, **Low-res**, ⚠ restrictions (reason on hover); "Choose picture" button.
+  Readiness for the Render step: voice + `visualReady` (file / drawn still / AI image).
+- Picker: type switch (Photo, Video clip, Diagram, Code, My screenshot, AI image); for photo /
+  video a search box (English) with the scene's suggested keywords as chips, a source filter,
+  6 candidates per page (thumbnail from the source, pixel size, licence, source + author,
+  Low-res, ⚠ restrictions, clip length, "Source page" link), **More results**; clicking a
+  candidate downloads it and uses it. Licence note for Pexels / Pixabay; "Photos provided by
+  Pexels" link when Pexels results are shown (Pexels API rule).
+- Subject point: the chosen photo (or poster) with the 16:9 crop box and the subtitle band
+  shaded; a click moves the point (saved, thumbnail re-cropped).
+- Diagram: Mermaid text; code: language, text, Terminal, Type out; screenshot: consent checkbox
+  + file; AI image: uses the image prompt.
+- Render page side panel: **Credits** block with **Copy** (`project_credits`).
 

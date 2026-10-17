@@ -9,7 +9,7 @@ use super::project::AssetStatus;
 pub struct SceneProgress {
     pub project_id: String,
     pub scene_id: String,
-    /// "voice" | "image"
+    /// "voice" | "image" | "visual"
     pub asset: &'static str,
     pub status: AssetStatus,
     pub duration_ms: Option<u64>,
@@ -22,6 +22,8 @@ pub struct SceneProgress {
 pub enum JobKind {
     Voice,
     Image,
+    /// Real-world photos / clips search + download (`visual_job`).
+    Visual,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -54,4 +56,27 @@ pub struct GenerateProgress {
 pub trait JobEvents: Send + Sync {
     fn scene(&self, progress: SceneProgress);
     fn progress(&self, progress: GenerateProgress);
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    /// Collects every event (tests of the jobs).
+    #[derive(Default)]
+    pub struct Recorder {
+        pub scenes: Mutex<Vec<SceneProgress>>,
+        pub progress: Mutex<Vec<GenerateProgress>>,
+    }
+
+    impl JobEvents for Recorder {
+        fn scene(&self, p: SceneProgress) {
+            self.scenes.lock().unwrap().push(p);
+        }
+        fn progress(&self, p: GenerateProgress) {
+            self.progress.lock().unwrap().push(p);
+        }
+    }
 }

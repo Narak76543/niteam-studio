@@ -134,6 +134,18 @@ export interface SceneVisual {
   error: string | null;
   error_kind: string | null;
   render_path: string | null;
+  thumb_path: string | null;
+  render_hash: string | null;
+}
+
+/** `scene_visual_update` payload. */
+export interface VisualEdit {
+  kind: VisualKind;
+  keywords: string[];
+  diagram: DiagramSpec | null;
+  code: CodeSpec | null;
+  focus: [number, number] | null;
+  confirm: boolean;
 }
 
 export interface LocalPrefs {
@@ -277,6 +289,7 @@ export type ErrorKind =
   | "stock_unavailable"
   | "stock_bad_response"
   | "stock_download"
+  | "stock_no_results"
   | "local_engine"
   | "ffmpeg_missing"
   | "ffmpeg"
@@ -303,6 +316,7 @@ export const ERROR_KINDS: readonly ErrorKind[] = [
   "stock_unavailable",
   "stock_bad_response",
   "stock_download",
+  "stock_no_results",
   "local_engine",
   "ffmpeg_missing",
   "ffmpeg",
@@ -781,7 +795,7 @@ export interface ScriptProgress {
 export interface SceneProgress {
   project_id: string;
   scene_id: string;
-  asset: "voice" | "image";
+  asset: "voice" | "image" | "visual";
   status: AssetStatus;
   duration_ms: number | null;
   error: string | null;
@@ -793,7 +807,7 @@ export type GenerateStage = "running" | "done" | "cancelled" | "failed" | "pause
 /** Payload of `generate-progress`. */
 export interface GenerateProgress {
   project_id: string;
-  job: "voice" | "image";
+  job: "voice" | "image" | "visual";
   stage: GenerateStage;
   done: number;
   failed: number;

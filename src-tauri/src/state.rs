@@ -22,6 +22,8 @@ pub struct AppState {
     pub proofread_jobs: Arc<JobRegistry>,
     /// "Improve image prompts" (Scenes page).
     pub prompt_jobs: Arc<JobRegistry>,
+    /// Real-world photos / clips search + download (`visual_job`).
+    pub visual_jobs: Arc<JobRegistry>,
     /// Reading "From document" PDFs.
     pub source_jobs: Arc<JobRegistry>,
     /// Local model downloads (one at a time).

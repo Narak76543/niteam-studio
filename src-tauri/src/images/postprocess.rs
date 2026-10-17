@@ -39,6 +39,29 @@ pub fn crop_16x9(w: u32, h: u32) -> (u32, u32, u32, u32) {
     }
 }
 
+/// 16:9 rectangle (x, y, w, h) inside a `w`×`h` image, as large as possible and centred on
+/// `focus` (0..1 of the image) as far as the edges allow.
+pub fn crop_16x9_at(w: u32, h: u32, focus: [f32; 2]) -> (u32, u32, u32, u32) {
+    let (_, _, cw, ch) = crop_16x9(w, h);
+    let place = |size: u32, crop: u32, f: f32| -> u32 {
+        let centre = (f.clamp(0.0, 1.0) * size as f32).round() as i64;
+        (centre - i64::from(crop) / 2).clamp(0, i64::from(size - crop)) as u32
+    };
+    (place(w, cw, focus[0]), place(h, ch, focus[1]), cw, ch)
+}
+
+/// 384×216 JPEG of an image's 16:9 crop around `focus`.
+pub fn thumb_at(raw: &[u8], focus: [f32; 2]) -> Result<Vec<u8>, PostprocessError> {
+    let img = image::load_from_memory(raw).map_err(|e| PostprocessError::Decode(e.to_string()))?;
+    let (x, y, w, h) = crop_16x9_at(img.width(), img.height(), focus);
+    let thumb = DynamicImage::ImageRgb8(img.crop_imm(x, y, w, h).resize_exact(THUMB.0, THUMB.1, FilterType::Triangle).to_rgb8());
+    let mut out = Cursor::new(Vec::new());
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, THUMB_JPEG_QUALITY)
+        .encode_image(&thumb)
+        .map_err(|e| PostprocessError::Encode(e.to_string()))?;
+    Ok(out.into_inner())
+}
+
 pub struct Processed {
     pub pan_png: Vec<u8>,
     pub thumb_jpg: Vec<u8>,
@@ -98,6 +121,16 @@ pub fn dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
 mod tests {
     use super::*;
     use image::{Rgb, RgbImage};
+
+    #[test]
+    fn focus_crop_keeps_the_subject_inside_the_image() {
+        assert_eq!(crop_16x9_at(4000, 3000, [0.5, 0.5]), crop_16x9(4000, 3000));
+        // Tall photo, subject near the top: crop moves up but stays inside.
+        assert_eq!(crop_16x9_at(1600, 2000, [0.5, 0.1]), (0, 0, 1600, 900));
+        assert_eq!(crop_16x9_at(1600, 2000, [0.5, 0.6]), (0, 750, 1600, 900));
+        // Wide panorama, subject on the right.
+        assert_eq!(crop_16x9_at(4000, 900, [0.95, 0.5]), (2400, 0, 1600, 900));
+    }
 
     #[test]
     fn square_crops_to_16x9_keeping_vertical_center() {

@@ -293,11 +293,13 @@ pub async fn scene_image_thumb(
     scene_id: String,
 ) -> CmdResult<Response> {
     let project = state.store.get(&project_id).await.map_err(to_cmd)?;
+    // Real-world scenes show their photo / clip / diagram thumbnail unless they fell back to
+    // an AI image.
     let rel = project
         .scenes
         .iter()
         .find(|s| s.id == scene_id)
-        .and_then(|s| s.image.thumb_path.clone())
+        .and_then(|s| if s.needs_ai_image() { s.image.thumb_path.clone() } else { s.visual.thumb_path.clone() })
         .ok_or_else(|| "This scene has no image yet.".to_owned())?;
     if !super::generate::is_safe_relative(&rel) {
         return Err("Invalid image path.".into());

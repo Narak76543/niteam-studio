@@ -1,4 +1,4 @@
-import { Clapperboard, ImageIcon, ImagePlus, PencilLine, Play, RotateCcw, Sparkles, Square, Volume2, WandSparkles } from "lucide-react";
+import { AlertTriangle, Clapperboard, ImageIcon, ImagePlus, Images, PencilLine, Play, RotateCcw, ScanSearch, Sparkles, Square, Volume2, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AssetStatusBadge, Badge, ProjectStatusBadge } from "../components/Badge";
@@ -15,17 +15,20 @@ import { ProjectVoicePicker } from "../components/ProjectVoicePicker";
 import { RetryStatus } from "../components/RetryStatus";
 import { SceneThumb } from "../components/SceneThumb";
 import { useToast } from "../components/toast";
+import { VisualDialog } from "../components/VisualDialog";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage, onGenerateProgress, onGeminiRetry, onPromptRewriteProgress, onSceneProgress } from "../lib/api";
 import { mimeForPath, onPlayingChange, playAudio, stopAudio } from "../lib/audioPlayer";
+import { isRealWorld } from "../lib/presets";
 import type { Navigate } from "../lib/route";
 import type { GeminiRetry, GenerateProgress, ImageEstimate, Project, RewriteProgress, Scene, SceneProgress } from "../lib/types";
+import { assetId, needsAiImage, visualReady } from "../lib/visuals";
 
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
 /** Image "done" events arrive one per scene; reload the project at most this often. */
 const RELOAD_DELAY_MS = 400;
 
-type Job = "voice" | "image";
+type Job = "voice" | "image" | "visual";
 type JobState = { running: boolean; progress: GenerateProgress | null };
 type Retry = { notice: GeminiRetry; at: number } | null;
 
@@ -49,6 +52,9 @@ function applySceneProgress(p: Project, ev: SceneProgress): Project {
       if (s.id !== ev.scene_id) return s;
       if (ev.asset === "image") {
         return { ...s, image: { ...s.image, status: ev.status, error: ev.error, error_kind: ev.error_kind } };
+      }
+      if (ev.asset === "visual") {
+        return { ...s, visual: { ...s.visual, status: ev.status, error: ev.error, error_kind: ev.error_kind } };
       }
       return {
         ...s,
@@ -91,8 +97,10 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   const toast = useToast();
   const [project, setProject] = useState<Project | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [jobs, setJobs] = useState<Record<Job, JobState>>({ voice: IDLE, image: IDLE });
-  const [retry, setRetry] = useState<Record<Job, Retry>>({ voice: null, image: null });
+  const [jobs, setJobs] = useState<Record<Job, JobState>>({ voice: IDLE, image: IDLE, visual: IDLE });
+  const [retry, setRetry] = useState<Record<Job, Retry>>({ voice: null, image: null, visual: null });
+  /** Scene whose visual is being edited (real-world projects). */
+  const [visualEdit, setVisualEdit] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<ImageEstimate | null>(null);
   const [local, setLocal] = useState<{ secondsPerImage: number | null; onBattery: boolean }>({
     secondsPerImage: null,
@@ -164,6 +172,10 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       .then((running) => setJobs((j) => ({ ...j, image: { ...j.image, running } })))
       .catch(() => undefined);
     api
+      .visualsRunning(projectId)
+      .then((running) => setJobs((j) => ({ ...j, visual: { ...j.visual, running } })))
+      .catch(() => undefined);
+    api
       .imagePromptsRewriteRunning(projectId)
       .then((running) => setRewrite((r) => ({ ...r, running })))
       .catch(() => undefined);
@@ -176,12 +188,12 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
     const subs = [
       onSceneProgress((ev) => {
         if (ev.project_id !== projectId) return;
-        const job: Job = ev.asset === "image" ? "image" : "voice";
+        const job: Job = ev.asset;
         if (job === "image" && ev.status === "done") setImageTimes((ts) => [...ts.slice(-9), Date.now()]);
         setRetry((r) => ({ ...r, [job]: null }));
         setProject((p) => (p ? applySceneProgress(p, ev) : p));
-        // Thumbnail path / hash are not in the event.
-        if (job === "image" && ev.status === "done") reloadSoon();
+        // Thumbnail path / hash / picked file are not in the event.
+        if ((job === "image" || job === "visual") && ev.status !== "running") reloadSoon();
       }),
       onGenerateProgress((ev) => {
         if (ev.project_id !== projectId) return;
@@ -212,8 +224,19 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   }, [projectId, reload, reloadSoon, t, toast]);
 
   const scenes = useMemo(() => project?.scenes ?? [], [project]);
+  const realWorld = project !== null && isRealWorld(project.style.preset);
   const voices = useMemo(() => countAssets(scenes, (s) => s.voice.status), [scenes]);
-  const images = useMemo(() => countAssets(scenes, (s) => s.image.status), [scenes]);
+  // Real-world projects: AI images only for the scenes that need one.
+  const images = useMemo(
+    () => countAssets(realWorld ? scenes.filter(needsAiImage) : scenes, (s) => s.image.status),
+    [scenes, realWorld],
+  );
+  const stockScenes = useMemo(
+    () => scenes.filter((s) => s.visual.kind === "real_photo" || s.visual.kind === "stock_video"),
+    [scenes],
+  );
+  const visualTodo = stockScenes.filter((s) => s.visual.asset === null && s.visual.status !== "failed").length;
+  const toCheck = scenes.filter((s) => s.visual.auto_picked && !needsAiImage(s)).length;
 
   const start = async (job: Job, fn: () => Promise<null>) => {
     try {
@@ -237,6 +260,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   };
 
   const startVoices = () => void start("voice", () => api.generateStart(projectId));
+  const startVisuals = () => void start("visual", () => api.visualsStart(projectId, null));
   const startImages = () => {
     setImageTimes([]);
     void start("image", () => api.imagesStart(projectId));
@@ -282,7 +306,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   const lang = project.language;
   const voice = project.voice;
   const engineLabel = t(`engine.${voice.engine}`);
-  const anyRunning = jobs.voice.running || jobs.image.running || rewrite.running;
+  const anyRunning = jobs.voice.running || jobs.image.running || jobs.visual.running || rewrite.running;
   const paused = project.status === "paused_quota";
   const perImage = project.image_settings.scenes_per_image;
 
@@ -320,6 +344,20 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
     if (progress?.stage === "cancelled") {
       return <Notice tone="warn">{job === "voice" ? t("scenes.cancelled") : t("images.cancelled")}</Notice>;
     }
+    if (job === "visual" && progress?.stage === "paused_quota") {
+      return (
+        <Notice
+          tone="warn"
+          actions={
+            <Button variant="pill" onClick={retryJob}>
+              {t("visual.resume")}
+            </Button>
+          }
+        >
+          {t("visual.paused", { time: progress.resets_at_utc ? new Date(progress.resets_at_utc).toLocaleTimeString() : "–" })}
+        </Notice>
+      );
+    }
     return null;
   };
 
@@ -349,7 +387,9 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   };
 
   const failedTotal = voices.failed + images.failed;
-  const allReady = scenes.length > 0 && voices.todo === 0 && images.todo === 0;
+  const allReady =
+    scenes.length > 0 && voices.todo === 0 && (realWorld ? scenes.every(visualReady) : images.todo === 0);
+  const editing = scenes.find((s) => s.id === visualEdit) ?? null;
 
   return (
     <div className="page">
@@ -362,7 +402,9 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
             <ProjectStatusBadge status={project.status} />
             <span className="t-small">
               {t("scenes.progress", { done: voices.done, total: scenes.length })} ·{" "}
-              {t("images.progress", { done: images.done, total: scenes.length })}
+              {realWorld
+                ? t("visual.progress", { done: scenes.filter(visualReady).length, total: scenes.length })
+                : t("images.progress", { done: images.done, total: scenes.length })}
               {failedTotal > 0 && ` · ${t("scenes.progressFailed", { failed: failedTotal })}`}
             </span>
             {voice.voice_name && voice.engine !== "voxcpm" && (
@@ -391,7 +433,19 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
                 </Button>
               )
             )}
-            {scenes.length > 0 && !rewrite.running && (
+            {realWorld &&
+              (jobs.visual.running ? (
+                <Button icon={<Square {...ICON} />} onClick={() => void api.visualsCancel(projectId)}>
+                  {t("visual.stop")}
+                </Button>
+              ) : (
+                visualTodo > 0 && (
+                  <Button variant="primary" icon={<ScanSearch {...ICON} />} disabled={anyRunning} onClick={startVisuals}>
+                    {t("visual.find")}
+                  </Button>
+                )
+              ))}
+            {scenes.length > 0 && !rewrite.running && !realWorld && (
               <Button
                 icon={<WandSparkles {...ICON} />}
                 disabled={anyRunning || project.status === "rendering"}
@@ -428,6 +482,8 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       <div className="status-strip">
         {jobStrip("voice", t("scenes.voices"), startVoices)}
         {jobStrip("image", t("images.title"), startImages)}
+        {jobStrip("visual", t("visual.jobTitle"), startVisuals)}
+        {realWorld && !anyRunning && toCheck > 0 && <Notice>{t("visual.toCheck", { n: toCheck })}</Notice>}
         {rewriteStrip()}
         {scenes.length > 0 && (
           <ImagesPanel
@@ -467,7 +523,15 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
                   (s.voice.status === "done" || s.voice.status === "failed" || s.voice.status === "stale");
                 const source = scenes[sourceIndex(i, perImage)] ?? s;
                 const shared = source.id !== s.id;
-                const thumbVersion = s.image.thumb_path ? `${s.image.thumb_path}#${s.image.prompt_hash ?? ""}` : null;
+                const ai = !realWorld || needsAiImage(s);
+                const thumbVersion = ai
+                  ? s.image.thumb_path
+                    ? `${s.image.thumb_path}#${s.image.prompt_hash ?? ""}`
+                    : null
+                  : s.visual.thumb_path
+                    ? `${s.visual.thumb_path}#${s.visual.asset ?? ""}#${s.visual.focus?.join(",") ?? ""}#${s.visual.render_hash ?? ""}`
+                    : null;
+                const pick = s.visual.candidates.find((c) => assetId(c) === s.visual.asset);
                 return (
                   <article key={s.id} className="scene-card card">
                     <SceneThumb
@@ -479,13 +543,28 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
                       <span className="thumb__meta t-micro">
                         {String(s.order).padStart(3, "0")} · {formatDuration(s.voice.duration_ms)}
                       </span>
-                      {s.key_scene && (
-                        <span className="thumb__corner">
-                          <Badge>{t("images.keyScene")}</Badge>
+                      {realWorld ? (
+                        <span className="thumb__corner thumb__badges">
+                          <Badge>{t(`visual.kind.${ai ? "ai_image" : s.visual.kind}`)}</Badge>
+                          {!ai && s.visual.auto_picked && <Badge tone="warn">{t("visual.check")}</Badge>}
+                          {!ai && pick?.low_res && <Badge tone="warn">{t("visual.lowRes")}</Badge>}
+                          {!ai && pick && pick.restrictions.length > 0 && (
+                            <span title={t("visual.restricted", { what: pick.restrictions.join(", ") })}>
+                              <Badge tone="warn">
+                                <AlertTriangle size={12} strokeWidth={2} aria-hidden="true" />
+                              </Badge>
+                            </span>
+                          )}
                         </span>
+                      ) : (
+                        s.key_scene && (
+                          <span className="thumb__corner">
+                            <Badge>{t("images.keyScene")}</Badge>
+                          </span>
+                        )
                       )}
                     </SceneThumb>
-                    {(s.voice.status !== "done" || s.image.status !== "done") && (
+                    {(s.voice.status !== "done" || (ai ? s.image.status !== "done" : !visualReady(s))) && (
                       <div className="scene-card__status">
                         <span className="scene-card__asset" title={t("scenes.voice")}>
                           <Volume2 size={12} strokeWidth={1.5} aria-label={t("scenes.voice")} />
@@ -493,9 +572,12 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
                         </span>
                         <span className="scene-card__asset" title={t("images.image")}>
                           <ImageIcon size={12} strokeWidth={1.5} aria-label={t("images.image")} />
-                          <AssetStatusBadge status={s.image.status} />
+                          <AssetStatusBadge status={ai ? s.image.status : s.visual.status} />
                         </span>
                       </div>
+                    )}
+                    {realWorld && s.visual.status === "failed" && s.visual.error && (
+                      <span className="t-micro t-muted">{t("visual.fallback", { why: s.visual.error })}</span>
                     )}
                     <p className="scene-card__text" lang={lang}>
                       {s.narration}
@@ -523,18 +605,30 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
                         disabled={jobs.voice.running}
                         onClick={() => void start("voice", () => api.sceneRegenerate(projectId, s.id, "voice"))}
                       />
-                      <IconButton
-                        label={t("images.regenerate")}
-                        icon={<ImagePlus {...ICON} />}
-                        disabled={jobs.image.running || project.status === "rendering"}
-                        onClick={() => void start("image", () => api.sceneRegenerate(projectId, s.id, "image"))}
-                      />
-                      <IconButton
-                        label={t("images.editPrompt")}
-                        icon={<PencilLine {...ICON} />}
-                        disabled={jobs.image.running || project.status === "rendering"}
-                        onClick={() => setPromptEdit(source)}
-                      />
+                      {realWorld && (
+                        <IconButton
+                          label={t("visual.choose")}
+                          icon={<Images {...ICON} />}
+                          disabled={jobs.visual.running || project.status === "rendering"}
+                          onClick={() => setVisualEdit(s.id)}
+                        />
+                      )}
+                      {ai && (
+                        <>
+                          <IconButton
+                            label={t("images.regenerate")}
+                            icon={<ImagePlus {...ICON} />}
+                            disabled={jobs.image.running || project.status === "rendering"}
+                            onClick={() => void start("image", () => api.sceneRegenerate(projectId, s.id, "image"))}
+                          />
+                          <IconButton
+                            label={t("images.editPrompt")}
+                            icon={<PencilLine {...ICON} />}
+                            disabled={jobs.image.running || project.status === "rendering"}
+                            onClick={() => setPromptEdit(source)}
+                          />
+                        </>
+                      )}
                     </div>
                   </article>
                 );
@@ -551,6 +645,18 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
           confirmLabel={t("prompts.action")}
           onConfirm={() => void startRewrite()}
           onCancel={() => setConfirmRewrite(false)}
+        />
+      )}
+
+      {editing && (
+        <VisualDialog
+          project={project}
+          scene={editing}
+          onClose={() => setVisualEdit(null)}
+          onChanged={(p) => {
+            setProject(p);
+            refreshEstimate();
+          }}
         />
       )}
 

@@ -169,7 +169,8 @@ Free sources only: Pexels (optional), Pixabay, Openverse, Wikimedia Commons (CLA
       switch), Pixabay / Pexels / Openverse / Commons clients, 24 h search cache, licence
       filter, local ranking (resolution, low-res, AI-generated filter), downloads with licence records
 - [x] Step 2: style preset + script schema (visual type, English keywords, Mermaid, code)
-- [ ] Step 3: scene picker (candidates, search again, switch type, restriction badges), Credits + Copy
+- [x] Step 3: scene picker (candidates, search again, switch type, restriction badges), Credits + Copy;
+      "Find photos & clips" job (auto-pick by ranking, marked Check, pause/resume, AI fallback)
 - [ ] Step 4: render — photo zoom/pan with focus and zoom limit, stock video, screenshot
 - [ ] Step 5: diagrams (Mermaid in the WebView, Khmer labels, bold font, timeline colours)
 - [ ] Step 6: code / terminal scenes (Shiki, typed out)
@@ -322,3 +323,9 @@ _Add one line per finished phase: date — phase — notes._
 - 2026-10-17 — **Real-world Tech Explainer, step 2**: `tech_explainer` preset; with it the
   chapter schema asks for visual type, English keywords, Mermaid and code per scene (rules in
   `script::visual_rules`, validated and fed back), mapped to `scene.visual` with fallbacks.
+- 2026-10-17 — **Real-world Tech Explainer, step 3**: `visual_job` (search with the scene's
+  keywords, best full-resolution candidate downloaded and marked Check, AI-image fallback,
+  pause when every source is rate-limited), picker dialog (type switch, search, source filter,
+  licence / size / low-res / restriction badges, subject point with crop + subtitle band,
+  diagram / code text, own screenshot with consent), Scenes page integration, Credits + Copy.
+

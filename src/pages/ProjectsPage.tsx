@@ -9,6 +9,7 @@ import { LocalOfferCard } from "../components/LocalOfferCard";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { PresetIcon } from "../components/PresetIcon";
+import { SceneThumb } from "../components/SceneThumb";
 import { useToast } from "../components/toast";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage } from "../lib/api";
@@ -132,9 +133,20 @@ export function ProjectsPage({ projects, hasKey, navigate, onChanged, searchToke
                         navigate({ name: p.status === "script_draft" ? "script" : "scenes", projectId: p.id })
                       }
                     >
-                      <div className="thumb" aria-hidden="true">
-                        <Film size={24} strokeWidth={1.5} />
-                      </div>
+                      {p.cover_scene ? (
+                        <SceneThumb projectId={p.id} sceneId={p.cover_scene} version={p.cover_version} alt="">
+                          <span className="thumb__badge">
+                            <ProjectStatusBadge status={p.status} />
+                          </span>
+                        </SceneThumb>
+                      ) : (
+                        <div className="thumb">
+                          <Film size={24} strokeWidth={1.5} aria-hidden="true" />
+                          <span className="thumb__badge">
+                            <ProjectStatusBadge status={p.status} />
+                          </span>
+                        </div>
+                      )}
                       <h3 className="t-h3 project-card__title" lang={p.language}>
                         {p.title}
                       </h3>
@@ -147,7 +159,6 @@ export function ProjectsPage({ projects, hasKey, navigate, onChanged, searchToke
                       </p>
                     </button>
                     <div className="project-card__footer">
-                      <ProjectStatusBadge status={p.status} />
                       <span className="t-small">
                         {t("projects.updated", { date: formatDate(p.updated_at, lang) })}
                       </span>

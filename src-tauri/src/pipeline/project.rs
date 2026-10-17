@@ -377,10 +377,14 @@ pub struct ProjectSummary {
     pub status: ProjectStatus,
     pub scene_count: usize,
     pub updated_at: String,
+    /// First scene with a thumbnail (Projects page card), and a key that changes with it.
+    pub cover_scene: Option<String>,
+    pub cover_version: Option<String>,
 }
 
 impl From<&Project> for ProjectSummary {
     fn from(p: &Project) -> Self {
+        let cover = p.scenes.iter().find(|s| s.image.thumb_path.is_some());
         Self {
             id: p.id.clone(),
             title: p.title.clone(),
@@ -391,6 +395,8 @@ impl From<&Project> for ProjectSummary {
             status: p.status,
             scene_count: p.scenes.len(),
             updated_at: p.updated_at.clone(),
+            cover_scene: cover.map(|s| s.id.clone()),
+            cover_version: cover.map(|s| format!("{}#{}", s.image.thumb_path.as_deref().unwrap_or(""), s.image.prompt_hash.as_deref().unwrap_or(""))),
         }
     }
 }

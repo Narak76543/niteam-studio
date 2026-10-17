@@ -1,8 +1,9 @@
-import { Clapperboard, ImageIcon, ImagePlus, PencilLine, Play, RotateCcw, Sparkles, Square, Volume2 } from "lucide-react";
+import { Clapperboard, ImageIcon, ImagePlus, PencilLine, Play, RotateCcw, Sparkles, Square, Volume2, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AssetStatusBadge, Badge, ProjectStatusBadge } from "../components/Badge";
 import { Button, IconButton } from "../components/Button";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorPanel } from "../components/ErrorPanel";
 import { ImagePromptDialog } from "../components/ImagePromptDialog";
@@ -15,10 +16,10 @@ import { RetryStatus } from "../components/RetryStatus";
 import { SceneThumb } from "../components/SceneThumb";
 import { useToast } from "../components/toast";
 import { useI18n } from "../i18n/context";
-import { api, errorMessage, onGenerateProgress, onGeminiRetry, onSceneProgress } from "../lib/api";
+import { api, errorMessage, onGenerateProgress, onGeminiRetry, onPromptRewriteProgress, onSceneProgress } from "../lib/api";
 import { mimeForPath, onPlayingChange, playAudio, stopAudio } from "../lib/audioPlayer";
 import type { Navigate } from "../lib/route";
-import type { GeminiRetry, GenerateProgress, ImageEstimate, Project, Scene, SceneProgress } from "../lib/types";
+import type { GeminiRetry, GenerateProgress, ImageEstimate, Project, RewriteProgress, Scene, SceneProgress } from "../lib/types";
 
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
 /** Image "done" events arrive one per scene; reload the project at most this often. */
@@ -63,6 +64,17 @@ function applySceneProgress(p: Project, ev: SceneProgress): Project {
   };
 }
 
+/** Consecutive scenes of the same chapter, in story order. */
+function groupByChapter(scenes: Scene[]): { chapter: number; items: { scene: Scene; index: number }[] }[] {
+  const groups: { chapter: number; items: { scene: Scene; index: number }[] }[] = [];
+  scenes.forEach((scene, index) => {
+    const last = groups.at(-1);
+    if (last && last.chapter === scene.chapter) last.items.push({ scene, index });
+    else groups.push({ chapter: scene.chapter, items: [{ scene, index }] });
+  });
+  return groups;
+}
+
 function countAssets(scenes: Scene[], pick: (s: Scene) => Scene["voice"]["status"]) {
   let done = 0;
   let failed = 0;
@@ -90,6 +102,11 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   const [imageTimes, setImageTimes] = useState<number[]>([]);
   const [playing, setPlaying] = useState<string | null>(null);
   const [promptEdit, setPromptEdit] = useState<Scene | null>(null);
+  const [rewrite, setRewrite] = useState<{ running: boolean; progress: RewriteProgress | null }>({
+    running: false,
+    progress: null,
+  });
+  const [confirmRewrite, setConfirmRewrite] = useState(false);
   const reloadTimer = useRef<number | null>(null);
 
   const refreshEstimate = useCallback(() => {
@@ -146,6 +163,10 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       .imagesRunning(projectId)
       .then((running) => setJobs((j) => ({ ...j, image: { ...j.image, running } })))
       .catch(() => undefined);
+    api
+      .imagePromptsRewriteRunning(projectId)
+      .then((running) => setRewrite((r) => ({ ...r, running })))
+      .catch(() => undefined);
   }, [projectId]);
 
   useEffect(() => onPlayingChange(setPlaying), []);
@@ -171,6 +192,13 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
           void reload();
         }
       }),
+      onPromptRewriteProgress((ev) => {
+        if (ev.project_id !== projectId) return;
+        setRewrite({ running: ev.stage === "running", progress: ev });
+        // New prompts are saved per batch: show them (and the outdated images) right away.
+        void reload();
+        if (ev.stage === "done") toast.show(t("prompts.done", { n: ev.changed }), "ok");
+      }),
       onGeminiRetry((r) => {
         if (r.project_id !== projectId) return;
         if (r.scope === "voice" || r.scope === "image") {
@@ -181,7 +209,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
     return () => {
       for (const s of subs) void s.then((fn) => fn());
     };
-  }, [projectId, reload, reloadSoon]);
+  }, [projectId, reload, reloadSoon, t, toast]);
 
   const scenes = useMemo(() => project?.scenes ?? [], [project]);
   const voices = useMemo(() => countAssets(scenes, (s) => s.voice.status), [scenes]);
@@ -192,6 +220,17 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       setJob(job, { progress: null });
       await fn();
       setJob(job, { running: true });
+    } catch (e) {
+      toast.show(errorMessage(e), "danger");
+    }
+  };
+
+  const startRewrite = async () => {
+    setConfirmRewrite(false);
+    try {
+      setRewrite({ running: false, progress: null });
+      await api.imagePromptsRewrite(projectId);
+      setRewrite((r) => ({ ...r, running: true }));
     } catch (e) {
       toast.show(errorMessage(e), "danger");
     }
@@ -243,7 +282,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   const lang = project.language;
   const voice = project.voice;
   const engineLabel = t(`engine.${voice.engine}`);
-  const anyRunning = jobs.voice.running || jobs.image.running;
+  const anyRunning = jobs.voice.running || jobs.image.running || rewrite.running;
   const paused = project.status === "paused_quota";
   const perImage = project.image_settings.scenes_per_image;
 
@@ -280,6 +319,31 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
     }
     if (progress?.stage === "cancelled") {
       return <Notice tone="warn">{job === "voice" ? t("scenes.cancelled") : t("images.cancelled")}</Notice>;
+    }
+    return null;
+  };
+
+  const rewriteStrip = () => {
+    const { running, progress } = rewrite;
+    if (running) {
+      const done = progress?.done ?? 0;
+      const total = progress?.total ?? 0;
+      return (
+        <div className="row">
+          <span className="t-small">{t("prompts.progress", { done, total })}</span>
+          <ProgressBar label={t("prompts.action")} value={total > 0 ? done / total : undefined} />
+          <Button
+            variant="pill"
+            icon={<Square size={12} strokeWidth={1.5} />}
+            onClick={() => void api.imagePromptsRewriteCancel(projectId)}
+          >
+            {t("prompts.stop")}
+          </Button>
+        </div>
+      );
+    }
+    if (progress?.stage === "failed") {
+      return <ErrorPanel kind={progress.error_kind} details={progress.error} onRetry={() => void startRewrite()} />;
     }
     return null;
   };
@@ -327,6 +391,15 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
                 </Button>
               )
             )}
+            {scenes.length > 0 && !rewrite.running && (
+              <Button
+                icon={<WandSparkles {...ICON} />}
+                disabled={anyRunning || project.status === "rendering"}
+                onClick={() => setConfirmRewrite(true)}
+              >
+                {t("prompts.action")}
+              </Button>
+            )}
             {jobs.image.running ? (
               <Button icon={<Square {...ICON} />} onClick={() => void api.imagesCancel(projectId)}>
                 {t("images.stop")}
@@ -355,6 +428,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       <div className="status-strip">
         {jobStrip("voice", t("scenes.voices"), startVoices)}
         {jobStrip("image", t("images.title"), startImages)}
+        {rewriteStrip()}
         {scenes.length > 0 && (
           <ImagesPanel
             project={project}
@@ -377,81 +451,107 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       {scenes.length === 0 ? (
         <EmptyState icon={<Volume2 size={18} strokeWidth={1.5} />} title={t("scenes.empty")} body="" />
       ) : (
-        <div className="scene-grid">
-          {scenes.map((s, i) => {
-            const hasVoice =
-              s.voice.path !== null &&
-              (s.voice.status === "done" || s.voice.status === "failed" || s.voice.status === "stale");
-            const source = scenes[sourceIndex(i, perImage)] ?? s;
-            const shared = source.id !== s.id;
-            const thumbVersion = s.image.thumb_path ? `${s.image.thumb_path}#${s.image.prompt_hash ?? ""}` : null;
-            return (
-              <article key={s.id} className="scene-card card">
-                <SceneThumb
-                  projectId={projectId}
-                  sceneId={s.id}
-                  version={thumbVersion}
-                  alt={t("images.thumbAlt", { n: s.order })}
-                />
-                <div className="scene-card__meta">
-                  <span className="t-micro t-muted">
-                    {String(s.order).padStart(3, "0")} · {formatDuration(s.voice.duration_ms)}
-                  </span>
-                  {s.key_scene && <Badge>{t("images.keyScene")}</Badge>}
-                </div>
-                <div className="scene-card__status">
-                  <span className="scene-card__asset" title={t("scenes.voice")}>
-                    <Volume2 size={12} strokeWidth={1.5} aria-label={t("scenes.voice")} />
-                    <AssetStatusBadge status={s.voice.status} />
-                  </span>
-                  <span className="scene-card__asset" title={t("images.image")}>
-                    <ImageIcon size={12} strokeWidth={1.5} aria-label={t("images.image")} />
-                    <AssetStatusBadge status={s.image.status} />
-                  </span>
-                </div>
-                <p className="scene-card__text" lang={lang}>
-                  {s.narration}
-                </p>
-                {shared && <span className="t-micro t-muted">{t("images.sharedWith", { n: source.order })}</span>}
-                {s.voice.status === "failed" && s.voice.error && (
-                  <ErrorPanel kind={s.voice.error_kind} details={s.voice.error} />
-                )}
-                {s.image.status === "failed" && s.image.error && !shared && (
-                  <>
-                    <ErrorPanel kind={s.image.error_kind} details={s.image.error} />
-                    {s.image.error_kind === "blocked" && <span className="t-small">{t("images.blockedHint")}</span>}
-                  </>
-                )}
-                <div className="scene-card__actions">
-                  <IconButton
-                    label={playing === s.id ? t("scenes.stopAudio") : hasVoice ? t("scenes.play") : t("scenes.noVoice")}
-                    icon={playing === s.id ? <Square {...ICON} /> : <Play {...ICON} />}
-                    disabled={!hasVoice}
-                    onClick={() => void play(s)}
-                  />
-                  <IconButton
-                    label={t("scenes.regenerateVoice")}
-                    icon={<RotateCcw {...ICON} />}
-                    disabled={jobs.voice.running}
-                    onClick={() => void start("voice", () => api.sceneRegenerate(projectId, s.id, "voice"))}
-                  />
-                  <IconButton
-                    label={t("images.regenerate")}
-                    icon={<ImagePlus {...ICON} />}
-                    disabled={jobs.image.running || project.status === "rendering"}
-                    onClick={() => void start("image", () => api.sceneRegenerate(projectId, s.id, "image"))}
-                  />
-                  <IconButton
-                    label={t("images.editPrompt")}
-                    icon={<PencilLine {...ICON} />}
-                    disabled={jobs.image.running || project.status === "rendering"}
-                    onClick={() => setPromptEdit(source)}
-                  />
-                </div>
-              </article>
-            );
-          })}
-        </div>
+        groupByChapter(scenes).map((group) => (
+          <section key={`${group.chapter}-${group.items[0]?.scene.id ?? ""}`} className="scene-chapter">
+            <h2 className="scene-chapter__title">
+              <span className="t-micro t-muted">{t("script.chapter", { n: group.chapter + 1 })}</span>
+              <span className="t-h3" lang={lang}>
+                {project.outline?.chapters[group.chapter]?.title ?? ""}
+              </span>
+              <span className="t-small">{t("scenes.chapterCount", { n: group.items.length })}</span>
+            </h2>
+            <div className="scene-grid">
+              {group.items.map(({ scene: s, index: i }) => {
+                const hasVoice =
+                  s.voice.path !== null &&
+                  (s.voice.status === "done" || s.voice.status === "failed" || s.voice.status === "stale");
+                const source = scenes[sourceIndex(i, perImage)] ?? s;
+                const shared = source.id !== s.id;
+                const thumbVersion = s.image.thumb_path ? `${s.image.thumb_path}#${s.image.prompt_hash ?? ""}` : null;
+                return (
+                  <article key={s.id} className="scene-card card">
+                    <SceneThumb
+                      projectId={projectId}
+                      sceneId={s.id}
+                      version={thumbVersion}
+                      alt={t("images.thumbAlt", { n: s.order })}
+                    >
+                      <span className="thumb__meta t-micro">
+                        {String(s.order).padStart(3, "0")} · {formatDuration(s.voice.duration_ms)}
+                      </span>
+                      {s.key_scene && (
+                        <span className="thumb__corner">
+                          <Badge>{t("images.keyScene")}</Badge>
+                        </span>
+                      )}
+                    </SceneThumb>
+                    {(s.voice.status !== "done" || s.image.status !== "done") && (
+                      <div className="scene-card__status">
+                        <span className="scene-card__asset" title={t("scenes.voice")}>
+                          <Volume2 size={12} strokeWidth={1.5} aria-label={t("scenes.voice")} />
+                          <AssetStatusBadge status={s.voice.status} />
+                        </span>
+                        <span className="scene-card__asset" title={t("images.image")}>
+                          <ImageIcon size={12} strokeWidth={1.5} aria-label={t("images.image")} />
+                          <AssetStatusBadge status={s.image.status} />
+                        </span>
+                      </div>
+                    )}
+                    <p className="scene-card__text" lang={lang}>
+                      {s.narration}
+                    </p>
+                    {shared && <span className="t-micro t-muted">{t("images.sharedWith", { n: source.order })}</span>}
+                    {s.voice.status === "failed" && s.voice.error && (
+                      <ErrorPanel kind={s.voice.error_kind} details={s.voice.error} />
+                    )}
+                    {s.image.status === "failed" && s.image.error && !shared && (
+                      <>
+                        <ErrorPanel kind={s.image.error_kind} details={s.image.error} />
+                        {s.image.error_kind === "blocked" && <span className="t-small">{t("images.blockedHint")}</span>}
+                      </>
+                    )}
+                    <div className="scene-card__actions">
+                      <IconButton
+                        label={playing === s.id ? t("scenes.stopAudio") : hasVoice ? t("scenes.play") : t("scenes.noVoice")}
+                        icon={playing === s.id ? <Square {...ICON} /> : <Play {...ICON} />}
+                        disabled={!hasVoice}
+                        onClick={() => void play(s)}
+                      />
+                      <IconButton
+                        label={t("scenes.regenerateVoice")}
+                        icon={<RotateCcw {...ICON} />}
+                        disabled={jobs.voice.running}
+                        onClick={() => void start("voice", () => api.sceneRegenerate(projectId, s.id, "voice"))}
+                      />
+                      <IconButton
+                        label={t("images.regenerate")}
+                        icon={<ImagePlus {...ICON} />}
+                        disabled={jobs.image.running || project.status === "rendering"}
+                        onClick={() => void start("image", () => api.sceneRegenerate(projectId, s.id, "image"))}
+                      />
+                      <IconButton
+                        label={t("images.editPrompt")}
+                        icon={<PencilLine {...ICON} />}
+                        disabled={jobs.image.running || project.status === "rendering"}
+                        onClick={() => setPromptEdit(source)}
+                      />
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ))
+      )}
+
+      {confirmRewrite && (
+        <ConfirmDialog
+          title={t("prompts.confirmTitle")}
+          body={t("prompts.confirmBody", { n: scenes.length })}
+          confirmLabel={t("prompts.action")}
+          onConfirm={() => void startRewrite()}
+          onCancel={() => setConfirmRewrite(false)}
+        />
       )}
 
       {promptEdit && (

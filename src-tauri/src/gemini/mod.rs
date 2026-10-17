@@ -3,6 +3,7 @@
 
 pub mod client;
 pub mod image;
+pub mod image_prompts;
 pub mod interactions;
 pub mod models;
 pub mod proofread;

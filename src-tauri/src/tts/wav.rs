@@ -105,6 +105,26 @@ pub fn trim(p: &Pcm, margin_ms: u64) -> Pcm {
     Pcm { rate: p.rate, samples: p.samples[s.saturating_sub(m)..(e + m).min(p.samples.len())].to_vec() }
 }
 
+/// At most `max_ms` long, cut at the quietest 10 ms frame of the last `search_ms` before the
+/// limit (a pause between words), then silence-trimmed with `margin_ms`.
+pub fn shorten_at_pause(p: &Pcm, max_ms: u64, search_ms: u64, margin_ms: u64) -> Pcm {
+    if ms(p) <= max_ms {
+        return p.clone();
+    }
+    let frame = (p.rate as usize / 100).max(1);
+    let limit = (u64::from(p.rate) * max_ms / 1000) as usize / frame;
+    let from = limit.saturating_sub((search_ms / 10) as usize);
+    // Latest frame wins ties, so as much speech as possible is kept.
+    let cut = (from..limit)
+        .map(|i| (i, frame_dbfs(&p.samples[i * frame..(i + 1) * frame])))
+        .fold(None::<(usize, f64)>, |best, (i, db)| match best {
+            Some((_, b)) if b < db => best,
+            _ => Some((i, db)),
+        })
+        .map_or(limit, |(i, _)| i);
+    trim(&Pcm { rate: p.rate, samples: p.samples[..cut * frame].to_vec() }, margin_ms)
+}
+
 /// Scales to `target_dbfs` RMS (over speech), never letting the peak exceed `peak_dbfs`.
 pub fn normalize(p: &mut Pcm, target_dbfs: f64, peak_dbfs: f64) {
     let Some((s, e)) = speech_bounds(p) else { return };
@@ -154,6 +174,23 @@ pub mod tests {
         let t = trim(&p, 50);
         assert!((ms(&t) as i64 - 1100).abs() <= 20, "{}", ms(&t));
         assert!(trim(&Pcm { rate: 48_000, samples: silence(48_000, 300) }, 50).samples.is_empty());
+    }
+
+    #[test]
+    fn shortens_long_clips_at_a_pause() {
+        // 3 "words" of 5 s with 300 ms pauses: 0–5 s, 5.3–10.3 s, 10.6–15.6 s.
+        let word = tone(16_000, 0, 5000, 0.3).samples;
+        let mut samples = Vec::new();
+        for _ in 0..3 {
+            samples.extend(&word);
+            samples.extend(silence(16_000, 300));
+        }
+        let p = Pcm { rate: 16_000, samples };
+        let short = shorten_at_pause(&p, 12_000, 3000, 100);
+        assert!((10_300..=10_450).contains(&ms(&short)), "cut in the 2nd pause: {}", ms(&short));
+        let no_pause = shorten_at_pause(&tone(16_000, 0, 20_000, 0.3), 12_000, 3000, 100);
+        assert!(ms(&no_pause) <= 12_000);
+        assert_eq!(shorten_at_pause(&tone(16_000, 0, 5000, 0.3), 12_000, 3000, 100).samples.len(), 80_000);
     }
 
     #[test]

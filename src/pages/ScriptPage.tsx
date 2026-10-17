@@ -22,6 +22,7 @@ import { ErrorPanel } from "../components/ErrorPanel";
 import { KeepTermsEditor } from "../components/KeepTermsEditor";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
+import { SceneThumb } from "../components/SceneThumb";
 import { ProgressBar } from "../components/ProgressBar";
 import { RetryStatus } from "../components/RetryStatus";
 import { SuggestionCard } from "../components/SuggestionCard";
@@ -699,13 +700,23 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
 
               <label className="field">
                 <span className="field__label">{t("script.imagePrompt")}</span>
-                <textarea
-                  className="textarea"
-                  lang="en"
-                  value={draft.image_prompt}
-                  readOnly={!editable}
-                  onChange={(e) => updateDraft({ image_prompt: e.target.value })}
-                />
+                <div className={selected.image.thumb_path ? "prompt-with-image" : undefined}>
+                  <textarea
+                    className="textarea"
+                    lang="en"
+                    value={draft.image_prompt}
+                    readOnly={!editable}
+                    onChange={(e) => updateDraft({ image_prompt: e.target.value })}
+                  />
+                  {selected.image.thumb_path && (
+                    <SceneThumb
+                      projectId={projectId}
+                      sceneId={selected.id}
+                      version={`${selected.image.thumb_path}#${selected.image.prompt_hash ?? ""}`}
+                      alt={t("images.thumbAlt", { n: selected.order })}
+                    />
+                  )}
+                </div>
                 <span className="t-small">{t("script.imagePromptHint")}</span>
               </label>
 

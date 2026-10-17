@@ -35,9 +35,19 @@ const SEED: u64 = 1_016;
 const DESIGN_SAMPLES: usize = 3;
 const DESIGN_DIR: &str = "_design";
 const IMPORT_DIR: &str = "_import";
-/// Reference clip limits (after trimming silence).
+/// Reference clip limits (after trimming silence). The audio.cpp v0.9.0 VoxCPM2 encoder
+/// rejects clips longer than ~14.7 s ("AudioVAE encoder sample capacity exceeded", measured
+/// 2026-10-16, same at 16 and 48 kHz).
 const MIN_REF_MS: u64 = 4_500;
-const MAX_REF_MS: u64 = 30_500;
+const MAX_REF_MS: u64 = 14_000;
+/// Longer clips without a transcript are cut at the quietest moment of this last stretch.
+const CUT_SEARCH_MS: u64 = 3_000;
+const REF_MARGIN_MS: u64 = 150;
+/// Imported recordings are cleaned before they become a reference: the model copies the
+/// clip's noise into every scene. Headroom (no clipping after the filter), rumble below 80 Hz
+/// (wind, fans, phone handling), then gentle FFT noise reduction that tracks the noise.
+/// Chosen by the owner by ear on 2026-10-16 (Vanda test).
+const IMPORT_CLEANUP: &str = "volume=0.7,highpass=f=80,afftdn=nr=12:nf=-35:tn=1";
 
 /// Spoken by every design candidate; becomes the profile's reference transcript.
 const DESIGN_KM: &str = "សួស្តី! ថ្ងៃនេះ ខ្ញុំនឹងនិទានរឿងដ៏គួរឱ្យចាប់អារម្មណ៍មួយ អំពីប្រវត្តិសាស្ត្រ និងវិទ្យាសាស្ត្រ ជូនអ្នកទាំងអស់គ្នា។";
@@ -176,6 +186,32 @@ fn resolved(dir: &Path, p: &VoiceProfile) -> ResolvedVoice {
     }
 }
 
+/// Profiles imported while 30 s clips were allowed may be too long for the engine: a clip
+/// without a transcript is cut in place (its fingerprint changes, so its scenes are made
+/// again); one with a transcript cannot be cut and must be imported again.
+fn fit_reference(store: &ProfileStore, dir: &Path, p: &mut VoiceProfile) -> CmdResult<()> {
+    let path = dir.join(&p.reference_wav);
+    let pcm = wav::parse(&std::fs::read(&path).map_err(|e| e.to_string())?)?;
+    let ms = wav::ms(&pcm);
+    if ms <= MAX_REF_MS {
+        return Ok(());
+    }
+    if !p.reference_transcript.trim().is_empty() {
+        return Err(format!(
+            "The voice \"{}\" uses a {:.1} s recording; the local voice engine takes at most 14 seconds. Import a shorter recording in Settings → Voices.",
+            p.name,
+            ms as f64 / 1000.0
+        ));
+    }
+    let short = wav::shorten_at_pause(&pcm, MAX_REF_MS, CUT_SEARCH_MS, REF_MARGIN_MS);
+    std::fs::write(&path, wav::to_wav(&short)).map_err(|e| e.to_string())?;
+    if let Some(prev) = p.preview_wav.take() {
+        let _ = std::fs::remove_file(dir.join(prev));
+        store.save(p).map_err(err)?;
+    }
+    Ok(())
+}
+
 pub fn profile_exists(state: &AppState, id: &str) -> bool {
     store(state).get(id).is_ok()
 }
@@ -187,8 +223,9 @@ pub async fn vox_engine(state: &AppState, profile_id: &str, language: Language) 
         return Err("Choose a voice in Settings → Voices first.".into());
     }
     let store = store(state);
-    let p = store.get(profile_id).map_err(err)?;
+    let mut p = store.get(profile_id).map_err(err)?;
     let dir = store.dir(&p.id).map_err(err)?;
+    fit_reference(&store, &dir, &mut p)?;
     let speaker: Arc<dyn Speaker> = speaker(state).await?;
     let engine = VoxCpmTts::new(speaker, resolved(&dir, &p), language, SEED);
     let settings = VoiceSettings {
@@ -295,7 +332,7 @@ fn is_audio_file(p: &Path) -> bool {
         .is_some_and(|e| ["wav", "mp3", "m4a", "flac", "ogg", "opus"].contains(&e.to_ascii_lowercase().as_str()))
 }
 
-/// "From my recording": converts a 5–30 s clip to 16 kHz mono WAV and trims its silence.
+/// "From my recording": converts a 5–14 s clip (longer ones without a transcript are cut) to 16 kHz mono WAV and trims its silence.
 /// Only the user's own voice or one they may use (`consent` must be confirmed in the UI).
 #[tauri::command]
 pub async fn voice_profile_import(
@@ -317,7 +354,7 @@ pub async fn voice_profile_import(
     let work = state.paths.voices_dir().join(IMPORT_DIR);
     std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
     let out = work.join("clip.wav");
-    let args: Vec<String> = ["-y", "-i", &path, "-t", "60", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"]
+    let args: Vec<String> = ["-y", "-i", &path, "-t", "60", "-vn", "-af", IMPORT_CLEANUP, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"]
         .iter()
         .map(|s| (*s).to_owned())
         .chain([out.display().to_string()])
@@ -326,12 +363,20 @@ pub async fn voice_profile_import(
     let bytes = std::fs::read(&out);
     let _ = std::fs::remove_dir_all(&work);
     converted.map_err(|e| format!("Could not read the recording: {e}"))?;
-    let pcm = wav::trim(&wav::parse(&bytes.map_err(|e| e.to_string())?)?, 150);
+    let pcm = wav::trim(&wav::parse(&bytes.map_err(|e| e.to_string())?)?, REF_MARGIN_MS);
     let ms = wav::ms(&pcm);
-    if !(MIN_REF_MS..=MAX_REF_MS).contains(&ms) {
-        return Err(format!("The recording has {:.1} s of speech; use a clip with 5–30 seconds of clear speech.", ms as f64 / 1000.0));
+    let secs = ms as f64 / 1000.0;
+    if ms < MIN_REF_MS {
+        return Err(format!("The recording has {secs:.1} s of speech; use a clip with 5–14 seconds of clear speech."));
     }
     let transcript = transcript.trim().to_owned();
+    // A transcript must match the clip word for word, so a long clip cannot be cut.
+    if ms > MAX_REF_MS && !transcript.is_empty() {
+        return Err(format!(
+            "The recording has {secs:.1} s of speech; with a transcript it must be 5–14 seconds. Shorten it, or leave the transcript empty (then the first 14 seconds are used)."
+        ));
+    }
+    let pcm = wav::shorten_at_pause(&pcm, MAX_REF_MS, CUT_SEARCH_MS, REF_MARGIN_MS);
     let mode = if transcript.is_empty() { ProfileMode::Clone } else { ProfileMode::Ultimate };
     let mut p = new_profile(name, language, mode);
     p.reference_transcript = transcript;
@@ -388,6 +433,7 @@ pub async fn voice_profile_preview(state: State<'_, AppState>, id: String) -> Cm
     {
         return Ok(Response::new(bytes));
     }
+    fit_reference(&store, &dir, &mut p)?;
     let text = match p.language {
         Language::Km => PREVIEW_KM,
         Language::En => PREVIEW_EN,

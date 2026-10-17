@@ -104,18 +104,20 @@ correctly shaped, no word split across lines, in sync with voice.
 - [ ] Installer via `npm run tauri build`; first-run onboarding
 - [ ] Pipeline log viewer in Settings (no secrets)
 
-## Phase 6 — Local GPU images  (paused for this version by the owner: engine + UI built, no model shipped)
+## Phase 6 — Local GPU images  (resumed 2026-10-16 with Z-Image Turbo; built, awaiting the owner's test)
 
-Spec: `docs/08-local-gpu.md`. The model list in `local_models.json` (URLs, sizes, sha256,
-licenses that allow commercial use) needs the owner's approval before it is filled in.
+Spec: `docs/08-local-gpu.md`. Owner-approved profiles: `zimage_turbo` (6 GB+) and
+`zimage_turbo_small` (4–5 GB), 08 §13.
 
-- [ ] GPU/VRAM detection + settings cache
-- [ ] Bundle stable-diffusion.cpp Vulkan sidecar, pinned version; choose persistent mode (§3)
-- [ ] `local_models.json` + Local models settings page (download, verify, delete)
-- [ ] `LocalSdCpp` provider + OOM fallback
-- [ ] `sd15` prompt adapter + short bible entries
-- [ ] Cool-down, battery warning, speed/ETA, benchmark
-- [ ] Provider auto-selection + one-time install card
+- [x] GPU/VRAM detection + settings cache
+- [x] Bundle stable-diffusion.cpp Vulkan sidecar, pinned version; choose persistent mode (§3)
+- [x] `local_models.json` + Local models settings page (download, verify, delete)
+- [x] `LocalSdCpp` provider + OOM fallback
+- [x] Full prompt for local profiles (SD 1.5 adapter dropped; `llm` file role, optional sampler,
+      `max_vram_mb`)
+- [x] Cool-down, battery warning, speed/ETA, benchmark
+- [x] Provider auto-selection + one-time install card
+- [ ] Owner test
 
 **Test:** on a 4 GB GPU laptop, 1-minute Khmer project with local images: all images
 generated without quota, consistent style, no crash, temperatures acceptable.
@@ -228,3 +230,27 @@ _Add one line per finished phase: date — phase — notes._
   5.0 GB on the RTX 4050). Voice Profiles (description → 3 samples, or own recording with
   consent) are cloned with a fixed seed so the voice stays the same; per-sentence timings feed
   the word tracker. Real-GPU test: 2 Khmer sentences, 15.3 s of audio in 27.5 s incl. load.
+- 2026-10-16 — Phase 6 resumed — **Z-Image Turbo** ships as the local image model
+  (`zimage_turbo` Q4_K for 6 GB+, `zimage_turbo_small` Q3_K for 4–5 GB; Qwen3-4B text encoder via
+  the new `llm` role; 1024×576, 8 steps). RTX 4050 Laptop: ~28 s/image, peak VRAM 4.4 GB, RAM
+  stays free. **FLUX.1 schnell was tested and rejected**: the 6.5 GB model does not fit in free
+  VRAM and is streamed every step (45–210 s/image, RAM full) — details in 08 §13. Removed the
+  SD 1.5 prompt adapter, preset short styles and 18 unused i18n keys. Fix: Settings sections now
+  save only the fields they changed (`settings_save` takes a patch merged on the backend), so a
+  section holding an older copy no longer undoes a finished download or another section.
+- 2026-10-16 — Fix: cloned voices with long recordings failed every scene ("VoxCPM2 AudioVAE
+  encoder sample capacity exceeded"). The audio.cpp encoder takes at most ~14.7 s of reference
+  audio, but imports allowed 30 s. Limit is now 14 s: longer clips without a transcript are cut
+  at a pause (on import, and in place for existing profiles on next use); with a transcript
+  they are refused with a clear message.
+- 2026-10-16 — Imported voice recordings are cleaned with FFmpeg (rumble cut below 80 Hz,
+  gentle noise reduction, headroom against clipping) before they become the reference clip,
+  because VoxCPM2 copies background noise into every scene. Chosen by ear on the Vanda clip.
+- 2026-10-16 — Images on topic (owner request): scene `image_prompt` rules rewritten so each
+  image explains its narration (exact object/event, 2–4 topic details, varied settings, visual
+  devices for abstract ideas; no style/lighting words); Stickman preset draws full scenes
+  instead of "lots of white space" (checked with Z-Image: clearly richer, on-topic frames).
+  New **Improve image prompts** action rewrites the prompts of existing projects (narration
+  unchanged). UI: Projects cards show the cover image, Scenes grouped by chapter with compact
+  cards, Script page shows the image beside its prompt, Settings section list, editor gets the
+  full width (icon sidebar) and thumbnails on every timeline clip, long titles wrap.

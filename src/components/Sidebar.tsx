@@ -14,6 +14,8 @@ interface Props {
   recent: ProjectSummary[];
   onSearch: () => void;
   onToggleLanguage: () => void;
+  /** Icons only (the video editor needs the width). */
+  compact?: boolean;
 }
 
 function NavItem({
@@ -50,11 +52,11 @@ function NavItem({
 
 const ICON = { size: 18, strokeWidth: 1.5 } as const;
 
-export function Sidebar({ route, navigate, recent, onSearch, onToggleLanguage }: Props) {
+export function Sidebar({ route, navigate, recent, onSearch, onToggleLanguage, compact }: Props) {
   const { t, lang } = useI18n();
   const otherLang: Language = lang === "km" ? "en" : "km";
   return (
-    <aside className="sidebar">
+    <aside className={compact ? "sidebar sidebar--compact" : "sidebar"}>
       <div className="sidebar__brand">
         <IconTile>
           <BookOpenText size={18} strokeWidth={1.5} />

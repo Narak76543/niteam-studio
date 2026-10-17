@@ -81,6 +81,17 @@ Validate the JSON with serde; on parse failure retry once with the error appende
   `proofread_accept / proofread_dismiss(project_id, scene_ids)`. Script generation and the check
   never run at the same time for a project.
 
+## Step 1c — Improve image prompts (Scenes page, optional)
+
+`pipeline/prompt_rewrite.rs` + `gemini/image_prompts.rs`: rewrites the `image_prompt` of every
+scene (batches of 12, with the Visual Bible, the scene's characters/place and the previous
+batch's last prompt for variety) using the same rules as the script (`image_prompt_rules`,
+07 §2). Narration and voices are untouched. Saved per batch; a scene whose narration changed
+meanwhile keeps its prompt. Changed prompts make their images outdated, so the next image job
+makes them again. Not while rendering; image generation and the rewrite never run at the same
+time. Event `prompt-rewrite-progress {project_id, stage, done, total, changed, error,
+error_kind}`; commands `image_prompts_rewrite / _cancel / _running`.
+
 ## Step 2 — User review & approve
 
 UI only. On every edit, recompute `text_hash` (of `spoken_text` + voice settings) and

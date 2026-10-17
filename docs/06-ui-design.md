@@ -183,7 +183,18 @@ dotted `--border-strong` for comparison, ring markers. Keep to at most one chart
 | Script | Two-column: scene list (left) + editor (right); narration vs spoken text tabs | Approve script |
 | Scenes | Scene card grid + right panel for the selected scene | Generate all / Continue |
 | Render (editor) | CapCut-style, light like the rest of the app (only the video frame is black): top bar with **Export**; centre live preview (canvas: image pan + voice + subtitles with word tracker, play/pause, prev/next scene, Space / ← →); right panel (subtitle font, word tracker on/off + colour swatches, current scene); bottom timeline (ruler, video thumbnails, subtitle cues, voice blocks, draggable playhead, zoom). Export dialog: settings → progress with % and ETA → Open video / Show in folder | Export |
-| Settings | Grouped form rows, API key field masked with Test/Clear pills | — |
+| Settings | Section list on the left (sticky, highlights the current section; a chip row below 1200 px) + grouped form rows, API key field masked with Test/Clear pills | — |
+
+### Updates 2026-10-16
+
+- **Projects cards** show the project's first scene image with the status badge over it.
+- **Scenes page** groups cards under chapter headers (chapter number, title, scene count);
+  scene number · length sit on the image, *Key* in its corner; voice/image badges only appear
+  while something is not done. Header action **Improve image prompts** (03 Step 1c).
+- **Script page**: the scene's current image sits next to its image prompt.
+- **Video editor**: the app sidebar is icons-only so the preview and timeline get the width;
+  timeline clips show a thumbnail down to 12 px wide.
+- Long page titles wrap to two lines instead of being cut off.
 
 ## 8. Accessibility
 

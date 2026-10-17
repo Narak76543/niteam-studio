@@ -17,6 +17,7 @@ import type {
   VoicesStatus,
   ImageCatalog,
   ProofProgress,
+  RewriteProgress,
   RenderProgress,
   TimelineScene,
   SubsTask,
@@ -72,6 +73,10 @@ export const api = {
   scriptApprove: (projectId: string) => invoke<Project>("script_approve", { projectId }),
   scriptReopen: (projectId: string) => invoke<Project>("script_reopen", { projectId }),
 
+  // "Improve image prompts" (Scenes page)
+  imagePromptsRewrite: (projectId: string) => invoke<null>("image_prompts_rewrite", { projectId }),
+  imagePromptsRewriteCancel: (projectId: string) => invoke<null>("image_prompts_rewrite_cancel", { projectId }),
+  imagePromptsRewriteRunning: (projectId: string) => invoke<boolean>("image_prompts_rewrite_running", { projectId }),
   // proofreading + names (Script page)
   proofreadStart: (projectId: string) => invoke<null>("proofread_start", { projectId }),
   proofreadCancel: (projectId: string) => invoke<null>("proofread_cancel", { projectId }),
@@ -144,13 +149,13 @@ export const api = {
   localInstallCancel: () => invoke<null>("local_install_cancel"),
   localVerify: (profileId: string) => invoke<boolean>("local_verify", { profileId }),
   localDelete: (profileId: string) => invoke<Settings>("local_delete", { profileId }),
+  localSelect: (profileId: string) => invoke<Settings>("local_select", { profileId }),
   localOfferDismiss: () => invoke<Settings>("local_offer_dismiss"),
   localBenchmark: () => invoke<{ seconds_per_image: number; load_seconds: number }>("local_benchmark"),
 
   // local voices (docs/09-voice-profiles.md)
   voicesStatus: () => invoke<VoicesStatus>("voices_status"),
   voicesModelInstall: () => invoke<null>("voices_model_install"),
-  localSelect: (profileId: string) => invoke<Settings>("local_select", { profileId }),
   voicesModelVerify: () => invoke<boolean>("voices_model_verify"),
   voicesModelDelete: () => invoke<null>("voices_model_delete"),
   /** Makes candidate samples for a described voice; returns how many. */
@@ -197,6 +202,10 @@ export function onSceneProgress(cb: (p: SceneProgress) => void): Promise<Unliste
 
 export function onGenerateProgress(cb: (p: GenerateProgress) => void): Promise<UnlistenFn> {
   return listen<GenerateProgress>("generate-progress", (e) => cb(e.payload));
+}
+
+export function onPromptRewriteProgress(cb: (p: RewriteProgress) => void): Promise<UnlistenFn> {
+  return listen<RewriteProgress>("prompt-rewrite-progress", (e) => cb(e.payload));
 }
 
 export function onProofreadProgress(cb: (p: ProofProgress) => void): Promise<UnlistenFn> {

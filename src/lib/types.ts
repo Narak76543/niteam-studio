@@ -454,6 +454,17 @@ export interface ProofProgress {
   error_kind: string | null;
 }
 
+/** Payload of `prompt-rewrite-progress` ("Improve image prompts", Scenes page). */
+export interface RewriteProgress {
+  project_id: string;
+  stage: "running" | "done" | "failed" | "cancelled";
+  done: number;
+  total: number;
+  changed: number;
+  error: string | null;
+  error_kind: string | null;
+}
+
 export interface RenderSettings {
   resolution: string;
   music: string | null;
@@ -519,6 +530,9 @@ export interface ProjectSummary {
   status: ProjectStatus;
   scene_count: number;
   updated_at: string;
+  /** First scene with a thumbnail, and a key that changes with it. */
+  cover_scene: string | null;
+  cover_version: string | null;
 }
 
 export interface NewProjectInput {

@@ -8,6 +8,9 @@ import { cueText, type SubtitleState } from "../../lib/subtitleStates";
 import type { Language, Scene, TimelineScene } from "../../lib/types";
 import { followScroll, formatTime, sceneIndexAt } from "../../lib/timeline";
 
+/** Clips narrower than this show no thumbnail (at the smallest zoom most clips are 28–36 px). */
+const MIN_THUMB_PX = 12;
+
 const MIN_PPS = 4;
 const MAX_PPS = 200;
 const LABEL_W = 44;
@@ -156,7 +159,7 @@ export function Timeline({ projectId, lang, scenes, projectScenes, states, timeM
                   style={{ left: x(s.start_ms), width: Math.max(2, x(s.clip_ms) - 2) }}
                   title={`${t("script.scene", { n: s.order })} · ${(s.clip_ms / 1000).toFixed(1)} s`}
                 >
-                  {x(s.clip_ms) > 36 && (
+                  {x(s.clip_ms) > MIN_THUMB_PX && (
                     <SceneThumb
                       projectId={projectId}
                       sceneId={s.scene_id}

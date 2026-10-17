@@ -80,8 +80,11 @@ Settings: `image.provider`, `image.gemini_model`, `image.steps` (4–8, default 
 `pipeline/presets.rs`: **`stickman` (default since 2026-10-15, owner's choice)**,
 `storybook_watercolor`, `cinematic_realistic`, `flat_2d`. Stickman prompt: "simple hand-drawn
 stick figure doodle, bold clean black marker lines, flat pure white background filling the
-whole frame, stick figures with round heads and simple dot eyes, minimal flat colour accents,
-whiteboard explainer style, lots of white space". (Do not say "on white paper": Flux then draws a
+whole frame, stick figures with round heads and simple dot eyes, complete scene drawn in the same
+doodle lines with a background setting and several topic props, flat colour accents, whiteboard
+explainer style" (2026-10-16: "lots of white space" / "minimal" removed — frames looked empty;
+owner asked for fuller, on-topic scenes). Existing projects keep their stored style text until
+the style is picked again in Look & feel. (Do not say "on white paper": Flux then draws a
 photo of a sheet of paper on a wall.) Checked with Flux Schnell on 2026-10-15: clean doodles,
 props (cap, scarf, hat) stay recognisable. Look & feel → **Style** switches an existing project
 (`project_set_style`: new preset + Visual Bible rewritten for it; images become outdated).
@@ -117,6 +120,12 @@ Rules for the script model:
 - Every recurring person/place gets **one** bible entry; scenes refer to it by key.
 - Vary `shot` so no more than 2 consecutive scenes share the same shot type.
 - Mark scene 1, each chapter's first scene and the last scene as `key_scene: true`.
+- **`image_prompt` explains the narration** (`script::image_prompt_rules`, 2026-10-16): 40–80
+  words; the exact object/event/number the scene talks about; main subject + key action,
+  2–4 topic-specific details (no generic "artifacts"), a setting that changes between scenes;
+  abstract ideas become visible devices (side-by-side, before/after, left-to-right sequence,
+  cutaway, magnified inset, size comparison, map shape). No style/lighting/camera words; sensitive
+  topics stay tasteful. Stick-figure styles: people shown by props and actions only.
 
 ## 3. Prompt building (`images/prompt.rs`, pure function + unit tests)
 

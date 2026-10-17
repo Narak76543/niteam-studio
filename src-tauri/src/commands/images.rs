@@ -182,7 +182,7 @@ pub async fn start_image_job(
     project_id: String,
     only: Option<Vec<String>>,
 ) -> CmdResult<()> {
-    if state.script_jobs.is_running(&project_id) {
+    if state.script_jobs.is_running(&project_id) || state.prompt_jobs.is_running(&project_id) {
         return Err(to_cmd(ProjectError::Busy));
     }
     let settings: Settings = state.settings.read().await.clone();

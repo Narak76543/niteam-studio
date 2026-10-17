@@ -203,10 +203,10 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 
 | Command | Purpose |
 |---|---|
-| `settings_get`, `settings_save` | read/write settings.json |
+| `settings_get`, `settings_save(patch)` | read settings.json / merge the changed fields (`lib/settingsPatch.ts`) into it |
 | `api_key_set`, `api_key_test`, `api_key_clear`, `api_key_exists` | keyring; never return the key itself. `api_key_test` = `models.get` on the text model (no tokens used); returns `{ok, model, display_name, error_kind, error}` |
 | `presets_list` | built-in style presets |
-| `project_list`, `project_create`, `project_get`, `project_delete` | projects |
+| `project_list`, `project_create`, `project_get`, `project_delete` | projects (list items carry `cover_scene` / `cover_version`: first scene with a thumbnail, for the Projects cards) |
 | `script_generate(project_id, restart)` | start/resume the background script job (`restart` clears outline + scenes) |
 | `script_cancel(project_id)`, `script_running(project_id)` | cancel / query the script job |
 | `scene_update(project_id, scene)` | user edits; marks dependent assets stale |
@@ -233,6 +233,7 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | `render_set_subtitle_style(project_id, highlight)` | word-tracker colour `#RRGGBB` or null |
 | `proofread_start / proofread_cancel / proofread_running(project_id)` | grammar & phrasing check job (03 Step 1b) |
 | `proofread_accept / proofread_dismiss(project_id, scene_ids)` | apply / drop suggestions |
+| `image_prompts_rewrite / _cancel / _running(project_id)` | "Improve image prompts": rewrite every scene's image prompt with the current rules (03 Step 4a); event `prompt-rewrite-progress` |
 | `project_set_keep_terms(project_id, terms)` | names that stay exactly as written |
 | `project_set_style(project_id, preset)` | switch style preset + rewrite the Visual Bible |
 | `voices_status`, `voices_model_install / _verify / _delete`, `voice_design_samples`, `voice_design_sample_audio`, `voice_profile_create_design / _import / _update / _duplicate / _delete / _preview / _reference_audio / _set_default`, `project_set_voice_profile` | local voices (VoxCPM2) and Voice Profiles — see `09-voice-profiles.md` §7 |

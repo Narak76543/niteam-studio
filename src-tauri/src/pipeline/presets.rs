@@ -15,9 +15,12 @@ pub const PRESETS: &[StylePreset] = &[
     StylePreset {
         id: "stickman",
         label: "Stickman",
+        // Fuller scenes (owner, 2026-10-16): background, setting and props drawn in the same
+        // line style instead of "lots of white space".
         style_prompt: "simple hand-drawn stick figure doodle, bold clean black marker lines, flat pure white \
                        background filling the whole frame, stick figures with round heads and simple dot eyes, \
-                       minimal flat colour accents, whiteboard explainer style, lots of white space",
+                       complete scene drawn in the same doodle lines with a background setting and several \
+                       topic props, flat colour accents, whiteboard explainer style",
     },
     StylePreset {
         id: "storybook_watercolor",

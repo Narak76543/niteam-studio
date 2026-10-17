@@ -113,8 +113,16 @@ different voice on every request, so it is only used to *find* a voice:
 - **From a description:** the user describes the voice (English); the app speaks a fixed test
   sentence 3 times with different seeds (`voices/_design/0..2.wav`); the chosen sample becomes
   `reference.wav` and the test sentence its transcript (mode `design`, ultimate cloning).
-- **From my recording:** WAV/MP3/M4A/FLAC/OGG → FFmpeg to 16 kHz mono → silence trimmed →
-  must be 5–30 s of speech. Optional transcript → `ultimate`, else `clone`. **Consent
+- **From my recording:** WAV/MP3/M4A/FLAC/OGG → FFmpeg to 16 kHz mono, cleaned
+  (`volume=0.7,highpass=f=80,afftdn=nr=12:nf=-35:tn=1`: headroom, rumble cut, gentle noise
+  reduction — the model copies a clip's noise into every scene) → silence trimmed →
+  must be 5–14 s of speech (the audio.cpp v0.9.0 VoxCPM2 encoder rejects clips over ~14.7 s:
+  "AudioVAE encoder sample capacity exceeded"). Without a transcript a longer clip is cut at
+  the quietest 10 ms in its last 3 s before 14 s; with a transcript it is refused (the
+  transcript must match). Profiles saved with a longer clip are cut the same way on their
+  next use (preview removed, fingerprint changes → scenes regenerate); with a transcript the
+  job fails with "import a shorter recording".
+  Optional transcript → `ultimate`, else `clone`. **Consent
   required**: the user confirms it is their own voice or one they may use (`consent_at`).
 - Edit (name, style, closeness, steps), Duplicate, Delete, Listen, Make default.
 - `settings.voice.voxcpm_profile` = default (last chosen) profile. `project.voice_profile`

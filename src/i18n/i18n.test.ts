@@ -25,7 +25,7 @@ describe("i18n", () => {
 
   it("interpolates variables", () => {
     expect(translate("en", "script.progress.chapter", { n: 2, total: 5 })).toBe("Writing chapter 2 of 5…");
-    expect(translate("km", "common.minutes", { n: 3 })).toBe("3 នាទី");
+    expect(translate("km", "script.chapter", { n: 3 })).toBe("ជំពូកទី 3");
   });
 });
 

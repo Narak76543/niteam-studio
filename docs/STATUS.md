@@ -32,41 +32,34 @@ lint clean. Real-GPU test: 2 Khmer sentences → 15.3 s of audio in 27.5 s (incl
 1. **Test local voices** (`docs/05-roadmap.md` → "Local voices"): 1-minute Khmer project with
    one of the new voices — same voice in every scene, natural pauses, subtitles follow the
    sentences; switching the project voice marks scenes outdated.
-2. **Flux local-image plan** — shown again 2026-10-16, waiting for "go" (includes ~11.7 GB of
-   downloads). Plan below.
-3. **Timeline thumbnails** (not fixed yet): `Timeline.tsx` only draws a thumbnail when the clip
-   is wider than 36 px; at the smallest zoom most clips are 28–36 px. Proposed fix: show at any
-   width, hide only below ~12 px.
-4. Tests of Phase 2 (voice), Phase 4 (render) and the editor / grammar check.
+2. **Test local images (Z-Image Turbo)** (`docs/05-roadmap.md` → Phase 6): the model files are
+   already in `%LOCALAPPDATA%\NiteanStudio\models\zimage_turbo\` (sha256 verified), so
+   Settings → Local images should show it as installed. Select it, run a 1-minute Khmer project
+   with local images. Measured outside the app: ~28 s / image on the RTX 4050.
+3. **Delete the FLUX test files?** `models\flux_schnell_gguf\` (11.7 GB) is not used by the app
+   (FLUX rejected, 08 §13). Also the old test downloads in the scratch folder (~31 GB).
+4. **Timeline thumbnails** — fixed 2026-10-16 (`MIN_THUMB_PX = 12` in `Timeline.tsx`).
+6. **Images on topic + UI pass (2026-10-16, not committed yet)**: new `image_prompt` rules and
+   fuller Stickman preset (new projects), **Improve image prompts** on the Scenes page (existing
+   projects; uses Gemini text calls), Projects cover images, chapter-grouped Scenes, Settings
+   section list, wider editor. Test: run *Improve image prompts* on one project, then generate
+   images.
+5. Tests of Phase 2 (voice), Phase 4 (render) and the editor / grammar check.
 
-## Flux local-image plan (approved in principle, not started)
+## Local images: what was decided (2026-10-16)
 
-Profile `flux_schnell_gguf`, `min_vram_mb: 5500`, sd-server **Vulkan** (no CUDA), 1024×576,
-4 steps, cfg 1.0, sampler euler, `--offload-to-cpu`.
-
-| File | Source (pinned revision) | sha256 | Size |
-|---|---|---|---|
-| `flux1-schnell-Q4_K_S.gguf` | city96/FLUX.1-schnell-gguf @ `f495746ed9c5efcf4661f53ef05401dceadc17d2` | `4fd16477b3a5296d0cf722c4b92a9fd7f30d09ac7495826e4465d8de9c9fd973` | 6470 MB |
-| `clip_l.safetensors` | comfyanonymous/flux_text_encoders @ `6af2a98e3f615bdfa612fbd85da93d1ed5f69ef5` | `660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd` | ~246 MB |
-| `t5xxl_fp8_e4m3fn.safetensors` | comfyanonymous/flux_text_encoders (same revision — re-check) | `7d330da4816157540d6bb7838bf63a0f02f573fc48ca4d8de34bb0cbfd514f09` | 4668 MB |
-| `ae.safetensors` (VAE) | Comfy-Org/Lumina_Image_2.0_Repackaged @ `5b072540ef86570fecb8249c505f23d5bdeb88cd` | `afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38` (identical to the official gated file) | ~320 MB |
-
-Owner decisions: Vulkan sd-server; use the VAE only if its sha matches; **show the
-`local_models.json` entries before downloading**.
-
-Risk: the fp8 T5 may expand to fp16 in RAM (~9.3 GB of 15.7 GB). Fallback: T5 Q4_K_M GGUF.
-
-Steps:
-1. Add the profile to `src-tauri/resources/local_models.json` → show the owner → download.
-2. Benchmark: s/image, peak VRAM, peak RAM.
-3. Style A/B test: current stickman prompt vs. the owner's stickman text (a few images).
-4. Fix: saving one settings section must not overwrite others (merge by section on save).
-5. Remove SD 1.5 leftovers (`images/prompt_sd15.rs`, `short_style`) and ~20 unused i18n keys.
-6. Update docs 05 / 07 / 08 (Phase 6 resumed with Flux), changelog.
-7. Ask the owner before deleting old test downloads in the scratch folder (~31 GB).
+- FLUX.1 schnell Q4_K_S was downloaded and benchmarked: 45–210 s / image and RAM full on the
+  6 GB laptop (model streamed from RAM every step). Rejected — numbers in 08 §13.
+- Z-Image Turbo (the plan approved on 2026-10-15) ships instead: ~28 s / image, peak VRAM 4.4 GB.
+- Style A/B on Z-Image: the current Stickman preset vs. a stricter "pure stick figure" text —
+  the preset gave the better temple; preset unchanged.
+- Settings-save fix done (sections send only changed fields). SD 1.5 leftovers and 18 unused
+  i18n keys removed.
 
 ## Dev notes
 
+- Real-GPU image test: `cargo test engine_probe -- --ignored --nocapture` with `NITEAN_SDCPP`,
+  `NITEAN_FILES`, `NITEAN_ARGS`, `NITEAN_OUT`, `NITEAN_TAG` (see `local/engine_probe.rs`).
 - Run clippy/tests with a separate `CARGO_TARGET_DIR` while `npm run tauri dev` is running
   (it locks `target\debug\sdcpp`).
 - The engines are not in git: run `scripts/fetch-ffmpeg.ps1`, `fetch-sdcpp.ps1`,

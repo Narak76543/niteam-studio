@@ -126,6 +126,7 @@ export default function App() {
               setSearchToken((n) => n + 1);
             }}
             onToggleLanguage={toggleLanguage}
+            compact={route.name === "render"}
           />
           <main className="shell">
             {route.name === "projects" && (

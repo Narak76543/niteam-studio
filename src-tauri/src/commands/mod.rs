@@ -5,6 +5,7 @@ pub mod generate;
 pub mod images;
 pub mod local;
 pub mod project;
+pub mod prompts;
 pub mod proofread;
 pub mod render;
 pub mod retry_events;

@@ -27,6 +27,8 @@ pub struct ScriptBrief<'a> {
     pub language: Language,
     pub target_minutes: u32,
     pub style_label: &'a str,
+    /// The art style draws people as stick figures (changes the `image_prompt` rules).
+    pub stick_figure: bool,
     /// Names the user wants kept exactly as written (Script page → Names).
     pub keep_terms: &'a [String],
 }
@@ -285,7 +287,7 @@ pub struct ChapterContext<'a> {
     pub bible: BibleKeys<'a>,
 }
 
-fn bible_section(b: &BibleKeys) -> String {
+pub fn bible_section(b: &BibleKeys) -> String {
     let list = |items: &[(&str, &str)]| -> String {
         if items.is_empty() {
             "(none)\n".to_owned()
@@ -297,6 +299,36 @@ fn bible_section(b: &BibleKeys) -> String {
         "VISUAL BIBLE (refer to these by key; their look is added to the image automatically):\nCharacters:\n{}Places:\n{}",
         list(&b.characters),
         list(&b.places)
+    )
+}
+
+/// How each scene's `image_prompt` is written (`docs/07-image-generation.md` §3): the image
+/// must explain THIS scene's narration with topic-specific detail, not a generic mood shot.
+pub fn image_prompt_rules(stick_figure: bool) -> String {
+    let people = if stick_figure {
+        "People are drawn as simple stick figures: show who they are through props, tools, clothing \
+accents and what they are doing, never through faces or bodies. "
+    } else {
+        ""
+    };
+    format!(
+        "- `image_prompt`: in ENGLISH, 40–80 words. The image must EXPLAIN this scene's narration: show the exact \
+thing it talks about (the named object, material, invention, event, place, number or comparison), so a viewer \
+with the sound off still understands the scene. Build it like an explainer illustration:\n\
+  1. Main subject doing the key action of the narration, specific to the topic and its era/place.\n\
+  2. Two to four concrete supporting details that only belong to this topic (period tools, materials, \
+animals, plants, buildings, clothing, instruments) — never generic filler like \"artifacts\" or \"items\".\n\
+  3. A recognisable setting/background (where and when), different from the previous scene unless the story stays there.\n\
+  4. When the idea is abstract (a cause, a process, a comparison, a quantity, a change over time), turn it into \
+something visible: side-by-side comparison, before/after, step-by-step sequence of objects left to right, \
+cutaway or cross-section, a magnified inset circle, a size comparison next to a familiar object, a simple map shape, \
+or a row of objects showing growth.\n\
+  {people}Refer to Visual Bible characters and places by their key word (e.g. \"the farmer\") instead of describing \
+their look again. Use positive phrasing only (say \"clear blue sky\", not \"no birds\"). Never mention text, letters, \
+numbers written on things, signs, labels or captions. No art-style, lighting or camera words (watercolor, photo, \
+cartoon, illustration, cinematic, lighting, detailed, 4k) — the style is added separately. Keep sensitive topics \
+tasteful and educational (objects, diagrams, historical settings; no nudity). No real living people; historical \
+figures only as statues, carvings or generic figures.\n"
     )
 }
 
@@ -347,11 +379,7 @@ CURRENT CHAPTER: {number}. {chapter_title}\n\
 Write exactly {scenes} scenes. For each scene:\n\
 - `narration`: one or two short sentences (about 6–8 seconds when spoken).\n\
 - `spoken_text`: the narration written for text-to-speech (see language rules).\n\
-- `image_prompt`: in ENGLISH. Describe only what is visible: subject, action, setting, era, composition. \
-Refer to Visual Bible characters and places by their key word (e.g. \"the farmer\") instead of describing their look again. \
-Use positive phrasing only (say \"clear blue sky\", not \"no birds\"). Never mention text, letters, signs or captions. \
-No art-style words (watercolor, photo, cartoon, illustration). No real living people; \
-historical figures only as statues, carvings or generic figures.\n\
+{image_rules}\
 - `mood`: one of {moods}.\n\
 - `fact_note`: empty, or a short note if the scene makes an uncertain or disputed claim the creator should check.\n\
 - `characters`: keys of the Visual Bible characters visible in the scene ([] if none).\n\
@@ -360,6 +388,7 @@ historical figures only as statues, carvings or generic figures.\n\
 {previous_shots}\
 - `key_scene`: {key_rule}.",
         bible = bible_section(&ctx.bible),
+        image_rules = image_prompt_rules(brief.stick_figure),
         shots = SHOTS.join(", "),
         title = ctx.title,
         topic = brief.topic,
@@ -467,8 +496,30 @@ mod tests {
             language: Language::Km,
             target_minutes: 3,
             style_label: "storybook watercolor",
+            stick_figure: false,
             keep_terms: &[],
         }
+    }
+
+    #[test]
+    fn image_prompts_must_explain_the_narration() {
+        let ctx = ChapterContext {
+            title: "T",
+            hook: "H",
+            chapters: vec![("A", "a")],
+            index: 0,
+            scene_count: 5,
+            previous_narration: None,
+            previous_shots: vec![],
+            bible: BibleKeys { characters: vec![], places: vec![] },
+        };
+        let p = chapter_prompt(&brief(), &ctx);
+        assert!(p.contains("must EXPLAIN this scene's narration"));
+        assert!(p.contains("side-by-side comparison"));
+        assert!(!p.contains("stick figures: show who"));
+        let stick = chapter_prompt(&ScriptBrief { stick_figure: true, ..brief() }, &ctx);
+        assert!(stick.contains("stick figures: show who"));
+        assert!(stick.contains("- `mood`:"), "rules are followed by the next field");
     }
 
     #[test]

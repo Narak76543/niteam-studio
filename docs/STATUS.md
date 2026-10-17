@@ -1,7 +1,12 @@
-# Status — where we stopped (2026-10-16)
+# Status — where we stopped (2026-10-17)
 
 Read this first when continuing. Details live in the numbered docs; this file is the short
 "what is done / what is next" list.
+
+**2026-10-17:** the 2026-10-16 work below is committed (`5e47a1f` Z-Image profiles, `421ab84`
+settings patch fix, `cc58dac` image prompts / UI pass / voice refs). **Not committed yet:** the
+Soft 2D Explainer preset + culture-notes fix — brief, results and next steps in
+`docs/tasks/soft-2d-explainer-style.md`; waiting for the owner to review the contact sheets.
 
 ## Done (committed on `main`)
 

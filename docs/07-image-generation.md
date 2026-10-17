@@ -78,7 +78,8 @@ Settings: `image.provider`, `image.gemini_model`, `image.steps` (4–8, default 
 ### 1c. Style presets
 
 `pipeline/presets.rs`: **`stickman` (default since 2026-10-15, owner's choice)**,
-`storybook_watercolor`, `cinematic_realistic`, `flat_2d`. Stickman prompt: "simple hand-drawn
+`storybook_watercolor`, `cinematic_realistic`, `flat_2d`, `soft_2d_explainer` (2026-10-17, see
+below). Stickman prompt: "simple hand-drawn
 stick figure doodle, bold clean black marker lines, flat pure white background filling the
 whole frame, stick figures with round heads and simple dot eyes, complete scene drawn in the same
 doodle lines with a background setting and several topic props, flat colour accents, whiteboard
@@ -88,6 +89,27 @@ the style is picked again in Look & feel. (Do not say "on white paper": Flux the
 photo of a sheet of paper on a wall.) Checked with Flux Schnell on 2026-10-15: clean doodles,
 props (cap, scarf, hat) stay recognisable. Look & feel → **Style** switches an existing project
 (`project_set_style`: new preset + Visual Bible rewritten for it; images become outdated).
+
+**Soft 2D Explainer** (`soft_2d_explainer`, owner 2026-10-17, brief in
+`docs/tasks/soft-2d-explainer-style.md`): calm explainer cartoon, our own figure design.
+- Style: "flat 2D cartoon illustration, simple calm explainer-video style, characters with round
+  bald peach-coloured heads, dot eyes, small smiles, thin stick legs and clean thick black
+  outlines, simple painterly background with soft brush shading and no line art, few background
+  elements, distant layers fading into mist, muted green, sage and grey-blue palette with soft
+  earth tones, gentle lighting, lots of empty space".
+- **Preset rules** (`StylePreset::prompt_rules`, added word for word to every final prompt, §3,
+  also when the bible's `style` line was edited): "every person drawn with the same simple design:
+  round bald peach-coloured head, dot eyes, small smile, thin stick legs, clean thick black
+  outline; only the people have outlines, buildings, hills and plants are soft brush shading
+  without line art; no text, no letters, no watermark".
+  Negative phrasing is deliberate: Z-Image runs at cfg 1.0, where the negative prompt does
+  nothing, and its Qwen3 encoder follows "no …" in the positive prompt (08 §13).
+- Figures rule: see §2 (`Figures::SharedCartoon`).
+- Tested 2026-10-17 on local Z-Image (two 6-scene Khmer history rounds, 3 seeds each,
+  `pipeline/style_trial.rs`): same head, eyes and outline in every image, no text. Round 1 had
+  outlined, busy backgrounds ("soft sky with gentle clouds", "background painted softly") — reworded
+  to "no line art", "few background elements", "only the people have outlines": calmer, softer
+  backgrounds, buildings keep a thin outline. Night scenes still come out as dusk.
 
 ## 2. Visual Bible (consistency)
 
@@ -111,10 +133,23 @@ Generated **once per project**, right after the script, by the text model. Store
 Script JSON per scene gains: `"characters": ["farmer"]`, `"place": "village"`,
 `"shot": "wide|medium|close|detail|aerial"`, `"key_scene": bool`.
 
-For **stick-figure styles** (`presets::is_stick_figure`) the bible prompt adds: characters are
-stick figures described ONLY by one or two bold props / colour accents ("stick figure with a
-red-and-white checked krama scarf and a straw hat"), never skin, faces, hair or body detail;
-places are simple line drawings with at most two flat colour accents.
+The style text decides how people are described (`presets::figures`, read from the text so an
+edited style keeps its rule):
+- **Stick figures** ("stick figure" / "stickman"): the bible prompt adds that characters are
+  stick figures described ONLY by one or two bold props / colour accents ("stick figure with a
+  red-and-white checked krama scarf and a straw hat"), never skin, faces, hair or body detail;
+  places are simple line drawings with at most two flat colour accents.
+- **Shared cartoon** ("round bald", the Soft 2D Explainer preset): every person has the same
+  base design (added by the preset rules, §1c); characters are described ONLY by clothing type
+  and colour, at most one prop and one headwear / hair accessory ("figure in a long red robe with
+  a small gold crown"); places are soft painted landscapes or simple buildings in the preset's
+  palette; the bible's `style` is the chosen style copied word for word. Scene `image_prompt`s
+  get the same rule (clothing, prop, action; never faces or bodies).
+
+`culture_notes` is added to **every** image (§3), so the bible prompt asks for one short phrase
+(≤ 25 words) that fits every scene — clothing style, roof / carving shapes, landscape — and never a
+list of objects or events from only some scenes (2026-10-17: a list of "stilt houses, rice
+paddies, temples, crowns, lanterns" put an Angkor temple into the prehistoric scene of every seed).
 
 Rules for the script model:
 - Every recurring person/place gets **one** bible entry; scenes refer to it by key.
@@ -125,14 +160,15 @@ Rules for the script model:
   2–4 topic-specific details (no generic "artifacts"), a setting that changes between scenes;
   abstract ideas become visible devices (side-by-side, before/after, left-to-right sequence,
   cutaway, magnified inset, size comparison, map shape). No style/lighting/camera words; sensitive
-  topics stay tasteful. Stick-figure styles: people shown by props and actions only.
+  topics stay tasteful. Stick-figure styles: people shown by props and actions only;
+  shared-cartoon styles: by clothing, one prop and actions only.
 
 ## 3. Prompt building (`images/prompt.rs`, pure function + unit tests)
 
 ```
 {style}, {shot phrase}, {subject from image_prompt with bible descriptions inlined},
 {place description}, {culture_notes if Cambodia-related}, {composition phrase},
-clean image without any lettering
+{preset rules (§1c), never cut}, clean image without any lettering
 ```
 
 - **Shot phrases:** wide → "wide establishing shot"; medium → "medium shot";

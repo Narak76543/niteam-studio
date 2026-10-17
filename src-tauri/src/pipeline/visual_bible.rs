@@ -143,8 +143,10 @@ drawn the same way every time. Generic people only — no real living people; hi
 statues, carvings or unnamed generic figures. Use [] if the story has no recurring characters.\n\
 - `places`: every recurring location, with a snake_case key and a visual description (architecture, \
 landscape, plants, era).\n\
-- `culture_notes`: if the topic is Cambodian / Khmer, concrete visual details that make images look \
-authentically Cambodian (clothing, architecture, roof shapes, carvings, landscape); otherwise \"\".\n\
+- `culture_notes`: if the topic is Cambodian / Khmer, one short phrase (at most 25 words) of visual \
+details that make images look authentically Cambodian and fit EVERY scene, because it is added to every image: \
+clothing style, roof and carving shapes, landscape. Never list objects, buildings or events that belong to only \
+some scenes or eras (temples, rice fields, crowns, lanterns, festivals); otherwise \"\".\n\
 Never ask for text, letters or signs in images.",
         topic = project.topic,
         title = project.title,

@@ -244,6 +244,18 @@ plan. All files Apache-2.0, pinned to a Hugging Face revision, sha256 re-checked
   real doodle stick figures; Angkor-like temple. A stricter "pure stick figure" style text was
   tried too: thinner figures but Chinese-looking pagodas — the preset stays as it is.
   `zimage_turbo_small` is not measured (no 4–5 GB GPU available).
+- **2026-10-17 (Soft 2D Explainer trial, same laptop):** 1024×576 **28.4 s / image** warm (first
+  44 s incl. load), 18 images in 527 s, peak VRAM 4.5 GB, no OOM retry. **1280×720: 54–56 s /
+  image**, peak VRAM 4.7 GB — about 2× the time for 1.56× the pixels, and the same seed gives a
+  different picture. Upscaled to the 1080p pan image (2150×1210, Lanczos3) the 1024×576 image is
+  only slightly softer; flat cartoon outlines stay clean. The profile stays at 1024×576.
+- **Negative prompt:** Z-Image runs at cfg 1.0, where `sd-server` ignores the negative prompt
+  (the provider sends an empty one). "No text" / "no line art" rules go in the positive prompt
+  (`StylePreset::prompt_rules`, 07 §1c); the Qwen3 encoder follows them (no lettering in 34
+  test images).
+- **Memory:** a 3-seed × 6-scene run (sd-server ~6.6 GB RAM) was stopped once by the host when
+  the laptop ran low on system memory (16 GB, other apps open). Long runs need the browser and
+  dev tools closed.
 
 ### FLUX.1 schnell — tested, rejected (2026-10-16)
 

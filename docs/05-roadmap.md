@@ -254,3 +254,10 @@ _Add one line per finished phase: date — phase — notes._
   unchanged). UI: Projects cards show the cover image, Scenes grouped by chapter with compact
   cards, Script page shows the image beside its prompt, Settings section list, editor gets the
   full width (icon sidebar) and thumbnails on every timeline clip, long titles wrap.
+- 2026-10-17 — **Soft 2D Explainer** style preset (`soft_2d_explainer`, owner brief in
+  `docs/tasks/soft-2d-explainer-style.md`): one shared round-headed cartoon figure (Visual Bible
+  and scene prompts describe people only by clothing, one prop, headwear), fixed preset rules
+  added to every final prompt (figure design, no line art on backgrounds, no text/letters/
+  watermark). Bible `culture_notes` is now one short phrase that fits every scene. Tested on
+  local Z-Image with two 6-scene Khmer history projects (3 seeds each): consistent characters,
+  no text; 28 s / image at 1024×576 (1280×720: 55 s, not adopted). Not yet tested in the app UI.

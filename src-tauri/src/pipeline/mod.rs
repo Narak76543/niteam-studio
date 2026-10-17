@@ -13,6 +13,8 @@ pub mod proofread;
 pub mod render_job;
 #[cfg(test)]
 mod render_e2e;
+#[cfg(test)]
+mod style_trial;
 pub mod script_job;
 pub mod store;
 pub mod subs;

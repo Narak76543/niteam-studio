@@ -289,3 +289,8 @@ _Add one line per finished phase: date — phase — notes._
   resumes from the last chunk. Live-tested on an English paper, a Khmer text PDF and a Khmer scan.
 - 2026-10-17 — Subtitles: regular weight (400) and smaller (44 px at 1080p, 29 px at 720p; was
   600 / 56 px), thinner outline. `SUBS_VERSION` 3, so existing subtitle PNGs are redrawn.
+- 2026-10-17 — **v0.1.0 installer**: NSIS only (`bundle.targets`), per-user install, WebView2
+  download bootstrapper, bundles FFmpeg + sd-server + audio.cpp + license files, no models.
+  Uninstall keeps user data (`NiteanStudio` folders and keyring entries). Installer is
+  English only (NSIS has no Khmer). Unsigned. Repo pushed to GitHub with README and
+  THIRD_PARTY_NOTICES.md.

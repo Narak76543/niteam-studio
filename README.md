@@ -25,6 +25,15 @@ The installer bundles FFmpeg and the local image/voice engines. AI model files a
 in the installer. The app downloads them when you turn on Local GPU images or local voices
 in Settings.
 
+**Uninstall** from Windows Settings → Apps. Uninstalling removes the program but keeps your
+projects, settings, voice profiles and downloaded models (`%APPDATA%\NiteanStudio`,
+`%LOCALAPPDATA%\NiteanStudio`) and your saved keys, so a reinstall picks up where you left off.
+To remove everything, delete those two folders and the `gemini_api_key.NiteanStudio` /
+`cloudflare_api_token.NiteanStudio` entries in Credential Manager.
+
+The installer is English only: NSIS has no Khmer language file. The app itself is in Khmer
+and English.
+
 You need your own **Gemini API key** (Settings → Gemini). For the default image provider you
 also need a free Cloudflare account ID and API token. Keys are stored in Windows Credential
 Manager and are never written to project files.

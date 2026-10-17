@@ -25,7 +25,18 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "publisher": "Nitean Studio",
+    "shortDescription": "Narrated explainer videos in Khmer or English",
+    "category": "Video",
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "languages": ["English"]
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -38,7 +49,9 @@
     ],
     "resources": {
       "resources/sdcpp/": "sdcpp/",
-      "resources/audiocpp/": "audiocpp/"
+      "resources/audiocpp/": "audiocpp/",
+      "binaries/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
     }
   }
 }

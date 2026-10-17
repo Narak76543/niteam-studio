@@ -272,7 +272,7 @@ fn brief<'a>(p: &'a Project, style_label: &'a str) -> ScriptBrief<'a> {
         language: p.language,
         target_minutes: p.target_minutes,
         style_label,
-        stick_figure: super::presets::is_stick_figure(&p.style.style_prompt),
+        figures: super::presets::figures(&p.style.style_prompt),
         keep_terms: &p.keep_terms,
     }
 }

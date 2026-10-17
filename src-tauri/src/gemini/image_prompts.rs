@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::script::{BibleKeys, Validate, bible_section, image_prompt_rules};
+use crate::pipeline::presets::Figures;
 
 /// One scene sent for a new image prompt.
 #[derive(Debug, Clone, Serialize)]
@@ -63,7 +64,7 @@ pub fn schema(scene_ids: &[&str]) -> Value {
 pub struct PromptContext<'a> {
     pub topic: &'a str,
     pub title: &'a str,
-    pub stick_figure: bool,
+    pub figures: Figures,
     pub bible: BibleKeys<'a>,
     /// Image prompt of the scene before this batch (keeps settings varied across batches).
     pub previous: Option<&'a str>,
@@ -91,7 +92,7 @@ SCENES:\n{scenes_json}",
         topic = ctx.topic,
         title = ctx.title,
         bible = bible_section(&ctx.bible),
-        rules = image_prompt_rules(ctx.stick_figure),
+        rules = image_prompt_rules(ctx.figures),
     )
 }
 
@@ -112,7 +113,7 @@ mod tests {
         let ctx = PromptContext {
             topic: "Rice",
             title: "T",
-            stick_figure: true,
+            figures: Figures::StickFigure,
             bible: BibleKeys { characters: vec![("farmer", "stick figure with a straw hat")], places: vec![] },
             previous: Some("a river"),
         };

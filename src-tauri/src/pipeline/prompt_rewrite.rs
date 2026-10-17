@@ -134,7 +134,7 @@ impl RewriteJob {
                 let ctx = PromptContext {
                     topic: &project.topic,
                     title: &project.title,
-                    stick_figure: presets::is_stick_figure(&project.style.style_prompt),
+                    figures: presets::figures(&project.style.style_prompt),
                     bible: bible_keys(&project),
                     previous: previous.as_deref(),
                 };

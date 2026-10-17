@@ -12,6 +12,7 @@ use super::client::ModelChain;
 use super::models::{Content, GenerateContentRequest, GenerationConfig};
 use super::retry::RetryHooks;
 use super::{GeminiClient, GeminiError};
+use crate::pipeline::presets::Figures;
 use crate::pipeline::project::Language;
 use crate::storage::ApiKey;
 
@@ -27,8 +28,8 @@ pub struct ScriptBrief<'a> {
     pub language: Language,
     pub target_minutes: u32,
     pub style_label: &'a str,
-    /// The art style draws people as stick figures (changes the `image_prompt` rules).
-    pub stick_figure: bool,
+    /// How the art style draws people (changes the `image_prompt` rules).
+    pub figures: Figures,
     /// Names the user wants kept exactly as written (Script page → Names).
     pub keep_terms: &'a [String],
 }
@@ -304,12 +305,18 @@ pub fn bible_section(b: &BibleKeys) -> String {
 
 /// How each scene's `image_prompt` is written (`docs/07-image-generation.md` §3): the image
 /// must explain THIS scene's narration with topic-specific detail, not a generic mood shot.
-pub fn image_prompt_rules(stick_figure: bool) -> String {
-    let people = if stick_figure {
-        "People are drawn as simple stick figures: show who they are through props, tools, clothing \
+pub fn image_prompt_rules(figures: Figures) -> String {
+    let people = match figures {
+        Figures::StickFigure => {
+            "People are drawn as simple stick figures: show who they are through props, tools, clothing \
 accents and what they are doing, never through faces or bodies. "
-    } else {
-        ""
+        }
+        Figures::SharedCartoon => {
+            "All people share ONE simple cartoon design that is added to the image automatically: show who \
+they are only through their clothing (type and colour), at most one prop or headwear, and what they are doing; never \
+describe faces, skin, hair, age or bodies. Describe places as soft painted landscapes or simple buildings. "
+        }
+        Figures::Free => "",
     };
     format!(
         "- `image_prompt`: in ENGLISH, 40–80 words. The image must EXPLAIN this scene's narration: show the exact \
@@ -388,7 +395,7 @@ Write exactly {scenes} scenes. For each scene:\n\
 {previous_shots}\
 - `key_scene`: {key_rule}.",
         bible = bible_section(&ctx.bible),
-        image_rules = image_prompt_rules(brief.stick_figure),
+        image_rules = image_prompt_rules(brief.figures),
         shots = SHOTS.join(", "),
         title = ctx.title,
         topic = brief.topic,
@@ -496,7 +503,7 @@ mod tests {
             language: Language::Km,
             target_minutes: 3,
             style_label: "storybook watercolor",
-            stick_figure: false,
+            figures: Figures::Free,
             keep_terms: &[],
         }
     }
@@ -517,9 +524,13 @@ mod tests {
         assert!(p.contains("must EXPLAIN this scene's narration"));
         assert!(p.contains("side-by-side comparison"));
         assert!(!p.contains("stick figures: show who"));
-        let stick = chapter_prompt(&ScriptBrief { stick_figure: true, ..brief() }, &ctx);
+        assert!(!p.contains("ONE simple cartoon design"));
+        let stick = chapter_prompt(&ScriptBrief { figures: Figures::StickFigure, ..brief() }, &ctx);
         assert!(stick.contains("stick figures: show who"));
         assert!(stick.contains("- `mood`:"), "rules are followed by the next field");
+        let soft = chapter_prompt(&ScriptBrief { figures: Figures::SharedCartoon, ..brief() }, &ctx);
+        assert!(soft.contains("ONE simple cartoon design"));
+        assert!(!soft.contains("stick figures: show who"));
     }
 
     #[test]

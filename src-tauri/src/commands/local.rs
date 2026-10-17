@@ -278,6 +278,7 @@ pub async fn local_benchmark(state: State<'_, AppState>) -> CmdResult<Benchmark>
         place: None,
         culture_notes: None,
         square: false,
+        rules: "",
     });
     let cancel = CancellationToken::new();
     let started = Instant::now();

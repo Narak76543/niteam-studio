@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 use super::cloudflare;
 use super::prompt::{PromptParts, build_prompt, cache_hash, is_cambodia_related, scene_seed};
 use super::provider::ProviderId;
+use crate::pipeline::presets;
 use crate::pipeline::project::{ImageSnapshot, Language, Project, Scene};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -83,8 +84,9 @@ fn own_plan(project: &Project, scene: &Scene) -> ScenePlan {
         place: place.map(String::as_str),
         culture_notes: culture,
         square: provider == ProviderId::CloudflareFlux,
+        rules: presets::prompt_rules(&project.style.preset),
     };
-    // Local FLUX takes the same full prompt as Cloudflare (its T5 encoder reads it all).
+    // Local Z-Image takes the same full prompt as Cloudflare (its LLM encoder reads it all).
     let prompt = build_prompt(&parts);
     let base = bible.map_or_else(|| fallback_seed(&project.id), |b| b.seed);
     let seed = scene_seed(base, &scene.id, scene.image.seed);
@@ -173,6 +175,16 @@ mod tests {
                 .contains("stilt-house village, Khmer roof finials")
         );
         assert!(plan.prompt.contains("center band"));
+    }
+
+    #[test]
+    fn soft_2d_prompts_end_with_the_preset_rules() {
+        let mut p = project();
+        p.style.preset = "soft_2d_explainer".into();
+        let plan = plan_scene(&p, 0).unwrap();
+        let rules = presets::prompt_rules("soft_2d_explainer");
+        assert!(plan.prompt.contains(&format!("{rules}, clean image without any lettering")));
+        assert!(!plan_scene(&project(), 0).unwrap().prompt.contains("no watermark"));
     }
 
     #[test]

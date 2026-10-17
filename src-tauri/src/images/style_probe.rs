@@ -56,6 +56,7 @@ async fn style_probe() {
             place,
             culture_notes: None,
             square: true,
+            rules: "",
         });
         println!("prompt {i}: {prompt}");
         let req = ImageRequest { prompt, seed: 7, steps: Some(settings.image.steps), reference_images: vec![] };

@@ -1,7 +1,7 @@
 //! Prompt building (`docs/07-image-generation.md` §3). Pure functions, no I/O.
 //!
 //! `{style}, {shot phrase}, {subject with bible descriptions inlined}, {place},
-//!  {culture notes}, {composition phrase (square providers)}, clean image without any lettering`
+//!  {culture notes}, {composition phrase (square providers)}, {preset rules}, clean image without any lettering`
 
 use sha2::{Digest, Sha256};
 
@@ -36,6 +36,8 @@ pub struct PromptParts<'a> {
     /// Only passed when the project is Cambodia-related.
     pub culture_notes: Option<&'a str>,
     pub square: bool,
+    /// The preset's fixed rules (`StylePreset::prompt_rules`), never cut.
+    pub rules: &'a str,
 }
 
 fn is_word_char(c: char) -> bool {
@@ -124,17 +126,18 @@ pub fn build_prompt(p: &PromptParts) -> String {
             if with_place { place } else { "" },
             if with_culture { culture } else { "" },
             composition,
+            p.rules,
             NO_LETTERING,
         ]);
         if char_len(&full) <= MAX_PROMPT_CHARS {
             return full;
         }
     }
-    // Still too long: keep style/shot/composition/no-lettering, cut the subject.
-    let fixed = join(&[p.style, shot, composition, NO_LETTERING]);
+    // Still too long: keep style/shot/composition/rules/no-lettering, cut the subject.
+    let fixed = join(&[p.style, shot, composition, p.rules, NO_LETTERING]);
     let room = MAX_PROMPT_CHARS.saturating_sub(char_len(&fixed) + 2);
     let cut: String = subject.chars().take(room).collect();
-    let out = join(&[p.style, shot, &cut, composition, NO_LETTERING]);
+    let out = join(&[p.style, shot, &cut, composition, p.rules, NO_LETTERING]);
     out.chars().take(MAX_PROMPT_CHARS).collect()
 }
 
@@ -200,6 +203,7 @@ mod tests {
             place: Some("Cambodian village of wooden stilt houses"),
             culture_notes: Some("Khmer sampot clothing, Angkorian carvings"),
             square: true,
+            rules: "",
         }
     }
 
@@ -230,6 +234,17 @@ mod tests {
         let mut wide = parts("x", vec![]);
         wide.square = false;
         assert!(!build_prompt(&wide).contains("center band"));
+    }
+
+    #[test]
+    fn preset_rules_come_last_and_survive_cutting() {
+        let rules = "every person drawn with the same design; no text, no letters, no watermark";
+        let p = build_prompt(&PromptParts { rules, ..parts("The farmer plants rice", vec![FARMER]) });
+        assert!(p.ends_with(&format!("{rules}, {NO_LETTERING}")));
+        let long = "rice ".repeat(600);
+        let p = build_prompt(&PromptParts { rules, ..parts(&long, vec![]) });
+        assert!(char_len(&p) <= MAX_PROMPT_CHARS);
+        assert!(p.ends_with(&format!("{rules}, {NO_LETTERING}")));
     }
 
     #[test]

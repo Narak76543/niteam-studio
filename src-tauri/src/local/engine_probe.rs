@@ -4,7 +4,8 @@
 //! ```text
 //! NITEAN_SDCPP=<folder with sd-server.exe> NITEAN_OUT=<folder> NITEAN_TAG=<name>
 //! NITEAN_FILES="--diffusion-model=<gguf>;--llm=<gguf>;--vae=<file>"
-//! [NITEAN_ARGS="--offload-to-cpu --diffusion-fa"] [NITEAN_STYLE=<style text>, default: Stickman preset]
+//! [NITEAN_ARGS="--offload-to-cpu --diffusion-fa"] [NITEAN_PRESET=<id>, default stickman]
+//! [NITEAN_STYLE=<style text>, default: the preset's]
 //! [NITEAN_SUBJECTS="<scene text>|<scene text>", default: three built-in scenes]
 //! [NITEAN_STEPS=8 NITEAN_CFG=1.0 NITEAN_SAMPLER=<engine default> NITEAN_W=1024 NITEAN_H=576]
 //! cargo test --manifest-path src-tauri/Cargo.toml engine_probe -- --ignored --nocapture
@@ -55,9 +56,12 @@ async fn engine_probe() {
     let mut server = SdServer::start(&cfg, &cancel).await.unwrap();
     println!("model loaded in {:.1} s", t0.elapsed().as_secs_f64());
 
-    let preset = presets::find("stickman").unwrap().style_prompt.to_owned();
-    let style_owned = std::env::var("NITEAN_STYLE").unwrap_or(preset);
+    // NITEAN_PRESET=<id> (default stickman): style and fixed rules; NITEAN_STYLE overrides the style.
+    let preset_id = std::env::var("NITEAN_PRESET").unwrap_or_else(|_| "stickman".into());
+    let preset = presets::find(&preset_id).unwrap();
+    let style_owned = std::env::var("NITEAN_STYLE").unwrap_or_else(|_| preset.style_prompt.to_owned());
     let style = style_owned.as_str();
+    let rules = preset.prompt_rules;
     let scenes = [
         ("the developer sits at a desk writing code on a laptop, a phone beside the laptop shows an app",
          vec![("developer", "stick figure with a small blue cap and an orange hoodie")], None, Shot::Medium),
@@ -75,7 +79,7 @@ async fn engine_probe() {
         custom.split('|').map(|s| (s, vec![], None, Shot::Wide)).collect()
     };
     for (i, (subject, characters, place, shot)) in scenes.into_iter().enumerate() {
-        let prompt = build_prompt(&PromptParts { style, shot, subject, characters, place, culture_notes: None, square: false });
+        let prompt = build_prompt(&PromptParts { style, shot, subject, characters, place, culture_notes: None, square: false, rules });
         let req = GenRequest {
             prompt,
             negative_prompt: String::new(),

@@ -8,6 +8,7 @@ use rand::Rng;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::presets::Figures;
 use super::project::{Project, Shot, VisualBible};
 use crate::gemini::client::ModelChain;
 use crate::gemini::retry::RetryHooks;
@@ -90,18 +91,32 @@ fn schema() -> Value {
 
 /// Extra rules so characters and places fit the chosen style.
 fn style_rules(style_prompt: &str) -> &'static str {
-    if super::presets::is_stick_figure(style_prompt) {
-        "STICK-FIGURE STYLE: every person is a simple stick figure (round head, dot eyes, line body). \
+    match super::presets::figures(style_prompt) {
+        Figures::StickFigure => STICK_FIGURE_RULES,
+        Figures::SharedCartoon => SHARED_CARTOON_RULES,
+        Figures::Free => "",
+    }
+}
+
+const STICK_FIGURE_RULES: &str = "STICK-FIGURE STYLE: every person is a simple stick figure (round head, dot eyes, line body). \
 Describe characters ONLY by one or two simple, bold identifying props or colour accents that a stick figure \
 can carry (e.g. `stick figure with a red-and-white checked krama scarf and a straw hat`, `stick figure \
 with a small blue laptop`). Never describe skin, faces, hair texture, body build or realistic clothing \
 detail. Describe places as simple line drawings with a few key shapes and at most two flat colour accents \
 (e.g. `simple line drawing of a temple with three towers, light orange accent`). Keep `style` a \
-stick-figure doodle style.\n"
-    } else {
-        ""
-    }
-}
+stick-figure doodle style.\n";
+
+/// `soft_2d_explainer`: the figure design itself is added to every prompt by the preset
+/// (`presets::prompt_rules`), so characters only differ in what they wear and carry.
+const SHARED_CARTOON_RULES: &str = "SHARED-CHARACTER CARTOON STYLE: every person has the SAME base design, \
+added to every image automatically: round bald peach-coloured head, dot eyes, small smile, thin stick legs, \
+clean thick black outline. Describe characters ONLY by what makes them different: clothing type and colour, \
+at most one prop, and optionally one headwear or hair accessory (e.g. `figure in a shaggy brown fur cloak \
+holding a wooden spear`, `figure in a long red robe with a small gold crown`, `figure in a saffron monk robe \
+holding a palm-leaf book`). Never describe skin, faces, hair, age, body build or realistic detail. Describe \
+places as soft painted landscapes or simple buildings with soft brush shading, in muted greens, sage, \
+grey-blue and soft earth tones (e.g. `wooden stilt houses with thatched roofs beside a calm river, soft \
+painted hills behind`). Set `style` to the CHOSEN ART STYLE copied word for word.\n";
 
 fn prompt(project: &Project) -> String {
     let outline = project.outline.as_ref().map_or(String::new(), |o| {
@@ -222,6 +237,21 @@ mod tests {
     use super::*;
     use crate::pipeline::project::Scene;
     use crate::pipeline::project::tests::sample;
+
+    #[test]
+    fn style_rules_follow_the_figures() {
+        let mut p = sample();
+        p.style.style_prompt = crate::pipeline::presets::find("soft_2d_explainer").unwrap().style_prompt.into();
+        let soft = prompt(&p);
+        assert!(soft.contains("SHARED-CHARACTER CARTOON STYLE"));
+        assert!(soft.contains("Set `style` to the CHOSEN ART STYLE copied word for word"));
+        assert!(!soft.contains("STICK-FIGURE"));
+        p.style.style_prompt = "simple stick figure doodle".into();
+        assert!(prompt(&p).contains("STICK-FIGURE STYLE"));
+        p.style.style_prompt = "warm watercolor".into();
+        let free = prompt(&p);
+        assert!(!free.contains("STICK-FIGURE STYLE") && !free.contains("SHARED-CHARACTER"));
+    }
 
     #[test]
     fn keys_are_normalized() {

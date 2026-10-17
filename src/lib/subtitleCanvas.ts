@@ -16,14 +16,15 @@ export interface Band {
 }
 
 export function bandFor(resolution: string, scale = 1): Band {
-  const base = resolution === "720p" ? { width: 1280, height: 160, fontPx: 37 } : { width: 1920, height: 240, fontPx: 56 };
+  const base = resolution === "720p" ? { width: 1280, height: 160, fontPx: 29 } : { width: 1920, height: 240, fontPx: 44 };
   return { width: base.width * scale, height: base.height * scale, fontPx: base.fontPx * scale };
 }
 
 /** Kantumruy Pro for Khmer and Latin (see src/styles/fonts.css). */
 export const SUBTITLE_FONT_FAMILY = "Kantumruy Pro Subtitle";
 const FONT_STACK = `"${SUBTITLE_FONT_FAMILY}", "Noto Sans Khmer", sans-serif`;
-const WEIGHT = 600;
+/** Regular (owner, 2026-10-17: bold 56 px was too heavy and too big). */
+const WEIGHT = 400;
 /** Khmer stacks above and below the line: ≥ 1.6 × font size. */
 const LINE_HEIGHT = 1.6;
 /** Text never wider than this share of the frame (shrinks the font if needed). */
@@ -83,7 +84,7 @@ export function paintCue(
 
   const lineH = px * LINE_HEIGHT;
   const padBottom = px * 0.4;
-  const stroke = Math.max(2, Math.round(px * 0.11)); // ~6 px at 56 px
+  const stroke = Math.max(2, Math.round(px * 0.09)); // ~4 px at 44 px
   const boxPadX = px * 0.16;
   const boxPadY = px * 0.1;
   /** Minimum box height (lines without tall stacks). */

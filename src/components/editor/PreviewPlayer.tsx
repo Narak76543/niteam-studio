@@ -199,11 +199,21 @@ export function PreviewPlayer({ projectId, scenes, states, highlight, resolution
       ctx.fillRect(0, 0, W, H);
       const img = curEntry.image;
       if (img) {
-        const cw = img.width * CROP_W;
-        const ch = img.height * CROP_H;
         const p = Math.min(1, Math.max(0, local / cur.clip_ms));
-        const [sx, sy] = cropOrigin(cur.pan, img.width, img.height, cw, ch, p);
-        ctx.drawImage(img, sx ?? 0, sy ?? 0, cw, ch, 0, 0, W, H);
+        if (cur.pan === "still") {
+          ctx.drawImage(img, 0, 0, W, H);
+        } else if (cur.pan === "zoom_in" || cur.pan === "zoom_out") {
+          // Same as the clip's zoompan: zoom z shows the centred 1/z of the picture.
+          const z = cur.pan === "zoom_in" ? 1 + (cur.zoom - 1) * p : cur.zoom - (cur.zoom - 1) * p;
+          const sw = img.width / z;
+          const sh = img.height / z;
+          ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, W, H);
+        } else {
+          const cw = img.width * CROP_W;
+          const ch = img.height * CROP_H;
+          const [sx, sy] = cropOrigin(cur.pan, img.width, img.height, cw, ch, p);
+          ctx.drawImage(img, sx ?? 0, sy ?? 0, cw, ch, 0, 0, W, H);
+        }
       } else {
         ctx.fillStyle = "#6f6e6a";
         ctx.font = "500 22px Manrope, sans-serif";

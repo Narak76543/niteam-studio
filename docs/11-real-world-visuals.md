@@ -9,9 +9,9 @@ Per scene the visual is one of `ai_image` (the image providers, fallback), `real
 `stock_video`, `diagram`, `code`, `screenshot`. Subtitles and the render pipeline stay as they
 are.
 
-Status: **steps 1–3 built** (data model, Settings, clients, cache, licence filter, ranking,
-downloads; style preset + script fields; "Find photos & clips" job, picker, credits). Render,
-diagrams, code: next steps.
+Status: **steps 1–4 built** (data model, Settings, clients, cache, licence filter, ranking,
+downloads; style preset + script fields; "Find photos & clips" job, picker, credits; render
+of photos, clips, screenshots). Diagrams, code: next steps.
 
 ## 1. Data model
 
@@ -199,4 +199,26 @@ used only when their key is stored; Commons and Openverse need none.
 - Diagram: Mermaid text; code: language, text, Terminal, Type out; screenshot: consent checkbox
   + file; AI image: uses the image prompt.
 - Render page side panel: **Credits** block with **Copy** (`project_credits`).
+
+## 9. Render (`pipeline/visual_render.rs`, `render/clip.rs`)
+
+Per scene of a real-world project (`visual_render::plan`); AI-image scenes (and fallbacks)
+keep the pan over `image_1080.png` and their old clip hash.
+
+| Visual | Clip input | Motion |
+|---|---|---|
+| Photo / own screenshot | `scenes/<id>/photo_<res>_<hash>.jpg`: the 16:9 crop around the subject point, resized (Lanczos3) to **frame × zoom**, JPEG q92, made once before the clip (older ones deleted) | `zoompan` from 1 → zoom (even scenes) or zoom → 1 (odd), centred. **zoom = min(1.08, crop width / frame width)**: the last frame is 1:1, a photo is never enlarged past its own pixels; **low-res photos get no zoom** (`still`, upscaled once to the frame) |
+| Stock clip | `assets/<id>.mp4` with `-stream_loop -1 -t <scene>` (a short clip loops; hard cut) | `scale` to cover the frame (`force_original_aspect_ratio=increase`), `crop` around the subject point, 30 fps; the clip's own sound is dropped |
+| Diagram / code | the drawn picture (`render_path`, frame size) | still |
+
+- Readiness: a real-world scene blocks the render when its file / drawn picture is missing
+  ("N image(s) are missing"); a scene whose search failed needs its AI image instead.
+- Clip hash adds the visual (asset sha, prepared file, motion, zoom / clip focus / drawn hash);
+  changing the subject point or the pick re-renders only that scene.
+- `zoompan` exception to the "no zoompan" rule: see 03-pipeline.md 6a (benchmark + condition).
+- Editor preview: `render_timeline` gives `pan` = `zoom_in | zoom_out | still` and `zoom`;
+  `scene_image_full` returns the prepared photo (made on demand) / the clip's poster cropped
+  for the frame / the drawn picture. Clips preview as their poster (still).
+- Checked with the real FFmpeg (`clip::tests::real_ffmpeg_renders_every_input_kind`,
+  ignored by default): zoom, still and a 1 s clip looped to a 2.95 s scene, all 1920×1080.
 

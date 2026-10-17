@@ -14,8 +14,10 @@ use super::hashing::sha;
 use super::project::{AssetStatus, Project, ProjectStatus, Scene};
 use super::store::ProjectStore;
 use super::subs;
+use super::visual_render::{self, PhotoPrep, ScenePlan};
 use crate::render::RenderError;
-use crate::render::clip::{ClipSpec, Frame, Pan, TAIL_PAD_MS, clip_args};
+use crate::render::clip::{ClipSpec, Frame, Input, Motion, TAIL_PAD_MS, clip_args};
+use crate::stock::assets::AssetRegistry;
 use crate::render::concat::{concat_args, concat_list};
 use crate::render::encoders::Encoder;
 use crate::render::ffmpeg::Ffmpeg;
@@ -113,7 +115,18 @@ pub fn check_ready(p: &Project, dir: &Path) -> Result<(), ProjectError> {
     let missing = |f: &dyn Fn(&super::project::Scene) -> bool| p.scenes.iter().filter(|s| !f(s)).count();
     let file = |rel: &Option<String>| rel.as_ref().is_some_and(|r| dir.join(r).is_file());
     let voices = missing(&|s| s.voice.status == AssetStatus::Done && s.voice.duration_ms.is_some() && file(&s.voice.path));
-    let images = missing(&|s| s.image.status == AssetStatus::Done && file(&s.image.path));
+    let real_world = super::presets::is_real_world(&p.style.preset);
+    let registry = if real_world { registry(dir) } else { AssetRegistry::default() };
+    let images = p
+        .scenes
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| match real_world.then(|| visual_render::plan(p, s, *i, dir, &registry)) {
+            Some(ScenePlan::Ready { .. }) => false,
+            Some(ScenePlan::Missing(_)) => true,
+            Some(ScenePlan::AiImage) | None => !(s.image.status == AssetStatus::Done && file(&s.image.path)),
+        })
+        .count();
     let subtitles = missing(&|s| subs::is_fresh(p, s, dir));
     if voices + images > 0 {
         return Err(ProjectError::Invalid(format!(
@@ -135,31 +148,50 @@ pub struct ClipTask {
     pub spec: ClipSpec,
     pub hash: String,
     pub fresh: bool,
+    /// Real-world photo to prepare before the clip (`visual_render::ensure`).
+    pub prep: Option<PhotoPrep>,
+}
+
+fn registry(dir: &Path) -> AssetRegistry {
+    AssetRegistry::load(&dir.join("assets")).unwrap_or_default()
 }
 
 /// Plans every clip. Call after `check_ready`.
 pub fn plan_clips(p: &Project, dir: &Path, encoder: Encoder) -> Vec<ClipTask> {
     let frame = Frame::for_resolution(&p.render.resolution);
+    let real_world = super::presets::is_real_world(&p.style.preset);
+    let registry = if real_world { registry(dir) } else { AssetRegistry::default() };
     p.scenes
         .iter()
         .enumerate()
         .map(|(i, s)| {
-            let pan = Pan::for_index(i);
             let voice_ms = trimmed_voice_ms(s.voice.duration_ms.unwrap_or(0), speech_end(s, dir));
-            let image = s.image.path.clone().unwrap_or_default();
-            let hash = sha(&[
+            let (input, prep, visual_hash) = match real_world.then(|| visual_render::plan(p, s, i, dir, &registry)) {
+                Some(ScenePlan::Ready { input, prep, hash }) => (input, prep, hash),
+                _ => {
+                    let path = s.image.path.clone().unwrap_or_default();
+                    (Input::Image { path, motion: Motion::Pan(visual_render::ai_pan(i)) }, None, String::new())
+                }
+            };
+            let (image, motion) = match &input {
+                Input::Image { path, motion } => (path.clone(), motion.as_str()),
+                Input::Video { path, .. } => (path.clone(), "video"),
+            };
+            let mut parts = vec![
                 "clip",
                 CLIP_VERSION,
                 s.image.prompt_hash.as_deref().unwrap_or(""),
                 &image,
                 s.voice.text_hash.as_deref().unwrap_or(""),
                 s.voice.path.as_deref().unwrap_or(""),
-                &voice_ms.to_string(),
-                s.subs.hash.as_deref().unwrap_or(""),
-                encoder.name(),
-                &p.render.resolution,
-                pan.as_str(),
-            ]);
+            ];
+            let voice_len = voice_ms.to_string();
+            parts.extend([&voice_len[..], s.subs.hash.as_deref().unwrap_or(""), encoder.name(), &p.render.resolution, motion]);
+            // AI-image scenes keep their old hash (no needless re-render of existing projects).
+            if !visual_hash.is_empty() {
+                parts.push(&visual_hash);
+            }
+            let hash = sha(&parts);
             let final_rel = clip_path(&s.id);
             let fresh = s.clip.status == AssetStatus::Done
                 && s.clip.hash.as_deref() == Some(hash.as_str())
@@ -168,12 +200,12 @@ pub fn plan_clips(p: &Project, dir: &Path, encoder: Encoder) -> Vec<ClipTask> {
                 scene_id: s.id.clone(),
                 hash,
                 fresh,
+                prep,
                 spec: ClipSpec {
-                    image,
+                    input,
                     audio: s.voice.path.clone().unwrap_or_default(),
                     voice_ms,
                     subs_track: (!s.subs.lines.is_empty()).then(|| subs::track_path(&s.id)),
-                    pan,
                     frame,
                     encoder_args: encoder.args(),
                     output: format!("scenes/{}/clip.tmp.mkv", s.id),
@@ -209,8 +241,11 @@ pub struct TimelineScene {
     pub voice_ms: u64,
     /// Full voice file length (subtitle timings run over this).
     pub duration_ms: u64,
-    /// "lr" | "rl" | "tb" | "bt"
+    /// "lr" | "rl" | "tb" | "bt" (AI images), "zoom_in" | "zoom_out" | "still" (real-world
+    /// pictures; clips preview as a still of their poster).
     pub pan: &'static str,
+    /// Largest zoom of "zoom_in" / "zoom_out" (1 otherwise).
+    pub zoom: f32,
     pub voice_ready: bool,
     pub image_ready: bool,
     pub narration: String,
@@ -220,11 +255,20 @@ pub struct TimelineScene {
 /// The editor preview's timeline (same durations and pans as `plan_clips`).
 pub fn timeline(p: &Project, dir: &Path) -> Vec<TimelineScene> {
     let file = |rel: &Option<String>| rel.as_ref().is_some_and(|r| dir.join(r).is_file());
+    let real_world = super::presets::is_real_world(&p.style.preset);
+    let registry = if real_world { registry(dir) } else { AssetRegistry::default() };
     let mut start = 0;
     p.scenes
         .iter()
         .enumerate()
         .map(|(i, s)| {
+            let visual = real_world.then(|| visual_render::preview(p, s, i, dir, &registry)).flatten();
+            let ai_ready = s.image.status == AssetStatus::Done && file(&s.image.path);
+            let (pan, zoom, image_ready) = match &visual {
+                Some((_, _, motion)) => (motion.as_str(), motion.zoom(), true),
+                None if real_world && !s.needs_ai_image() => ("still", 1.0, false),
+                None => (visual_render::ai_pan(i).as_str(), 1.0, ai_ready),
+            };
             let voice_ready = s.voice.status == AssetStatus::Done && file(&s.voice.path);
             let duration_ms = if voice_ready { s.voice.duration_ms.unwrap_or(0) } else { 0 };
             let voice_ms = if voice_ready { trimmed_voice_ms(duration_ms, speech_end(s, dir)) } else { 0 };
@@ -236,9 +280,10 @@ pub fn timeline(p: &Project, dir: &Path) -> Vec<TimelineScene> {
                 clip_ms,
                 voice_ms,
                 duration_ms,
-                pan: Pan::for_index(i).as_str(),
+                pan,
+                zoom,
                 voice_ready,
-                image_ready: s.image.status == AssetStatus::Done && file(&s.image.path),
+                image_ready,
                 narration: s.narration.clone(),
                 words: if voice_ready { words(s, dir) } else { None },
             };
@@ -397,6 +442,13 @@ impl RenderJob {
             }
             emit.running(RenderStage::Clips, i + 1, &meter, meter.fraction(0.0));
             self.set_clip(project_id, &task.scene_id, AssetStatus::Running, None).await;
+            if let Some(prep) = task.prep.clone() {
+                let d = dir.clone();
+                tokio::task::spawn_blocking(move || visual_render::ensure(&d, &prep))
+                    .await
+                    .map_err(|e| RenderError::Io(e.to_string()))?
+                    .map_err(RenderError::Io)?;
+            }
             let clip_started = Instant::now();
             let tmp = dir.join(&task.spec.output);
             let result = self
@@ -553,8 +605,8 @@ mod tests {
         let mut p = ready_project(dir.path());
         let tasks = plan_clips(&p, dir.path(), Encoder::X264);
         assert!(tasks.iter().all(|t| !t.fresh));
-        assert_eq!(tasks[0].spec.pan, Pan::LeftToRight);
-        assert_eq!(tasks[1].spec.pan, Pan::RightToLeft);
+        assert!(matches!(tasks[0].spec.input, Input::Image { motion: Motion::Pan(crate::render::clip::Pan::LeftToRight), .. }));
+        assert!(matches!(tasks[1].spec.input, Input::Image { motion: Motion::Pan(crate::render::clip::Pan::RightToLeft), .. }));
 
         std::fs::write(dir.path().join("scenes/s001/clip.mkv"), b"x").unwrap();
         p.scenes[0].clip.status = AssetStatus::Done;

@@ -607,7 +607,8 @@ export interface RenderSettings {
   subtitle_highlight: string | null;
 }
 
-export type PanDir = "lr" | "rl" | "tb" | "bt";
+/** Pans over AI images; zoom / still for real-world pictures (docs/11 §9). */
+export type PanDir = "lr" | "rl" | "tb" | "bt" | "zoom_in" | "zoom_out" | "still";
 
 /** `render_timeline`: one scene of the editor preview (same times/pan as the render). */
 export interface TimelineScene {
@@ -621,6 +622,8 @@ export interface TimelineScene {
   /** Full voice file length (subtitle timings run over this). */
   duration_ms: number;
   pan: PanDir;
+  /** Largest zoom of zoom_in / zoom_out (1 otherwise). */
+  zoom: number;
   voice_ready: boolean;
   image_ready: boolean;
   narration: string;

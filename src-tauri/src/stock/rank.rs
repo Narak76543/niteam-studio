@@ -8,7 +8,6 @@ use super::license::LicenseCode;
 use super::{Candidate, Source};
 
 /// Largest zoom of the photo motion (`render/clip.rs`).
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the photo motion (render step)"))]
 pub const MAX_ZOOM: f32 = 1.08;
 const AI_PENALTY: f32 = 50.0;
 
@@ -24,7 +23,6 @@ pub fn is_low_res(width: u32, height: u32, frame_width: u32) -> bool {
 
 /// Zoom that never enlarges the picture past its real pixels: 1.0 (no zoom) for low-res
 /// images, at most [`MAX_ZOOM`].
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the photo motion (render step)"))]
 pub fn max_zoom(width: u32, height: u32, frame_width: u32) -> f32 {
     let ratio = cropped_width(width, height) as f32 / frame_width.max(1) as f32;
     ratio.clamp(1.0, MAX_ZOOM)

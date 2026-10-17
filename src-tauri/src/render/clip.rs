@@ -1,6 +1,8 @@
 //! FFmpeg arguments for one scene clip (03 Step 6a): slow pan over the enlarged image with a
-//! time-based `crop` (never `zoompan`), subtitle PNGs overlaid at their times, voice + 0.25 s
-//! of silence. Pure function, unit-tested.
+//! time-based `crop`, or for real-world scenes (`docs/11-real-world-visuals.md` §9) a gentle
+//! `zoompan` on a photo prepared at frame × zoom, a still (diagram, code, small photo) or a
+//! stock clip cover-cropped around the subject and looped when short; subtitle PNGs overlaid at
+//! their times, voice + 0.25 s of silence. Pure function, unit-tested.
 //!
 //! Clips are Matroska with H.264 + PCM audio: identical parameters for every clip, and no AAC
 //! priming gaps, so the concat step can join them seamlessly (audio is encoded once, there).
@@ -78,15 +80,55 @@ impl Pan {
     }
 }
 
+/// How a picture moves during its clip.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Motion {
+    /// AI images: pan over the pan-size image.
+    Pan(Pan),
+    /// Photos: zoom between 1 and `to`. The input is already frame × `to`, so the last frame
+    /// is shown 1:1 — never enlarged past the photo's own pixels.
+    Zoom { to: f32, zoom_in: bool },
+    /// Diagrams, code, photos too small to zoom: frame-size input, no motion.
+    Still,
+}
+
+impl Motion {
+    /// Timeline / preview name: "lr" | "rl" | "tb" | "bt" | "zoom_in" | "zoom_out" | "still".
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pan(p) => p.as_str(),
+            Self::Zoom { zoom_in: true, .. } => "zoom_in",
+            Self::Zoom { zoom_in: false, .. } => "zoom_out",
+            Self::Still => "still",
+        }
+    }
+
+    /// Largest zoom factor (1.0 when the picture doesn't zoom).
+    pub fn zoom(self) -> f32 {
+        match self {
+            Self::Zoom { to, .. } => to,
+            _ => 1.0,
+        }
+    }
+}
+
+/// What the clip shows.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Input {
+    /// A picture relative to the project folder.
+    Image { path: String, motion: Motion },
+    /// A stock clip (`assets/<id>.mp4`): looped when shorter than the scene, cover-cropped to
+    /// the frame around `focus`, its own sound dropped.
+    Video { path: String, focus: [f32; 2] },
+}
+
 #[derive(Debug, Clone)]
 pub struct ClipSpec {
-    /// Pan-size image (`scenes/<id>/image_1080.png`), relative to the project folder.
-    pub image: String,
+    pub input: Input,
     pub audio: String,
     pub voice_ms: u64,
     /// `scenes/<id>/subs/track.ffconcat` (timed subtitle images), relative to the project.
     pub subs_track: Option<String>,
-    pub pan: Pan,
     pub frame: Frame,
     /// `Encoder::args()`.
     pub encoder_args: Vec<String>,
@@ -110,14 +152,38 @@ pub fn clip_args(spec: &ClipSpec) -> Vec<String> {
     let mut a: Vec<String> = Vec::new();
     let push = |a: &mut Vec<String>, items: &[&str]| a.extend(items.iter().map(|s| (*s).to_owned()));
 
-    push(&mut a, &["-y", "-loop", "1", "-framerate", &FPS.to_string(), "-t", &d, "-i", &spec.image]);
+    match &spec.input {
+        Input::Image { path, .. } => push(&mut a, &["-y", "-loop", "1", "-framerate", &FPS.to_string(), "-t", &d, "-i", path]),
+        // -stream_loop: a short clip starts again until the scene ends.
+        Input::Video { path, .. } => push(&mut a, &["-y", "-stream_loop", "-1", "-t", &d, "-i", path]),
+    }
     push(&mut a, &["-i", &spec.audio]);
     if let Some(track) = &spec.subs_track {
         push(&mut a, &["-f", "concat", "-safe", "0", "-i", track]);
     }
 
-    let (x, y) = spec.pan.expr(&d);
-    let mut graph = format!("[0:v]crop=w={}:h={}:x='{x}':y='{y}'[bg]", f.width, f.height);
+    let (w, h) = (f.width, f.height);
+    let mut graph = match &spec.input {
+        Input::Image { motion: Motion::Pan(pan), .. } => {
+            let (x, y) = pan.expr(&d);
+            format!("[0:v]crop=w={w}:h={h}:x='{x}':y='{y}'[bg]")
+        }
+        Input::Image { motion: Motion::Zoom { to, zoom_in }, .. } => {
+            // `on` = output frame number; the zoom reaches `to` (or 1) on the last frame.
+            let last = ((spec.duration_ms() * u64::from(FPS)).div_ceil(1000)).saturating_sub(1).max(1);
+            let (from, end) = if *zoom_in { (1.0, *to) } else { (*to, 1.0) };
+            format!(
+                "[0:v]zoompan=z='{from:.4}+({:.4})*on/{last}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps={FPS}[bg]",
+                end - from
+            )
+        }
+        Input::Image { motion: Motion::Still, .. } => format!("[0:v]scale={w}:{h},setsar=1[bg]"),
+        Input::Video { focus, .. } => format!(
+            "[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}:x='(iw-ow)*{:.3}':y='(ih-oh)*{:.3}',fps={FPS},setsar=1[bg]",
+            focus[0].clamp(0.0, 1.0),
+            focus[1].clamp(0.0, 1.0)
+        ),
+    };
     let mut last = "bg";
     if spec.subs_track.is_some() {
         // Each subtitle image stays until the next one; the last one until the clip ends.
@@ -140,11 +206,10 @@ mod tests {
 
     fn spec(subs: bool, pan: Pan) -> ClipSpec {
         ClipSpec {
-            image: "scenes/s001/image_1080.png".into(),
+            input: Input::Image { path: "scenes/s001/image_1080.png".into(), motion: Motion::Pan(pan) },
             audio: "scenes/s001/voice.mp3".into(),
             voice_ms: 6150,
             subs_track: subs.then(|| "scenes/s001/subs/track.ffconcat".to_owned()),
-            pan,
             frame: Frame::for_resolution("1080p"),
             encoder_args: vec!["-c:v".into(), "libx264".into()],
             output: "scenes/s001/clip.tmp.mkv".into(),
@@ -206,6 +271,73 @@ mod tests {
         assert_eq!(Pan::for_index(2), Pan::TopToBottom);
         assert_eq!(Pan::for_index(3), Pan::BottomToTop);
         assert_eq!(Pan::for_index(4), Pan::LeftToRight);
+    }
+
+    #[test]
+    fn photos_zoom_with_zoompan_up_to_one_to_one() {
+        let mut s = spec(false, Pan::LeftToRight);
+        s.input = Input::Image { path: "scenes/s001/photo_1080p_ab.jpg".into(), motion: Motion::Zoom { to: 1.08, zoom_in: true } };
+        let g = graph(&clip_args(&s)).to_owned();
+        // 6.4 s at 30 fps = 192 frames → last frame 191.
+        assert!(g.contains("zoompan=z='1.0000+(0.0800)*on/191'"), "{g}");
+        assert!(g.contains(":d=1:s=1920x1080:fps=30[bg]"), "{g}");
+        s.input = Input::Image { path: "p.jpg".into(), motion: Motion::Zoom { to: 1.05, zoom_in: false } };
+        assert!(graph(&clip_args(&s)).contains("z='1.0500+(-0.0500)*on/191'"));
+        assert_eq!(Motion::Zoom { to: 1.05, zoom_in: false }.as_str(), "zoom_out");
+    }
+
+    #[test]
+    fn stills_and_clips() {
+        let mut s = spec(true, Pan::LeftToRight);
+        s.input = Input::Image { path: "scenes/s001/visual.png".into(), motion: Motion::Still };
+        assert!(graph(&clip_args(&s)).starts_with("[0:v]scale=1920:1080,setsar=1[bg];[bg][2:v]overlay"));
+        s.input = Input::Video { path: "assets/pixabay_1.mp4".into(), focus: [0.5, 0.25] };
+        let a = clip_args(&s);
+        let i = a.iter().position(|x| x == "assets/pixabay_1.mp4").unwrap();
+        assert_eq!(&a[i - 5..i], ["-stream_loop", "-1", "-t", "6.400", "-i"]);
+        let g = graph(&a);
+        assert!(g.contains("force_original_aspect_ratio=increase,crop=1920:1080:x='(iw-ow)*0.500':y='(ih-oh)*0.250',fps=30"), "{g}");
+        assert!(g.contains("[1:a]apad"), "the clip's own sound is not used: {g}");
+    }
+
+    /// Real FFmpeg on every input kind (zoom photo, still, short looped clip).
+    /// `NITEAN_FFMPEG=src-tauri/binaries/ffmpeg-x86_64-pc-windows-gnu.exe`, `--ignored`.
+    #[test]
+    #[ignore = "needs FFmpeg"]
+    fn real_ffmpeg_renders_every_input_kind() {
+        let ffmpeg = std::env::var("NITEAN_FFMPEG").expect("set NITEAN_FFMPEG");
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        image::RgbImage::from_fn(2074, 1166, |x, y| image::Rgb([(x % 256) as u8, (y % 256) as u8, 120])).save(d.join("photo.jpg")).unwrap();
+        image::RgbImage::from_pixel(1920, 1080, image::Rgb([240, 240, 240])).save(d.join("still.png")).unwrap();
+        std::fs::write(d.join("voice.wav"), crate::tts::wav::to_wav(&crate::tts::wav::tests::tone(48_000, 100, 2_500, 0.3))).unwrap();
+        let ok = std::process::Command::new(&ffmpeg)
+            .current_dir(d)
+            .args(["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=25:duration=1", "-c:v", "libx264", "clip.mp4"])
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "test clip");
+        for (name, input) in [
+            ("zoom", Input::Image { path: "photo.jpg".into(), motion: Motion::Zoom { to: 1.08, zoom_in: true } }),
+            ("still", Input::Image { path: "still.png".into(), motion: Motion::Still }),
+            ("video", Input::Video { path: "clip.mp4".into(), focus: [0.5, 0.5] }),
+        ] {
+            let spec = ClipSpec {
+                input,
+                audio: "voice.wav".into(),
+                voice_ms: 2_700,
+                subs_track: None,
+                frame: Frame::for_resolution("1080p"),
+                encoder_args: vec!["-c:v".into(), "libx264".into(), "-preset".into(), "veryfast".into()],
+                output: format!("{name}.mkv"),
+            };
+            let out = std::process::Command::new(&ffmpeg).current_dir(d).args(["-v", "error"]).args(clip_args(&spec)).output().unwrap();
+            assert!(out.status.success(), "{name}: {}", String::from_utf8_lossy(&out.stderr));
+            let probe = std::process::Command::new(&ffmpeg).current_dir(d).args(["-i", &format!("{name}.mkv")]).output().unwrap();
+            let info = String::from_utf8_lossy(&probe.stderr).into_owned();
+            assert!(info.contains("1920x1080") && info.contains("Duration: 00:00:02.9"), "{name}: {info}");
+        }
     }
 
     #[test]

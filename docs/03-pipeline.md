@@ -315,7 +315,22 @@ ffmpeg -y -loop 1 -framerate 30 -t D -i image_1080.png \
   scenes/s001/clip.mp4
 ```
 
-- Use `crop` with a time expression for motion. **Do not use `zoompan`** — it is very slow.
+- Use `crop` with a time expression for motion. **Do not use `zoompan`** — it is very slow
+  on large inputs.
+  **Exception (2026-10-17, real-world photos only, `11-real-world-visuals.md` §9):** a gentle
+  zoom uses `zoompan` **when its input is only slightly larger than the frame** — the photo is
+  prepared at frame × zoom (≤ 1.08, e.g. 2074×1166 for 1080p) before the clip. Measured on
+  the owner's laptop (RTX 4050 Laptop), 12 s of 1080p from a 2150×1210 image:
+
+  | Motion | libx264 veryfast | h264_nvenc | stalled frames |
+  |---|---|---|---|
+  | `crop` pan (AI images) | 2.0 s | 1.7 s | 18 / 319 |
+  | zoom with `scale=…:eval=frame` + `crop` | 2.7 s | 2.4 s | 57 / 319 (stutters) |
+  | zoom with `zoompan` | 2.7 s | 2.2 s | 0 / 319 |
+
+  (stalled = no change from the previous frame, signalstats YDIF). About +35 % render time
+  for photo scenes; expect the same ratio on the 8 GB target. Never feed `zoompan` a
+  full-size photo — always the prepared frame × zoom picture.
 - All clips must share identical codec, resolution, fps, pixel format, audio
   params, so concat can stream-copy.
 - Spawn with below-normal process priority; parse `-progress pipe:1` for percent.

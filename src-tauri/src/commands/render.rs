@@ -11,12 +11,15 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{CmdResult, to_cmd};
 use crate::pipeline::ProjectError;
+use crate::pipeline::presets::is_real_world;
 use crate::pipeline::project::ProjectStatus;
+use crate::pipeline::visual_render;
 use crate::pipeline::render_job::{self, RenderEvents, RenderJob, RenderProgress, TimelineScene};
 use crate::pipeline::subs::{self, CuePng, SubsTask};
 use crate::render::encoders::{self, Encoder};
 use crate::render::ffmpeg::Ffmpeg;
 use crate::state::AppState;
+use crate::stock::assets::AssetRegistry;
 use crate::storage::log::LogFile;
 use crate::storage::settings;
 
@@ -95,12 +98,22 @@ pub async fn render_timeline(state: State<'_, AppState>, project_id: String) -> 
 #[tauri::command]
 pub async fn scene_image_full(state: State<'_, AppState>, project_id: String, scene_id: String) -> CmdResult<Response> {
     let project = state.store.get(&project_id).await.map_err(to_cmd)?;
-    let rel = project
-        .scenes
-        .iter()
-        .find(|s| s.id == scene_id)
-        .and_then(|s| s.image.path.clone())
-        .ok_or_else(|| "This scene has no image yet.".to_owned())?;
+    let dir = state.paths.project_dir(&project_id);
+    let index = project.scenes.iter().position(|s| s.id == scene_id).ok_or_else(|| to_cmd(ProjectError::SceneNotFound))?;
+    let scene = &project.scenes[index];
+    // Real-world scenes: the picture the clip will show (photo prepared for the frame,
+    // clip poster, diagram / code), unless the scene fell back to an AI image.
+    if is_real_world(&project.style.preset) && !scene.needs_ai_image() {
+        let registry = AssetRegistry::load(&state.paths.project_assets_dir(&project_id)).map_err(to_cmd)?;
+        let (rel, prep, _) = visual_render::preview(&project, scene, index, &dir, &registry).ok_or("This scene has no picture yet.")?;
+        if let Some(prep) = prep {
+            let d = dir.clone();
+            tokio::task::spawn_blocking(move || visual_render::ensure(&d, &prep)).await.map_err(|e| e.to_string())??;
+        }
+        let bytes = tokio::fs::read(dir.join(&rel)).await.map_err(|e| format!("Could not read the picture: {e}"))?;
+        return Ok(Response::new(bytes));
+    }
+    let rel = scene.image.path.clone().ok_or_else(|| "This scene has no image yet.".to_owned())?;
     if !super::generate::is_safe_relative(&rel) {
         return Err("Invalid image path.".into());
     }

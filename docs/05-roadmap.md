@@ -171,7 +171,8 @@ Free sources only: Pexels (optional), Pixabay, Openverse, Wikimedia Commons (CLA
 - [x] Step 2: style preset + script schema (visual type, English keywords, Mermaid, code)
 - [x] Step 3: scene picker (candidates, search again, switch type, restriction badges), Credits + Copy;
       "Find photos & clips" job (auto-pick by ranking, marked Check, pause/resume, AI fallback)
-- [ ] Step 4: render — photo zoom/pan with focus and zoom limit, stock video, screenshot
+- [x] Step 4: render — photo zoom with focus and zoom limit (no zoom on low-res), stock video
+      (cover crop, loop), screenshot; editor preview; zoompan exception documented (03 6a)
 - [ ] Step 5: diagrams (Mermaid in the WebView, Khmer labels, bold font, timeline colours)
 - [ ] Step 6: code / terminal scenes (Shiki, typed out)
 - [ ] Test video "How the internet reaches Cambodia (undersea cables)"
@@ -328,4 +329,9 @@ _Add one line per finished phase: date — phase — notes._
   pause when every source is rate-limited), picker dialog (type switch, search, source filter,
   licence / size / low-res / restriction badges, subject point with crop + subtitle band,
   diagram / code text, own screenshot with consent), Scenes page integration, Credits + Copy.
+- 2026-10-17 — **Real-world Tech Explainer, step 4**: `visual_render` plans each scene's clip
+  input (photo prepared at frame × zoom around the subject point, zoom ≤ 1.08 and never past
+  the photo's pixels; stock clips cover-cropped and looped; drawn stills), `clip.rs` inputs
+  Image{Pan|Zoom|Still} / Video, render readiness + hashes, editor preview zoom/still.
+  Real FFmpeg check for every input kind.
 

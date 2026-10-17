@@ -48,6 +48,14 @@ stop and ask the human to test. Do not start the next phase on your own.
   build), Q8_0 model downloaded on demand; Edge and Gemini TTS remain available. Voice cloning
   only from the user's own voice or one they have permission to use (consent checkbox).
   No other non-Gemini AI services and no other local models.
+  **Exception 5 (stock media, "Real-world Tech Explainer" only,
+  `docs/tasks/real-world-tech-explainer-plan.md`; owner, 2026-10-17):** that feature may search
+  and download photos/videos from **Pexels, Pixabay, Openverse and Wikimedia Commons** (not AI
+  services), following each API's terms. No other stock sources (no Unsplash), never scrape
+  Google Images or websites. Wikimedia/Openverse: only CC0, public domain, CC BY (CC BY-SA only
+  when the user turns it on in Settings); never NC or ND. Pexels/Pixabay keys in the keyring
+  (`pexels_api_key`, `pixabay_api_key`) like the other keys; rate limits → pause and resume,
+  never rotate keys.
   - Store the Gemini key **and the Cloudflare API token** only via the `keyring` crate
     (Windows Credential Manager; users `gemini_api_key`, `cloudflare_api_token`). The
     Cloudflare **account ID** is not secret and lives in `settings.json`.

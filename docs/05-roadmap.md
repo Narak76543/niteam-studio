@@ -168,7 +168,7 @@ Free sources only: Pexels (optional), Pixabay, Openverse, Wikimedia Commons (CLA
 - [x] Step 1: data model (`scene.visual`, `assets.json`), Settings (sources, keys, CC BY-SA
       switch), Pixabay / Pexels / Openverse / Commons clients, 24 h search cache, licence
       filter, local ranking (resolution, low-res, AI-generated filter), downloads with licence records
-- [ ] Step 2: style preset + script schema (visual type, English keywords, Mermaid, code)
+- [x] Step 2: style preset + script schema (visual type, English keywords, Mermaid, code)
 - [ ] Step 3: scene picker (candidates, search again, switch type, restriction badges), Credits + Copy
 - [ ] Step 4: render — photo zoom/pan with focus and zoom limit, stock video, screenshot
 - [ ] Step 5: diagrams (Mermaid in the WebView, Khmer labels, bold font, timeline colours)
@@ -319,3 +319,6 @@ _Add one line per finished phase: date — phase — notes._
   parsing/filter (CC0, PD, CC BY; BY-SA behind a switch; never NC/ND), local ranking with
   low-res and AI-generated detection, per-project downloads with `assets.json` licence records,
   Settings → Stock photos & videos, `scene.visual` data model. Spec `docs/11-real-world-visuals.md`.
+- 2026-10-17 — **Real-world Tech Explainer, step 2**: `tech_explainer` preset; with it the
+  chapter schema asks for visual type, English keywords, Mermaid and code per scene (rules in
+  `script::visual_rules`, validated and fed back), mapped to `scene.visual` with fallbacks.

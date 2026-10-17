@@ -5,12 +5,18 @@ export const PRESET_IDS = [
   "cinematic_realistic",
   "flat_2d",
   "soft_2d_explainer",
+  "tech_explainer",
 ] as const;
 
 export type PresetId = (typeof PRESET_IDS)[number];
 
 export function isPresetId(id: string): id is PresetId {
   return (PRESET_IDS as readonly string[]).includes(id);
+}
+
+/** Presets whose scenes use real photos, stock video, diagrams and code (docs/11). */
+export function isRealWorld(id: string): boolean {
+  return id === "tech_explainer";
 }
 
 /** i18n key of a preset label. */

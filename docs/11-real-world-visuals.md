@@ -9,8 +9,8 @@ Per scene the visual is one of `ai_image` (the image providers, fallback), `real
 `stock_video`, `diagram`, `code`, `screenshot`. Subtitles and the render pipeline stay as they
 are.
 
-Status: **step 1 built** (data model, Settings, clients, cache, license filter, ranking,
-downloads). Script preset, picker UI, render, diagrams, code: next steps.
+Status: **steps 1–2 built** (data model, Settings, clients, cache, licence filter, ranking,
+downloads; style preset + script fields). Picker UI, render, diagrams, code: next steps.
 
 ## 1. Data model
 
@@ -127,3 +127,27 @@ used only when their key is stored; Commons and Openverse need none.
 | `stock_key_test(source)` | one live photo search; `{ok, results, error_kind, details}` |
 | `stock_search(project_id?, query, keywords, media, page)` | `{candidates, notices}`; frame width from the project resolution |
 | `stock_pick(project_id, scene_id, candidate)` | download once (+ `assets.json` record), set the scene's visual |
+
+## 6. Style preset and script
+
+- Preset **`tech_explainer`** ("Real-world Tech Explainer", `presets::is_real_world`). Its
+  `style_prompt` is only used for scenes that fall back to an AI image.
+- With this preset the chapter schema (`gemini/script.rs`) adds per scene: `visual_type`
+  (`real_photo | stock_video | diagram | code | ai_image`), `keywords` (≤ 4 English search
+  phrases), `mermaid`, `code_language` (bash, powershell, python, javascript, typescript, json,
+  yaml, rust, go, java, c, cpp, sql, html, css, text), `code`, `terminal`. `image_prompt` stays
+  required (fallback).
+- Prompt rules (`script::visual_rules`): mostly real photos; stock video only when motion helps
+  (≤ 1 in 5); about one diagram per chapter for processes / paths / architectures / timelines;
+  code at most twice, only for something a viewer could type; AI image only when no photo could
+  exist. Keywords: concrete, visual, most specific first, no names or years. Mermaid:
+  `flowchart LR|TD`, `sequenceDiagram` or `timeline`, ≤ 8 nodes, ASCII ids, quoted labels ≤ 5
+  words in the narration language (Khmer with Latin product names), no styling / HTML. Code:
+  ≤ 12 lines, `$ ` prompts for terminals, documentation addresses only (example.com,
+  192.0.2.x, 203.0.113.x).
+- Validation (fed back to the model once): photo/video need keywords; a diagram's Mermaid must
+  start with one of the allowed headers (`script::mermaid_template`); code must not be empty.
+- `script_job::visual_from_reply` → `scene.visual`: keywords trimmed, de-duplicated, ≤ 4;
+  a diagram that still has unusable Mermaid becomes a photo (or an AI image without keywords);
+  unknown code languages become `text`; `type_out` on by default.
+

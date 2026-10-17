@@ -7,7 +7,7 @@ use serde::Serialize;
 use super::ProjectError;
 use super::hashing::{normalize, normalize_spoken};
 use super::presets;
-use super::project::Shot;
+use super::project::{CodeSpec, DiagramSpec, SceneVisual, Shot, VisualKind};
 use super::project::{Outline, OutlineChapter, Project, ProjectStatus, Scene, SourceStage};
 use super::store::ProjectStore;
 use super::visual_bible;
@@ -238,7 +238,7 @@ impl ScriptJob<'_> {
                 self.key,
                 self.models,
                 script::chapter_prompt(&brief, &ctx),
-                script::chapter_schema(ctx.scene_count, &ctx.bible, source.is_some()),
+                script::chapter_schema(ctx.scene_count, &ctx.bible, source.is_some(), brief.real_world),
                 self.hooks,
             )
             .await?;
@@ -288,6 +288,7 @@ fn brief<'a>(p: &'a Project, style_label: &'a str, source: Option<&'a str>) -> S
         figures: super::presets::figures(&p.style.style_prompt),
         keep_terms: &p.keep_terms,
         source,
+        real_world: super::presets::is_real_world(&p.style.preset),
     }
 }
 
@@ -327,8 +328,42 @@ fn build_outline(reply: OutlineReply, plan: &[u32]) -> Outline {
     }
 }
 
+/// A real-world scene's visual from the model's reply. A diagram whose Mermaid can't be used
+/// falls back to a photo (or an AI image without keywords); unknown code languages become text.
+fn visual_from_reply(r: &SceneReply) -> SceneVisual {
+    let mut keywords: Vec<String> = Vec::new();
+    for k in &r.keywords {
+        let k = normalize(k).chars().take(60).collect::<String>();
+        if !k.is_empty() && !keywords.iter().any(|x| x.eq_ignore_ascii_case(&k)) && keywords.len() < 4 {
+            keywords.push(k);
+        }
+    }
+    let photo_or_ai = if keywords.is_empty() { VisualKind::AiImage } else { VisualKind::RealPhoto };
+    let mut v = SceneVisual { keywords, ..SceneVisual::default() };
+    v.kind = match r.visual_type.as_str() {
+        "real_photo" => photo_or_ai,
+        "stock_video" if !v.keywords.is_empty() => VisualKind::StockVideo,
+        "diagram" => match script::mermaid_template(&r.mermaid) {
+            Some(template) => {
+                v.diagram = Some(DiagramSpec { template: template.into(), mermaid: r.mermaid.trim().to_owned() });
+                VisualKind::Diagram
+            }
+            None => photo_or_ai,
+        },
+        "code" if !r.code.trim().is_empty() => {
+            let language = if script::CODE_LANGUAGES.contains(&r.code_language.as_str()) { r.code_language.clone() } else { "text".into() };
+            v.code = Some(CodeSpec { language, text: r.code.trim_end().to_owned(), terminal: r.terminal, type_out: true });
+            VisualKind::Code
+        }
+        "ai_image" => VisualKind::AiImage,
+        _ => photo_or_ai,
+    };
+    v
+}
+
 fn append_chapter(p: &mut Project, index: usize, replies: Vec<SceneReply>) {
     let chapter = index as u32;
+    let real_world = super::presets::is_real_world(&p.style.preset);
     // A retried chapter must not duplicate scenes.
     p.scenes.retain(|s| s.chapter != chapter);
     // Keep chapters in story order even if the user added scenes meanwhile.
@@ -343,6 +378,9 @@ fn append_chapter(p: &mut Project, index: usize, replies: Vec<SceneReply>) {
         scene.narration = normalize(&r.narration);
         scene.spoken_text = normalize_spoken(&r.spoken_text);
         scene.image_prompt = normalize(&r.image_prompt);
+        if real_world {
+            scene.visual = visual_from_reply(&r);
+        }
         scene.mood = if MOODS.contains(&r.mood.as_str()) {
             r.mood
         } else {
@@ -364,6 +402,7 @@ fn append_chapter(p: &mut Project, index: usize, replies: Vec<SceneReply>) {
             .map(|_| place);
         scene.shot = Shot::parse(&r.shot).unwrap_or_default();
         scene.key_scene = r.key_scene;
+
         if let Some(s) = &p.source {
             let mut pages: Vec<u32> =
                 r.source_pages.iter().copied().filter(|n| (s.page_from..=s.page_to).contains(n)).collect();
@@ -421,8 +460,42 @@ mod tests {
                 key_scene: false,
                 source_pages: vec![],
                 general_knowledge: false,
+                visual_type: String::new(),
+                keywords: vec![],
+                mermaid: String::new(),
+                code_language: String::new(),
+                code: String::new(),
+                terminal: false,
             })
             .collect()
+    }
+
+    #[test]
+    fn real_world_replies_become_scene_visuals() {
+        let mut r = reply(1).remove(0);
+        r.visual_type = "diagram".into();
+        r.keywords = vec![" undersea cable ".into(), "undersea cable".into(), "".into()];
+        r.mermaid = "flowchart LR\n A[\"Phnom Penh\"] --> B[\"Singapore\"]".into();
+        let v = visual_from_reply(&r);
+        assert_eq!(v.kind, VisualKind::Diagram);
+        assert_eq!(v.keywords, vec!["undersea cable"]);
+        assert_eq!(v.diagram.as_ref().map(|d| d.template.as_str()), Some("flow"));
+
+        r.mermaid = "not mermaid".into();
+        assert_eq!(visual_from_reply(&r).kind, VisualKind::RealPhoto, "broken diagram falls back to a photo");
+        r.keywords.clear();
+        assert_eq!(visual_from_reply(&r).kind, VisualKind::AiImage);
+
+        r.visual_type = "code".into();
+        r.code = "$ traceroute example.com".into();
+        r.code_language = "klingon".into();
+        let c = visual_from_reply(&r);
+        let code = c.code.unwrap();
+        assert_eq!((c.kind, code.language.as_str(), code.terminal, code.type_out), (VisualKind::Code, "text", false, true));
+
+        r.visual_type = "stock_video".into();
+        r.keywords = vec!["cable ship".into()];
+        assert_eq!(visual_from_reply(&r).kind, VisualKind::StockVideo);
     }
 
     #[test]

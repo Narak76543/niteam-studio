@@ -11,6 +11,10 @@ pub struct StylePreset {
     /// Added word for word near the end of every final image prompt (after the scene), so
     /// it holds even when the Visual Bible's `style` line paraphrases `style_prompt`.
     pub prompt_rules: &'static str,
+    /// "Real-world Tech Explainer": scenes get a visual type (real photo, stock video,
+    /// diagram, code…) and the image providers are only the fallback
+    /// (`docs/11-real-world-visuals.md`).
+    pub real_world: bool,
 }
 
 pub const PRESETS: &[StylePreset] = &[
@@ -25,6 +29,7 @@ pub const PRESETS: &[StylePreset] = &[
                        complete scene drawn in the same doodle lines with a background setting and several \
                        topic props, flat colour accents, whiteboard explainer style",
         prompt_rules: "",
+        real_world: false,
     },
     StylePreset {
         id: "storybook_watercolor",
@@ -32,6 +37,7 @@ pub const PRESETS: &[StylePreset] = &[
         style_prompt: "warm watercolor storybook illustration, soft natural light, gentle textured paper, \
                        muted earthy palette, hand-painted details, calm and inviting",
         prompt_rules: "",
+        real_world: false,
     },
     StylePreset {
         id: "cinematic_realistic",
@@ -39,6 +45,7 @@ pub const PRESETS: &[StylePreset] = &[
         style_prompt: "cinematic realistic digital painting, dramatic natural lighting, shallow depth of field, \
                        rich color grading, wide establishing composition, highly detailed",
         prompt_rules: "",
+        real_world: false,
     },
     StylePreset {
         id: "flat_2d",
@@ -46,6 +53,7 @@ pub const PRESETS: &[StylePreset] = &[
         style_prompt: "clean flat 2D vector illustration, simple geometric shapes, limited harmonious palette, \
                        soft shadows, friendly modern explainer style",
         prompt_rules: "",
+        real_world: false,
     },
     // Owner, 2026-10-17: calm explainer look, outlined round-headed figures on soft painted
     // backgrounds. Z-Image runs at cfg 1.0 (no negative prompt), so "no ..." rules stay in
@@ -59,6 +67,17 @@ pub const PRESETS: &[StylePreset] = &[
                        background elements, distant layers fading into mist, muted green, sage and grey-blue \
                        palette with soft earth tones, gentle lighting, lots of empty space",
         prompt_rules: SOFT_2D_RULES,
+        real_world: false,
+    },
+    // Owner, 2026-10-17: real photos, stock clips, diagrams and code; this style prompt is
+    // only used for scenes that fall back to an AI image.
+    StylePreset {
+        id: "tech_explainer",
+        label: "Real-world Tech Explainer",
+        style_prompt: "clean realistic technology photo illustration, modern equipment and places, natural soft \
+                       light, neutral colours, sharp focus, documentary feel",
+        prompt_rules: "no text, no letters, no logos, no watermark",
+        real_world: true,
     },
 ];
 
@@ -97,6 +116,11 @@ pub fn figures(style_prompt: &str) -> Figures {
     }
 }
 
+/// Scenes of this preset get visual types (`tech_explainer`).
+pub fn is_real_world(preset_id: &str) -> bool {
+    find(preset_id).is_some_and(|p| p.real_world)
+}
+
 /// The preset's fixed prompt rules (empty for unknown ids and most presets).
 pub fn prompt_rules(preset_id: &str) -> &'static str {
     find(preset_id).map_or("", |p| p.prompt_rules)
@@ -121,5 +145,12 @@ mod tests {
         assert!(p.prompt_rules.contains("no text, no letters, no watermark"));
         assert_eq!(prompt_rules("stickman"), "");
         assert_eq!(prompt_rules("nope"), "");
+    }
+
+    #[test]
+    fn only_the_tech_explainer_is_real_world() {
+        assert!(is_real_world("tech_explainer"));
+        assert!(!is_real_world("stickman") && !is_real_world("nope"));
+        assert_eq!(figures(find("tech_explainer").unwrap().style_prompt), Figures::Free);
     }
 }

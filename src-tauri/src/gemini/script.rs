@@ -34,6 +34,9 @@ pub struct ScriptBrief<'a> {
     pub keep_terms: &'a [String],
     /// "From document" projects: `document::source_block` (selected points, rules).
     pub source: Option<&'a str>,
+    /// "Real-world Tech Explainer": each scene also gets a visual type, English search
+    /// keywords, a Mermaid diagram or a code snippet (`visual_rules`).
+    pub real_world: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -78,6 +81,42 @@ pub struct SceneReply {
     pub source_pages: Vec<u32>,
     #[serde(default)]
     pub general_knowledge: bool,
+    /// Real-world projects only: one of [`VISUAL_TYPES`].
+    #[serde(default)]
+    pub visual_type: String,
+    /// English stock-search phrases.
+    #[serde(default)]
+    pub keywords: Vec<String>,
+    #[serde(default)]
+    pub mermaid: String,
+    #[serde(default)]
+    pub code_language: String,
+    #[serde(default)]
+    pub code: String,
+    #[serde(default)]
+    pub terminal: bool,
+}
+
+/// What a real-world scene shows (`pipeline::project::VisualKind`, minus `screenshot`, which
+/// only the user adds).
+pub const VISUAL_TYPES: &[&str] = &["real_photo", "stock_video", "diagram", "code", "ai_image"];
+/// Code languages the code renderer highlights; anything else is shown as plain text.
+pub const CODE_LANGUAGES: &[&str] = &[
+    "bash", "powershell", "python", "javascript", "typescript", "json", "yaml", "rust", "go", "java", "c", "cpp",
+    "sql", "html", "css", "text",
+];
+
+/// Diagram template of a Mermaid source from its first line: `flow`, `sequence` or
+/// `timeline`; `None` for anything else (we only ask for these three).
+pub fn mermaid_template(src: &str) -> Option<&'static str> {
+    let first = src.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with("%%"))?;
+    let head = first.split_whitespace().next()?;
+    match head {
+        "flowchart" | "graph" => Some("flow"),
+        "sequenceDiagram" => Some("sequence"),
+        "timeline" => Some("timeline"),
+        _ => None,
+    }
 }
 
 pub const SHOTS: &[&str] = &["wide", "medium", "close", "detail", "aerial"];
@@ -138,6 +177,19 @@ impl Validate for ChapterReply {
                     i + 1
                 ));
             }
+            let n = i + 1;
+            match s.visual_type.as_str() {
+                "real_photo" | "stock_video" if s.keywords.iter().all(|k| k.trim().is_empty()) => {
+                    return Err(format!("scene {n} is {} but has no `keywords`", s.visual_type));
+                }
+                "diagram" if mermaid_template(&s.mermaid).is_none() => {
+                    return Err(format!(
+                        "scene {n} is a diagram but `mermaid` does not start with `flowchart LR`, `flowchart TD`, `sequenceDiagram` or `timeline`"
+                    ));
+                }
+                "code" if s.code.trim().is_empty() => return Err(format!("scene {n} is code but `code` is empty")),
+                _ => {}
+            }
         }
         Ok(())
     }
@@ -167,8 +219,22 @@ pub fn outline_schema(chapter_count: usize) -> Value {
     })
 }
 
-pub fn chapter_schema(scene_count: usize, bible: &BibleKeys, with_source: bool) -> Value {
+pub fn chapter_schema(scene_count: usize, bible: &BibleKeys, with_source: bool, real_world: bool) -> Value {
     let mut schema = scene_schema(scene_count, bible);
+    if real_world {
+        let item = &mut schema["properties"]["scenes"]["items"];
+        item["properties"]["visual_type"] = json!({ "type": "string", "enum": VISUAL_TYPES });
+        item["properties"]["keywords"] = json!({ "type": "array", "items": { "type": "string" }, "maxItems": 4 });
+        item["properties"]["mermaid"] = json!({ "type": "string" });
+        item["properties"]["code_language"] = json!({ "type": "string", "enum": CODE_LANGUAGES });
+        item["properties"]["code"] = json!({ "type": "string" });
+        item["properties"]["terminal"] = json!({ "type": "boolean" });
+        if let Some(req) = item["required"].as_array_mut() {
+            for f in ["visual_type", "keywords", "mermaid", "code_language", "code", "terminal"] {
+                req.push(json!(f));
+            }
+        }
+    }
     if with_source {
         let item = &mut schema["properties"]["scenes"]["items"];
         item["properties"]["source_pages"] = json!({ "type": "array", "items": { "type": "integer" } });
@@ -371,6 +437,40 @@ figures only as statues, carvings or generic figures.\n"
     )
 }
 
+/// How real-world scenes choose and describe their visual (`docs/11-real-world-visuals.md`).
+pub fn visual_rules(language: Language) -> String {
+    let labels = match language {
+        Language::Km => "in Khmer (keep product and technology names in Latin letters)",
+        Language::En => "in English",
+    };
+    format!(
+        "VISUALS: this video uses REAL photos and short stock video clips, plus diagrams and code. For each scene:\n\
+- `visual_type`: one of {types}.\n\
+  - real_photo (most scenes): a real photograph exists of what the narration talks about (equipment, places, \
+machines, cables, buildings, devices, people at work as anonymous figures).\n\
+  - stock_video: only when motion helps (a ship at sea, waves, a data center walk-through, blinking network \
+lights, traffic); at most 1 scene in 5.\n\
+  - diagram: when the scene explains a process, a path, an architecture, an order of steps or a timeline; about \
+one per chapter.\n\
+  - code: only when the topic involves a command, configuration or program output a viewer could type (for example \
+a traceroute or ping in a terminal); at most 2 in the whole video.\n\
+  - ai_image: only when no real photograph could exist (inside a chip at atomic scale, the far future, an abstract idea).\n\
+- `keywords`: for real_photo and stock_video, 2–4 short ENGLISH search phrases for stock photo sites, concrete and \
+visual (things a photographer could shoot), most specific first: e.g. \"submarine cable cross section\", \
+\"cable laying ship\", \"data center server racks\". No abstract words, no people's names, no years. For other types, \
+1–2 phrases are still useful as a fallback.\n\
+- `mermaid`: for diagram only (else \"\"): valid Mermaid that starts with `flowchart LR`, `flowchart TD`, \
+`sequenceDiagram` or `timeline`. At most 8 nodes or steps. Node ids are plain ASCII letters (A, B, C); every label \
+in double quotes, at most 5 words, {labels}. No styling, classDef, click, links, emoji, HTML or markdown. Use \
+`\\n` nowhere; keep each label on one line.\n\
+- `code_language` and `code`: for code only (else \"text\" and \"\"): at most 12 lines, realistic and correct. \
+For a terminal set `terminal` true, start each command with `$ ` and include short realistic output. Use documentation \
+addresses only (example.com, 192.0.2.x, 203.0.113.x); never real keys, passwords or private data.\n\
+- `image_prompt` is still required for every scene: it is the fallback picture when no photo fits.\n",
+        types = VISUAL_TYPES.join(", "),
+    )
+}
+
 pub fn chapter_prompt(brief: &ScriptBrief, ctx: &ChapterContext) -> String {
     let outline: String = ctx
         .chapters
@@ -425,7 +525,8 @@ Write exactly {scenes} scenes. For each scene:\n\
 - `place`: the Visual Bible place key where the scene happens, or \"\" if none fits.\n\
 - `shot`: one of {shots}. Vary shots: never more than 2 consecutive scenes with the same shot.\n\
 {previous_shots}\
-- `key_scene`: {key_rule}.{source_fields}",
+- `key_scene`: {key_rule}.{source_fields}{visuals}",
+        visuals = if brief.real_world { format!("\n{}", visual_rules(brief.language)) } else { String::new() },
         source = brief.source.map_or(String::new(), |s| format!("\n{s}")),
         source_fields = if brief.source.is_some() {
             "\n- `source_pages`: page numbers from the source the scene's claims come from ([] if none).\n\
@@ -559,7 +660,66 @@ mod tests {
             figures: Figures::Free,
             keep_terms: &[],
             source: None,
+            real_world: false,
         }
+    }
+
+    #[test]
+    fn real_world_scenes_get_visual_fields_and_rules() {
+        let ctx = ChapterContext {
+            title: "t",
+            hook: "h",
+            chapters: vec![("c1", "s1")],
+            index: 0,
+            scene_count: 3,
+            previous_narration: None,
+            previous_shots: vec![],
+            bible: BibleKeys::default(),
+        };
+        let schema = chapter_schema(3, &ctx.bible, false, true);
+        let item = &schema["properties"]["scenes"]["items"];
+        assert_eq!(item["properties"]["visual_type"]["enum"][0], "real_photo");
+        assert!(item["required"].as_array().unwrap().iter().any(|r| r == "keywords"));
+        let plain = chapter_schema(3, &ctx.bible, false, false);
+        assert!(plain["properties"]["scenes"]["items"]["properties"].get("visual_type").is_none());
+        let with = chapter_prompt(&ScriptBrief { real_world: true, ..brief() }, &ctx);
+        assert!(with.contains("ENGLISH search phrases") && with.contains("flowchart LR") && with.contains("in Khmer"));
+        assert!(!chapter_prompt(&brief(), &ctx).contains("VISUALS:"));
+    }
+
+    #[test]
+    fn mermaid_templates_and_visual_validation() {
+        assert_eq!(mermaid_template("flowchart LR\n A[\"x\"] --> B"), Some("flow"));
+        assert_eq!(mermaid_template("%% c\ngraph TD\n A-->B"), Some("flow"));
+        assert_eq!(mermaid_template("sequenceDiagram\n A->>B: hi"), Some("sequence"));
+        assert_eq!(mermaid_template("timeline\n 1991 : web"), Some("timeline"));
+        assert_eq!(mermaid_template("pie\n \"a\": 1"), None);
+        let scene = |visual_type: &str, keywords: Vec<String>, mermaid: &str, code: &str| SceneReply {
+            narration: "n".into(),
+            spoken_text: "s".into(),
+            image_prompt: "p".into(),
+            mood: "calm".into(),
+            fact_note: String::new(),
+            characters: vec![],
+            place: String::new(),
+            shot: "wide".into(),
+            key_scene: false,
+            source_pages: vec![],
+            general_knowledge: false,
+            visual_type: visual_type.into(),
+            keywords,
+            mermaid: mermaid.into(),
+            code_language: "bash".into(),
+            code: code.into(),
+            terminal: true,
+        };
+        let ok = |s: SceneReply| ChapterReply { scenes: vec![s] }.validate();
+        assert!(ok(scene("real_photo", vec!["submarine cable".into()], "", "")).is_ok());
+        assert!(ok(scene("real_photo", vec![" ".into()], "", "")).is_err());
+        assert!(ok(scene("diagram", vec![], "flowchart LR\n A --> B", "")).is_ok());
+        assert!(ok(scene("diagram", vec![], "A --> B", "")).is_err());
+        assert!(ok(scene("code", vec![], "", "")).is_err());
+        assert!(ok(scene("", vec![], "", "")).is_ok(), "non real-world replies have no visual fields");
     }
 
     #[test]
@@ -583,10 +743,10 @@ mod tests {
         assert!(chapter.contains("`general_knowledge`: true only for background"));
         assert!(!outline_prompt(&brief(), 2, 9).contains("SOURCE DOCUMENT"));
         assert!(!chapter_prompt(&brief(), &ctx).contains("source_pages"));
-        let with = chapter_schema(3, &ctx.bible, true);
+        let with = chapter_schema(3, &ctx.bible, true, false);
         let required = with["properties"]["scenes"]["items"]["required"].as_array().unwrap();
         assert!(required.contains(&json!("source_pages")) && required.contains(&json!("general_knowledge")));
-        let without = chapter_schema(3, &ctx.bible, false);
+        let without = chapter_schema(3, &ctx.bible, false, false);
         assert!(without["properties"]["scenes"]["items"]["properties"]["source_pages"].is_null());
     }
 

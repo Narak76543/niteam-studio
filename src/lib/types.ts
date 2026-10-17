@@ -352,6 +352,8 @@ export interface StylePreset {
   id: string;
   label: string;
   style_prompt: string;
+  /** Real-world Tech Explainer (docs/11): visual types instead of AI images only. */
+  real_world: boolean;
 }
 
 export interface Style {

@@ -17,3 +17,19 @@ src-tauri/resources/sdcpp/
 
 # audio.cpp voice engine (scripts/fetch-audiocpp.ps1), ~170 MB
 src-tauri/resources/audiocpp/
+
+# AI model files (downloaded inside the app, never committed)
+*.gguf
+*.safetensors
+*.ckpt
+
+# Installers and other built binaries
+*.exe
+*.msi
+*.dll
+
+# Scratch / test outputs
+scratchpad/
+scratch/
+test-output/
+*.mp4

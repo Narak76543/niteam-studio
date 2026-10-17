@@ -682,5 +682,6 @@
   "visual.diagramPreview": "Diagram preview",
   "visual.diagramError": "This diagram can't be drawn:",
   "visual.fixWithGemini": "Fix with Gemini",
-  "visual.fixing": "Fixing…"
+  "visual.fixing": "Fixing…",
+  "visual.codePreview": "Code preview"
 }

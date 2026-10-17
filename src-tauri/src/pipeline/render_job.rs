@@ -14,6 +14,7 @@ use super::hashing::sha;
 use super::project::{AssetStatus, Project, ProjectStatus, Scene};
 use super::store::ProjectStore;
 use super::subs;
+use super::drawn;
 use super::visual_render::{self, PhotoPrep, ScenePlan};
 use crate::render::RenderError;
 use crate::render::clip::{ClipSpec, Frame, Input, Motion, TAIL_PAD_MS, clip_args};
@@ -150,6 +151,8 @@ pub struct ClipTask {
     pub fresh: bool,
     /// Real-world photo to prepare before the clip (`visual_render::ensure`).
     pub prep: Option<PhotoPrep>,
+    /// Typed-out code: (track path, `ffconcat` text) written before the clip.
+    pub track: Option<(String, String)>,
 }
 
 fn registry(dir: &Path) -> AssetRegistry {
@@ -176,6 +179,7 @@ pub fn plan_clips(p: &Project, dir: &Path, encoder: Encoder) -> Vec<ClipTask> {
             let (image, motion) = match &input {
                 Input::Image { path, motion } => (path.clone(), motion.as_str()),
                 Input::Video { path, .. } => (path.clone(), "video"),
+                Input::Frames { track } => (track.clone(), "frames"),
             };
             let mut parts = vec![
                 "clip",
@@ -196,11 +200,16 @@ pub fn plan_clips(p: &Project, dir: &Path, encoder: Encoder) -> Vec<ClipTask> {
             let fresh = s.clip.status == AssetStatus::Done
                 && s.clip.hash.as_deref() == Some(hash.as_str())
                 && dir.join(&final_rel).is_file();
+            let track = match &input {
+                Input::Frames { track } => Some((track.clone(), drawn::code_track(&s.visual.frames, voice_ms, voice_ms + TAIL_PAD_MS))),
+                _ => None,
+            };
             ClipTask {
                 scene_id: s.id.clone(),
                 hash,
                 fresh,
                 prep,
+                track,
                 spec: ClipSpec {
                     input,
                     audio: s.voice.path.clone().unwrap_or_default(),
@@ -442,6 +451,9 @@ impl RenderJob {
             }
             emit.running(RenderStage::Clips, i + 1, &meter, meter.fraction(0.0));
             self.set_clip(project_id, &task.scene_id, AssetStatus::Running, None).await;
+            if let Some((track, text)) = &task.track {
+                std::fs::write(dir.join(track), text)?;
+            }
             if let Some(prep) = task.prep.clone() {
                 let d = dir.clone();
                 tokio::task::spawn_blocking(move || visual_render::ensure(&d, &prep))

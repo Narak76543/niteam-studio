@@ -66,6 +66,13 @@ pub fn plan(p: &Project, s: &Scene, index: usize, dir: &Path, registry: &AssetRe
                 return ScenePlan::Missing("diagram or code picture");
             };
             let hash = sha(&["drawn", &path, v.render_hash.as_deref().unwrap_or("")]);
+            let typed = v.kind == VisualKind::Code
+                && v.code.as_ref().is_some_and(|c| c.type_out)
+                && v.frames.len() > 1
+                && v.frames.iter().all(|f| dir.join(f).is_file());
+            if typed {
+                return ScenePlan::Ready { input: Input::Frames { track: code_track_path(&s.id) }, prep: None, hash };
+            }
             ScenePlan::Ready { input: Input::Image { path, motion: Motion::Still }, prep: None, hash }
         }
         VisualKind::RealPhoto | VisualKind::StockVideo | VisualKind::Screenshot => {
@@ -91,6 +98,8 @@ pub fn plan(p: &Project, s: &Scene, index: usize, dir: &Path, registry: &AssetRe
 pub fn preview(p: &Project, s: &Scene, index: usize, dir: &Path, registry: &AssetRegistry) -> Option<(String, Option<PhotoPrep>, Motion)> {
     match plan(p, s, index, dir, registry) {
         ScenePlan::Ready { input: Input::Image { path, motion }, prep, .. } => Some((path, prep, motion)),
+        // Typed-out code previews as the finished card.
+        ScenePlan::Ready { input: Input::Frames { .. }, .. } => s.visual.render_path.clone().map(|p| (p, None, Motion::Still)),
         ScenePlan::Ready { input: Input::Video { focus, .. }, .. } => {
             let r = s.visual.asset.as_deref().and_then(|id| registry.get(id))?;
             let poster = r.poster.clone()?;
@@ -128,6 +137,11 @@ pub fn ensure(dir: &Path, prep: &PhotoPrep) -> Result<(), String> {
         }
     }
     atomic::write_bytes(&out, bytes.get_ref()).map_err(|e| e.to_string())
+}
+
+/// `scenes/<id>/code/track.ffconcat` (written by the render job with the voice timing).
+pub fn code_track_path(scene_id: &str) -> String {
+    format!("scenes/{scene_id}/code/track.ffconcat")
 }
 
 /// Pan of an AI-image scene (same cycle as before real-world scenes existed).

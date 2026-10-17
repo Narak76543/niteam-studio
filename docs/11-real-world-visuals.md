@@ -9,9 +9,9 @@ Per scene the visual is one of `ai_image` (the image providers, fallback), `real
 `stock_video`, `diagram`, `code`, `screenshot`. Subtitles and the render pipeline stay as they
 are.
 
-Status: **steps 1–5 built** (data model, Settings, clients, cache, licence filter, ranking,
+Status: **steps 1–6 built** (data model, Settings, clients, cache, licence filter, ranking,
 downloads; style preset + script fields; "Find photos & clips" job, picker, credits; render
-of photos, clips, screenshots; diagrams). Code scenes: next step.
+of photos, clips, screenshots; diagrams; code / terminal scenes). Owner test next.
 
 ## 1. Data model
 
@@ -246,4 +246,26 @@ keep the pan over `image_1080.png` and their old clip hash.
 - Checked by bundling `drawDiagram` with Vite and running it in Edge (WebView2's engine):
   Khmer flowchart, Khmer timeline with bold title and section colours, sequence diagram all
   correct; broken Mermaid rejected.
+
+## 11. Code and terminal scenes (`src/lib/codeRender.ts`)
+
+- A dark card (editor: three dots, language name, line numbers; terminal: "Terminal", green
+  prompt `$ ` / `PS> ` / `> `, commands coloured, output lines muted) centred above the
+  subtitle band on the video background. At most 18 lines (longer code ends with "…"); the
+  font size (18–38 px at 1080p) fits the longest line and all lines.
+- Colours: Shiki 4.5.0 with the JavaScript regex engine (no WASM), theme GitHub Dark, only the
+  languages in `CODE_LANGUAGES` (`text` = no colours), each loaded on first use. Terminals
+  colour only the commands, with the shell grammar (bash, or PowerShell).
+- Font: JetBrains Mono (variable, bundled via `@fontsource-variable/jetbrains-mono`), falling
+  back to Kantumruy Pro for Khmer comments and strings.
+- **Typed out** (`type_out`, default on for script-made code): besides the finished card, one
+  picture per line (lines 1…k, block cursor after the last). `visual_draw_save` stores them as
+  `scenes/<id>/code/000.png…` (`visual.frames`); the render job writes
+  `scenes/<id>/code/track.ffconcat` with the voice timing (`drawn::code_track`: the lines
+  appear over the first 60 % of the voice, at most 0.9 s per line; the full card stays until
+  the clip ends) and the clip uses it as an `Input::Frames` background. One-line code and
+  `type_out: false` are a still.
+- Picker: live preview of the card. The editor preview shows the finished card.
+- Checked by bundling `drawCode` with Vite and running it in Edge: a terminal traceroute card
+  (6 frames) and a Python editor card with a Khmer comment; real FFmpeg renders a frame track.
 

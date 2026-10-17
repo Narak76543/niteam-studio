@@ -682,5 +682,6 @@
   "visual.diagramPreview": "មើលដ្យាក្រាមជាមុន",
   "visual.diagramError": "មិនអាចគូរដ្យាក្រាមនេះបាន៖",
   "visual.fixWithGemini": "កែដោយ Gemini",
-  "visual.fixing": "កំពុងកែ…"
+  "visual.fixing": "កំពុងកែ…",
+  "visual.codePreview": "មើលកូដជាមុន"
 }

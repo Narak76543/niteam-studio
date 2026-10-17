@@ -175,7 +175,7 @@ Free sources only: Pexels (optional), Pixabay, Openverse, Wikimedia Commons (CLA
       (cover crop, loop), screenshot; editor preview; zoompan exception documented (03 6a)
 - [x] Step 5: diagrams (Mermaid in the WebView, Khmer labels, bold font, timeline colours,
       live preview, Fix with Gemini)
-- [ ] Step 6: code / terminal scenes (Shiki, typed out)
+- [x] Step 6: code / terminal scenes (Shiki, JetBrains Mono + Khmer fallback, typed out line by line)
 - [ ] Test video "How the internet reaches Cambodia (undersea cables)"
 - [ ] Owner test
 
@@ -339,4 +339,7 @@ _Add one line per finished phase: date — phase — notes._
   (lazy-loaded, both Kantumruy weights embedded, timeline colours), draw plan / save / failure
   commands, automatic drawing on the Scenes page and before export, live preview and
   "Fix with Gemini" in the picker.
+- 2026-10-17 — **Real-world Tech Explainer, step 6**: code / terminal cards drawn in the WebView
+  (Shiki JS engine, GitHub Dark, JetBrains Mono with Kantumruy fallback), typed out as one
+  frame per line shown over the voice with an `ffconcat` track (`Input::Frames`), live preview.
 

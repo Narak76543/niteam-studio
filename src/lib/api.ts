@@ -158,8 +158,8 @@ export const api = {
   visualsCancel: (projectId: string) => invoke<null>("visuals_cancel", { projectId }),
   visualsRunning: (projectId: string) => invoke<boolean>("visuals_running", { projectId }),
   visualsDrawPlan: (projectId: string) => invoke<DrawTask[]>("visuals_draw_plan", { projectId }),
-  visualDrawSave: (projectId: string, sceneId: string, hash: string, pngBase64: string) =>
-    invoke<Project>("visual_draw_save", { projectId, sceneId, hash, pngBase64 }),
+  visualDrawSave: (projectId: string, sceneId: string, hash: string, pngBase64: string, framesBase64: string[]) =>
+    invoke<Project>("visual_draw_save", { projectId, sceneId, hash, pngBase64, framesBase64 }),
   visualDrawFailed: (projectId: string, sceneId: string, hash: string, error: string) =>
     invoke<Project>("visual_draw_failed", { projectId, sceneId, hash, error }),
   /** "Fix with Gemini" for a diagram that doesn't parse (uses one Gemini text request). */

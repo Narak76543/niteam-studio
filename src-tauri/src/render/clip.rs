@@ -120,6 +120,8 @@ pub enum Input {
     /// A stock clip (`assets/<id>.mp4`): looped when shorter than the scene, cover-cropped to
     /// the frame around `focus`, its own sound dropped.
     Video { path: String, focus: [f32; 2] },
+    /// Frame-size pictures shown one after another (typed-out code): an `ffconcat` track.
+    Frames { track: String },
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +158,7 @@ pub fn clip_args(spec: &ClipSpec) -> Vec<String> {
         Input::Image { path, .. } => push(&mut a, &["-y", "-loop", "1", "-framerate", &FPS.to_string(), "-t", &d, "-i", path]),
         // -stream_loop: a short clip starts again until the scene ends.
         Input::Video { path, .. } => push(&mut a, &["-y", "-stream_loop", "-1", "-t", &d, "-i", path]),
+        Input::Frames { track } => push(&mut a, &["-y", "-f", "concat", "-safe", "0", "-i", track]),
     }
     push(&mut a, &["-i", &spec.audio]);
     if let Some(track) = &spec.subs_track {
@@ -178,6 +181,7 @@ pub fn clip_args(spec: &ClipSpec) -> Vec<String> {
             )
         }
         Input::Image { motion: Motion::Still, .. } => format!("[0:v]scale={w}:{h},setsar=1[bg]"),
+        Input::Frames { .. } => format!("[0:v]scale={w}:{h},fps={FPS},setsar=1[bg]"),
         Input::Video { focus, .. } => format!(
             "[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}:x='(iw-ow)*{:.3}':y='(ih-oh)*{:.3}',fps={FPS},setsar=1[bg]",
             focus[0].clamp(0.0, 1.0),
@@ -274,6 +278,16 @@ mod tests {
     }
 
     #[test]
+    fn typed_code_is_a_frame_track() {
+        let mut s = spec(false, Pan::LeftToRight);
+        s.input = Input::Frames { track: "scenes/s001/code/track.ffconcat".into() };
+        let a = clip_args(&s);
+        let i = a.iter().position(|x| x == "scenes/s001/code/track.ffconcat").unwrap();
+        assert_eq!(&a[i - 5..i], ["-f", "concat", "-safe", "0", "-i"]);
+        assert!(graph(&a).starts_with("[0:v]scale=1920:1080,fps=30,setsar=1[bg]"));
+    }
+
+    #[test]
     fn photos_zoom_with_zoompan_up_to_one_to_one() {
         let mut s = spec(false, Pan::LeftToRight);
         s.input = Input::Image { path: "scenes/s001/photo_1080p_ab.jpg".into(), motion: Motion::Zoom { to: 1.08, zoom_in: true } };
@@ -322,7 +336,13 @@ mod tests {
             ("zoom", Input::Image { path: "photo.jpg".into(), motion: Motion::Zoom { to: 1.08, zoom_in: true } }),
             ("still", Input::Image { path: "still.png".into(), motion: Motion::Still }),
             ("video", Input::Video { path: "clip.mp4".into(), focus: [0.5, 0.5] }),
+            ("frames", Input::Frames { track: "frames.ffconcat".into() }),
         ] {
+            std::fs::write(
+                d.join("frames.ffconcat"),
+                "ffconcat version 1.0\nfile 'still.png'\nduration 1.000\nfile 'photo.jpg'\nduration 1.950\nfile 'photo.jpg'\n",
+            )
+            .unwrap();
             let spec = ClipSpec {
                 input,
                 audio: "voice.wav".into(),

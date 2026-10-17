@@ -136,6 +136,8 @@ export interface SceneVisual {
   render_path: string | null;
   thumb_path: string | null;
   render_hash: string | null;
+  /** Typed-out code: one picture per revealed line. */
+  frames: string[];
 }
 
 /** A diagram / code picture for the UI to draw (`pipeline::drawn::DrawTask`). */

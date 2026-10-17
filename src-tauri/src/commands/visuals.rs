@@ -24,15 +24,25 @@ pub async fn visuals_draw_plan(state: State<'_, AppState>, project_id: String) -
     Ok(drawn::plan(&project, &state.paths.project_dir(&project_id)))
 }
 
-/// The UI's frame-size PNG for a diagram / code scene (`hash` from `visuals_draw_plan`).
+/// The UI's frame-size PNG for a diagram / code scene (`hash` from `visuals_draw_plan`), plus
+/// one picture per revealed line for typed-out code.
 #[tauri::command]
-pub async fn visual_draw_save(state: State<'_, AppState>, project_id: String, scene_id: String, hash: String, png_base64: String) -> CmdResult<Project> {
-    let png = base64::engine::general_purpose::STANDARD.decode(png_base64.as_bytes()).map_err(|e| format!("Invalid picture data: {e}"))?;
+pub async fn visual_draw_save(
+    state: State<'_, AppState>,
+    project_id: String,
+    scene_id: String,
+    hash: String,
+    png_base64: String,
+    frames_base64: Vec<String>,
+) -> CmdResult<Project> {
+    let decode = |b: &str| base64::engine::general_purpose::STANDARD.decode(b.as_bytes()).map_err(|e| format!("Invalid picture data: {e}"));
+    let png = decode(&png_base64)?;
+    let frames = frames_base64.iter().map(|f| decode(f)).collect::<Result<Vec<_>, _>>()?;
     let dir = state.paths.project_dir(&project_id);
     let project = state.store.get(&project_id).await.map_err(to_cmd)?;
-    let (pic, thumb) = tokio::task::spawn_blocking({
+    let saved = tokio::task::spawn_blocking({
         let (p, d, id, h) = (project, dir, scene_id.clone(), hash.clone());
-        move || drawn::save(&p, &d, &id, &h, &png).map_err(|e| e.to_string())
+        move || drawn::save(&p, &d, &id, &h, &png, &frames).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -41,8 +51,9 @@ pub async fn visual_draw_save(state: State<'_, AppState>, project_id: String, sc
         .update(&project_id, |p| {
             let s = p.scenes.iter_mut().find(|s| s.id == scene_id).ok_or(ProjectError::SceneNotFound)?;
             let v = &mut s.visual;
-            v.render_path = Some(pic);
-            v.thumb_path = Some(thumb);
+            v.render_path = Some(saved.picture);
+            v.thumb_path = Some(saved.thumb);
+            v.frames = saved.frames;
             v.render_hash = Some(hash);
             v.status = AssetStatus::Done;
             v.error = None;

@@ -44,7 +44,9 @@ unicode-segmentation, unicode-normalization, windows-rs. Full list: `src-tauri/C
 
 Main JavaScript packages: React and React DOM (MIT), lucide-react icons (ISC),
 @tauri-apps/api and plugins (MIT/Apache-2.0), **Mermaid** 11.17.2 (MIT, diagrams in
-real-world videos). Full list: `package-lock.json`.
+real-world videos), **Shiki** 4.5.0 with `@shikijs/langs` / `@shikijs/themes` (MIT, code
+colours; theme GitHub Dark, MIT), **JetBrains Mono** via `@fontsource-variable/jetbrains-mono`
+5.3.0 (SIL OFL 1.1, code scenes). Full list: `package-lock.json`.
 
 ## Online services (not bundled)
 

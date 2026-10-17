@@ -21,6 +21,7 @@ import type {
   VisualEdit,
   VisualKind,
 } from "../lib/types";
+import { drawCode } from "../lib/codeRender";
 import { drawDiagram } from "../lib/diagramRender";
 import { assetId, cropAt, licenseLabel } from "../lib/visuals";
 
@@ -123,13 +124,14 @@ export function VisualDialog({ project, scene, onClose, onChanged }: Props) {
   }, [project.id, scene.id, chosen, hasFile]);
 
   /** Runs a change; true when it worked. */
-  // Live diagram preview (same drawing as the video, smaller), redrawn after typing stops.
+  // Live diagram / code preview (same drawing as the video, smaller), redrawn after typing stops.
   useEffect(() => {
-    if (kind !== "diagram") return;
+    if (kind !== "diagram" && kind !== "code") return;
     let alive = true;
     let url: string | null = null;
     const timer = window.setTimeout(() => {
-      drawDiagram(diagram.mermaid, 960, 540, 408)
+      const draw = kind === "diagram" ? drawDiagram(diagram.mermaid, 960, 540, 408) : drawCode(code, 960, 540, 408).then((c) => c.still);
+      draw
         .then((png) => {
           if (!alive) return;
           url = URL.createObjectURL(new Blob([png], { type: "image/png" }));
@@ -142,7 +144,7 @@ export function VisualDialog({ project, scene, onClose, onChanged }: Props) {
       window.clearTimeout(timer);
       if (url) URL.revokeObjectURL(url);
     };
-  }, [kind, diagram.mermaid]);
+  }, [kind, diagram.mermaid, code]);
 
   const run = async (label: string, fn: () => Promise<Project>): Promise<boolean> => {
     setBusy(label);
@@ -429,6 +431,8 @@ export function VisualDialog({ project, scene, onClose, onChanged }: Props) {
               </label>
             </div>
             <textarea className="textarea textarea--code" lang="en" spellCheck={false} aria-label={t("visual.code")} value={code.text} onChange={(e) => setCode({ ...code, text: e.target.value })} />
+            {diagramView.url && <img className="diagram-preview" src={diagramView.url} alt={t("visual.codePreview")} />}
+            {diagramView.error && <Notice tone="danger">{diagramView.error}</Notice>}
           </>
         )}
 

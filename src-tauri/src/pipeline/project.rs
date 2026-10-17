@@ -247,6 +247,9 @@ pub struct SceneVisual {
     /// Hash of what `render_path` was drawn from (diagram / code text); stale when it differs.
     #[serde(default)]
     pub render_hash: Option<String>,
+    /// Typed-out code: one picture per revealed line (`scenes/<id>/code/000.png`…), in order.
+    #[serde(default)]
+    pub frames: Vec<String>,
 }
 
 impl SceneVisual {

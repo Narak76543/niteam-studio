@@ -11,6 +11,7 @@ use super::hashing::sha;
 use super::project::{AssetStatus, CodeSpec, DiagramSpec, Project, Scene, VisualKind};
 use crate::images::postprocess;
 use crate::render::clip::Frame;
+use crate::render::subs_track::{TrackImage, ffconcat};
 use crate::storage::{StorageError, atomic};
 
 /// Bump when the drawing code in the UI changes the look.
@@ -83,9 +84,18 @@ pub enum DrawError {
     Storage(#[from] StorageError),
 }
 
-/// Writes `scenes/<id>/visual.png` + its grid thumbnail; returns (picture, thumbnail) paths.
-/// `hash` must still match the scene (`plan`).
-pub fn save(p: &Project, dir: &Path, scene_id: &str, hash: &str, png: &[u8]) -> Result<(String, String), DrawError> {
+/// Paths written by [`save`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Saved {
+    pub picture: String,
+    pub thumb: String,
+    /// Typed-out code frames (`scenes/<id>/code/000.png`…), empty otherwise.
+    pub frames: Vec<String>,
+}
+
+/// Writes `scenes/<id>/visual.png` + its grid thumbnail, and for typed-out code one picture
+/// per revealed line (old ones removed). `hash` must still match the scene (`plan`).
+pub fn save(p: &Project, dir: &Path, scene_id: &str, hash: &str, png: &[u8], frames: &[Vec<u8>]) -> Result<Saved, DrawError> {
     let scene = p.scenes.iter().find(|s| s.id == scene_id).ok_or(DrawError::Outdated)?;
     if draw_hash(p, scene).as_deref() != Some(hash) {
         return Err(DrawError::Outdated);
@@ -95,12 +105,40 @@ pub fn save(p: &Project, dir: &Path, scene_id: &str, hash: &str, png: &[u8]) -> 
     if (w, h) != (frame.width, frame.height) {
         return Err(DrawError::WrongSize(w, h));
     }
+    for f in frames {
+        let size = postprocess::dimensions(f).ok_or_else(|| DrawError::Image("not a PNG".into()))?;
+        if size != (frame.width, frame.height) {
+            return Err(DrawError::WrongSize(size.0, size.1));
+        }
+    }
     let thumb = postprocess::thumb_at(png, [0.5, 0.5]).map_err(|e| DrawError::Image(e.to_string()))?;
     let pic = format!("scenes/{scene_id}/visual.png");
     let thumb_rel = format!("scenes/{scene_id}/visual_thumb.jpg");
     atomic::write_bytes(&dir.join(&pic), png)?;
     atomic::write_bytes(&dir.join(&thumb_rel), &thumb)?;
-    Ok((pic, thumb_rel))
+    let code_dir = dir.join(format!("scenes/{scene_id}/code"));
+    let _ = std::fs::remove_dir_all(&code_dir);
+    let mut written = Vec::with_capacity(frames.len());
+    for (i, f) in frames.iter().enumerate() {
+        let rel = format!("scenes/{scene_id}/code/{i:03}.png");
+        atomic::write_bytes(&dir.join(&rel), f)?;
+        written.push(rel);
+    }
+    Ok(Saved { picture: pic, thumb: thumb_rel, frames: written })
+}
+
+/// Typed-out code track: frame i appears at i × step, where the reveal takes 60 % of the voice
+/// (at most 0.9 s per line); the last frame stays until the clip ends.
+pub fn code_track(frames: &[String], voice_ms: u64, clip_ms: u64) -> String {
+    let n = frames.len().max(1) as u64;
+    let step = (voice_ms * 6 / 10).min(n * 900) / n;
+    let names: Vec<&str> = frames.iter().map(|f| f.rsplit('/').next().unwrap_or(f)).collect();
+    let images: Vec<TrackImage> = names
+        .iter()
+        .enumerate()
+        .map(|(i, file)| TrackImage { file, start_ms: i as u64 * step, end_ms: clip_ms })
+        .collect();
+    ffconcat(&images)
 }
 
 #[cfg(test)]
@@ -134,14 +172,32 @@ mod tests {
         let tasks = plan(&p, dir.path());
         assert_eq!(tasks.iter().map(|t| t.kind).collect::<Vec<_>>(), vec!["diagram", "code"]);
         assert_eq!((tasks[0].width, tasks[0].band_top), (1920, 816));
-        let (pic, thumb) = save(&p, dir.path(), "s001", &tasks[0].hash, &png(1920, 1080)).unwrap();
-        assert!(dir.path().join(&thumb).is_file());
+        let saved = save(&p, dir.path(), "s001", &tasks[0].hash, &png(1920, 1080), &[]).unwrap();
+        assert!(dir.path().join(&saved.thumb).is_file());
         let v = &mut p.scenes[0].visual;
-        (v.render_path, v.render_hash, v.status) = (Some(pic), Some(tasks[0].hash.clone()), AssetStatus::Done);
+        (v.render_path, v.render_hash, v.status) = (Some(saved.picture), Some(tasks[0].hash.clone()), AssetStatus::Done);
         assert_eq!(plan(&p, dir.path()).len(), 1, "diagram is fresh");
         p.scenes[0].visual.diagram.as_mut().unwrap().mermaid.push_str("\n B --> C");
         assert_eq!(plan(&p, dir.path()).len(), 2, "changed text is redrawn");
-        assert!(matches!(save(&p, dir.path(), "s001", &tasks[0].hash, &png(1920, 1080)), Err(DrawError::Outdated)));
+        assert!(matches!(save(&p, dir.path(), "s001", &tasks[0].hash, &png(1920, 1080), &[]), Err(DrawError::Outdated)));
+    }
+
+    #[test]
+    fn typed_code_keeps_one_frame_per_line_and_reveals_them_over_the_voice() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = project();
+        let t = &plan(&p, dir.path())[1];
+        let frames = vec![png(1920, 1080), png(1920, 1080), png(1920, 1080)];
+        let saved = save(&p, dir.path(), "s002", &t.hash, &png(1920, 1080), &frames).unwrap();
+        assert_eq!(saved.frames, vec!["scenes/s002/code/000.png", "scenes/s002/code/001.png", "scenes/s002/code/002.png"]);
+        assert!(dir.path().join("scenes/s002/code/002.png").is_file());
+        // 3 lines, 6 s voice: 0.9 s per line (cap), the last frame until the clip ends.
+        assert_eq!(
+            code_track(&saved.frames, 6_000, 6_250),
+            "ffconcat version 1.0\nfile '000.png'\nduration 0.900\nfile '001.png'\nduration 0.900\nfile '002.png'\nduration 4.450\nfile '002.png'\n"
+        );
+        // Short voice: the reveal takes 60 % of it.
+        assert!(code_track(&saved.frames, 1_500, 1_750).contains("duration 0.300"));
     }
 
     #[test]
@@ -149,6 +205,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = project();
         let t = &plan(&p, dir.path())[1];
-        assert!(matches!(save(&p, dir.path(), "s002", &t.hash, &png(1280, 720)), Err(DrawError::WrongSize(1280, 720))));
+        assert!(matches!(save(&p, dir.path(), "s002", &t.hash, &png(1280, 720), &[]), Err(DrawError::WrongSize(1280, 720))));
+        assert!(matches!(save(&p, dir.path(), "s002", &t.hash, &png(1920, 1080), &[png(10, 10)]), Err(DrawError::WrongSize(10, 10))));
     }
 }

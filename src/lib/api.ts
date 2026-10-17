@@ -8,6 +8,10 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type {
+  StockCandidate,
+  StockMedia,
+  StockSearchOutcome,
+  StockTestOutcome,
   GeminiRetry,
   GenerateProgress,
   CueIn,
@@ -123,6 +127,16 @@ export const api = {
   /** Speaks a sample with (possibly unsaved) voice settings; raw audio bytes. */
   voicePreview: (language: Language, voice: VoiceDefaults) =>
     invoke<ArrayBuffer>("voice_preview", { language, voice }),
+
+  // stock photos & videos (docs/11-real-world-visuals.md)
+  stockKeySet: (source: "pexels" | "pixabay", key: string) => invoke<null>("stock_key_set", { source, key }),
+  stockKeyExists: (source: "pexels" | "pixabay") => invoke<boolean>("stock_key_exists", { source }),
+  stockKeyClear: (source: "pexels" | "pixabay") => invoke<null>("stock_key_clear", { source }),
+  stockKeyTest: (source: "pexels" | "pixabay") => invoke<StockTestOutcome>("stock_key_test", { source }),
+  stockSearch: (projectId: string | null, query: string, keywords: string[], media: StockMedia, page: number) =>
+    invoke<StockSearchOutcome>("stock_search", { projectId, query, keywords, media, page }),
+  stockPick: (projectId: string, sceneId: string, candidate: StockCandidate) =>
+    invoke<Project>("stock_pick", { projectId, sceneId, candidate }),
 
   // images (Phase 3)
   cloudflareTokenSet: (token: string) => invoke<null>("cloudflare_token_set", { token }),

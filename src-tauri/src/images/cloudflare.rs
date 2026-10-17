@@ -201,6 +201,7 @@ impl ImageProvider for CloudflareFlux {
             url: self.url(),
             auth: Auth::Bearer(self.token.clone()),
             body: Some(body),
+            user_agent: None,
         };
         let resp = tokio::select! {
             r = self.transport.send(request) => r,

@@ -1,5 +1,6 @@
 //! Secrets in the Windows Credential Manager (via `keyring`), service `NiteanStudio`:
-//! the Gemini API key (`gemini_api_key`) and the Cloudflare API token (`cloudflare_api_token`).
+//! the Gemini API key (`gemini_api_key`), the Cloudflare API token (`cloudflare_api_token`) and
+//! the stock media keys (`pexels_api_key`, `pixabay_api_key`, CLAUDE.md exception 5).
 //! They are never logged, serialized, or written to any file.
 
 use std::fmt;
@@ -102,6 +103,58 @@ pub fn clear_cloudflare_token() -> Result<(), StorageError> {
     }
 }
 
+/// Pexels / Pixabay API key. `Debug` is redacted.
+#[derive(Clone)]
+pub struct StockKey(String);
+
+impl StockKey {
+    /// Pexels keys are 56 and Pixabay keys 34 characters today; accept a sane range.
+    pub fn parse(raw: &str) -> Result<Self, StorageError> {
+        let key = raw.trim();
+        let ok_len = (16..=200).contains(&key.len());
+        let ok_chars = key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        if ok_len && ok_chars {
+            Ok(Self(key.to_owned()))
+        } else {
+            Err(StorageError::InvalidSetting("the key looks invalid — paste it exactly as the site shows it".into()))
+        }
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for StockKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("StockKey(<redacted>)")
+    }
+}
+
+/// Keyring user of a stock source's key: `pexels_api_key` / `pixabay_api_key`.
+fn stock_entry(user: &str) -> Result<keyring::Entry, StorageError> {
+    keyring::Entry::new(SERVICE, user).map_err(keyring_err)
+}
+
+pub fn set_stock_key(user: &str, key: &StockKey) -> Result<(), StorageError> {
+    stock_entry(user)?.set_password(key.expose()).map_err(keyring_err)
+}
+
+pub fn get_stock_key(user: &str) -> Result<Option<StockKey>, StorageError> {
+    match stock_entry(user)?.get_password() {
+        Ok(k) => Ok(Some(StockKey(k))),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(keyring_err(e)),
+    }
+}
+
+pub fn clear_stock_key(user: &str) -> Result<(), StorageError> {
+    match stock_entry(user)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(keyring_err(e)),
+    }
+}
+
 // keyring errors never contain the secret, only the platform failure.
 fn keyring_err(e: keyring::Error) -> StorageError {
     StorageError::Keyring(e.to_string())
@@ -143,6 +196,15 @@ mod tests {
         assert!(!format!("{t:?}").contains("abcdef"));
         assert!(CloudflareToken::parse("short").is_err());
         assert!(CloudflareToken::parse("has spaces in the middle of it ok").is_err());
+    }
+
+    #[test]
+    fn stock_key_is_validated_and_redacted() {
+        let k = StockKey::parse(" 12345678-abcdef0123456789abcdef01 ").unwrap();
+        assert_eq!(k.expose(), "12345678-abcdef0123456789abcdef01");
+        assert!(!format!("{k:?}").contains("1234"));
+        assert!(StockKey::parse("short").is_err());
+        assert!(StockKey::parse("key with spaces in the middle").is_err());
     }
 
     #[test]

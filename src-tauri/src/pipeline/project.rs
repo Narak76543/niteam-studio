@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::images::provider::ProviderId;
+use crate::stock::Candidate;
 use crate::tts::EngineKind;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -167,6 +168,79 @@ pub struct Scene {
     /// Background explanation that is not a claim from the document.
     #[serde(default)]
     pub general_knowledge: bool,
+    /// "Real-world Tech Explainer": what the scene shows (`docs/11-real-world-visuals.md`).
+    /// Older projects load as `ai_image`, which keeps using `image_prompt` + `image`.
+    #[serde(default)]
+    pub visual: SceneVisual,
+}
+
+/// What a scene shows.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualKind {
+    /// The image providers (`image_prompt`); the fallback.
+    #[default]
+    AiImage,
+    RealPhoto,
+    StockVideo,
+    Diagram,
+    Code,
+    /// The user's own screenshot or photo.
+    Screenshot,
+}
+
+/// A Mermaid diagram (or one of our own templates, `template: "comparison"`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiagramSpec {
+    /// flow | sequence | timeline | architecture | comparison
+    pub template: String,
+    pub mermaid: String,
+}
+
+/// Code or terminal output shown as an image.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CodeSpec {
+    pub language: String,
+    pub text: String,
+    /// Terminal look (prompt, output) instead of an editor.
+    #[serde(default)]
+    pub terminal: bool,
+    /// Lines appear one by one over the scene.
+    #[serde(default)]
+    pub type_out: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct SceneVisual {
+    pub kind: VisualKind,
+    /// ENGLISH search keywords (also for Khmer scripts).
+    #[serde(default)]
+    pub keywords: Vec<String>,
+    #[serde(default)]
+    pub diagram: Option<DiagramSpec>,
+    #[serde(default)]
+    pub code: Option<CodeSpec>,
+    /// Last search results for this scene (picker).
+    #[serde(default)]
+    pub candidates: Vec<Candidate>,
+    /// Chosen asset id (`stock::assets::AssetRecord::id`).
+    #[serde(default)]
+    pub asset: Option<String>,
+    /// Subject centre, 0..1 of the image, for the 16:9 crop. `None` = centre.
+    #[serde(default)]
+    pub focus: Option<[f32; 2]>,
+    /// Chosen automatically (ranking or Gemini); shown with "check" until the user confirms.
+    #[serde(default)]
+    pub auto_picked: bool,
+    #[serde(default)]
+    pub status: AssetStatus,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub error_kind: Option<String>,
+    /// Final still (photo crop, diagram, code, screenshot): `scenes/<id>/visual.png|jpg`.
+    #[serde(default)]
+    pub render_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -642,6 +716,7 @@ impl Scene {
             clip: ClipAsset::default(),
             source_pages: vec![],
             general_knowledge: false,
+            visual: SceneVisual::default(),
         }
     }
 }

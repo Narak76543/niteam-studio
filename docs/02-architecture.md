@@ -55,6 +55,8 @@ nitean-studio/
 │     │              postprocess.rs  budget.rs   (see 07-image-generation.md)
 │     ├─ render/     ffmpeg.rs (sidecar runner)  encoders.rs  clip.rs  concat.rs
 │     ├─ net/        transport.rs (HTTP behind a trait; mocked in tests)
+│     ├─ stock/      Pexels, Pixabay, Openverse, Commons clients; license, rank, cache,
+│     │              assets (downloads + licence records), search  (11)
 │     ├─ pipeline/   project.rs  store.rs  editing.rs  hashing.rs  presets.rs  script_job.rs
 │     │              jobs.rs  voice_job.rs  image_job.rs  visual_bible.rs  khmer_numbers.rs
 │     │              subs.rs  render_job.rs  source_job.rs  source_edit.rs  (10)
@@ -102,6 +104,7 @@ harmless; sidecar file names must use the matching target triple.
 - Secrets: `keyring` crate, service `NiteanStudio`:
   - user `gemini_api_key` — Gemini API key
   - user `cloudflare_api_token` — Cloudflare API token (Workers AI)
+  - users `pexels_api_key`, `pixabay_api_key` — stock media keys (11)
   The Cloudflare **account ID** is not secret → `settings.json` (`image.cloudflare_account_id`).
 
 Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
@@ -183,6 +186,10 @@ reading stage, chunks with section notes, the reviewed summary, quota pause, cre
 per scene `"source_pages": [3, 4]`, `"general_knowledge": false`; the PDF is
 `projects/<id>/source/document.pdf`. Full shape: `10-document-source.md` §2.
 
+Every scene also has `"visual": { "kind": "ai_image", … }` (Real-world Tech Explainer: real
+photo, stock video, diagram, code, screenshot), and stock files live in
+`projects/<id>/assets/` with `assets.json` (licence records). Full shape: `11-real-world-visuals.md` §1.
+
 All text is NFC-normalized and trimmed on save; `spoken_text` also loses zero-width spaces.
 
 Asset `status`: `pending | running | done | failed | stale`.
@@ -251,6 +258,7 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | `source_pdf_info(path)`, `project_create_from_document(input)` | "From a document": file check (pages, size, range needed) / create the project and copy the PDF (10) |
 | `source_read / _cancel / _running(project_id)` | reading job (resumes after a quota pause); event `source-progress` |
 | `source_review_save / source_confirm(project_id, edit)`, `source_reopen`, `source_reread` | review edits, confirm (credit + keep terms), back to the points, read again |
+| `stock_key_set / _exists / _clear / _test(source)`, `stock_search`, `stock_pick` | stock photos & videos — see `11-real-world-visuals.md` §5 |
 
 ## Events (Rust → UI)
 

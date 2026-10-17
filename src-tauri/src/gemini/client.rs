@@ -108,6 +108,7 @@ impl GeminiClient {
             url: format!("{}/models/{}", self.base_url, model),
             auth: Auth::GoogApiKey(key.clone()),
             body: None,
+            user_agent: None,
         };
         self.call(EndpointKind::Text, model, request, hooks, MAX_ATTEMPTS)
             .await
@@ -130,6 +131,7 @@ impl GeminiClient {
             url: format!("{}/models/{}:generateContent", self.base_url, model),
             auth: Auth::GoogApiKey(key.clone()),
             body: Some(body),
+            user_agent: None,
         };
         self.call(kind, model, request, hooks, max_attempts).await
     }
@@ -151,6 +153,7 @@ impl GeminiClient {
             url: format!("{}/interactions", self.base_url),
             auth: Auth::GoogApiKey(key.clone()),
             body: Some(body),
+            user_agent: None,
         };
         self.call(kind, model, request, hooks, max_attempts).await
     }

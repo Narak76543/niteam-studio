@@ -12,6 +12,7 @@ import { PageHeader } from "../components/PageHeader";
 import { RetryStatus } from "../components/RetryStatus";
 import { SectionJumpBar } from "../components/SectionJumpBar";
 import { useToast } from "../components/toast";
+import { StockSettingsSection } from "../components/StockSettingsSection";
 import { VideoSettingsSection } from "../components/VideoSettingsSection";
 import { VoiceProfilesSection } from "../components/VoiceProfilesSection";
 import { VoiceSettingsSection } from "../components/VoiceSettingsSection";
@@ -225,6 +226,8 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props
           <ImageSettingsSection key={JSON.stringify(settings.image)} settings={settings} onSave={onSave} />
 
           <LocalImagesSection settings={settings} onSave={onSave} onReload={onReload} />
+
+          <StockSettingsSection settings={settings} onSave={onSave} />
 
           <VideoSettingsSection settings={settings} onSave={onSave} />
 

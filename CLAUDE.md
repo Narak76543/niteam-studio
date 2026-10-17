@@ -19,6 +19,8 @@ AI-generated illustrations with slow pan motion, burned-in subtitles and backgro
    design / clone / import, sentence chunking, timings, GPU sharing
 9. `docs/10-document-source.md` — "Video from a document": PDF reading (text first, PDF pages
    as fallback), Source summary review, free-tier quota pause, page refs, credit line
+10. `docs/11-real-world-visuals.md` — "Real-world Tech Explainer": stock photos/videos
+   (Pexels, Pixabay, Openverse, Commons), licences, ranking, cache, diagrams, code scenes
 
 Only work on the phase marked **CURRENT** in `docs/05-roadmap.md`. When it is done,
 stop and ask the human to test. Do not start the next phase on your own.

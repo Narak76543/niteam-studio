@@ -160,6 +160,22 @@ Spec: `docs/10-document-source.md`. Free tier only.
 summary against the PDF, untick / reorder points and confirm, check the scenes' page refs and
 that no scene adds facts; copy the credit line.
 
+## Real-world Tech Explainer  (owner request 2026-10-17; in progress)
+
+Spec: `docs/11-real-world-visuals.md`; plan + spikes: `docs/tasks/real-world-tech-explainer-plan.md`.
+Free sources only: Pexels (optional), Pixabay, Openverse, Wikimedia Commons (CLAUDE.md exception 5).
+
+- [x] Step 1: data model (`scene.visual`, `assets.json`), Settings (sources, keys, CC BY-SA
+      switch), Pixabay / Pexels / Openverse / Commons clients, 24 h search cache, licence
+      filter, local ranking (resolution, low-res, AI-generated filter), downloads with licence records
+- [ ] Step 2: style preset + script schema (visual type, English keywords, Mermaid, code)
+- [ ] Step 3: scene picker (candidates, search again, switch type, restriction badges), Credits + Copy
+- [ ] Step 4: render — photo zoom/pan with focus and zoom limit, stock video, screenshot
+- [ ] Step 5: diagrams (Mermaid in the WebView, Khmer labels, bold font, timeline colours)
+- [ ] Step 6: code / terminal scenes (Shiki, typed out)
+- [ ] Test video "How the internet reaches Cambodia (undersea cables)"
+- [ ] Owner test
+
 ## Later / ideas (not scheduled)
 
 - Word-level subtitle timing
@@ -298,3 +314,8 @@ _Add one line per finished phase: date — phase — notes._
   Light / Dark, `settings.theme`), dark tokens in `tokens.css`. VoxCPM2 output: 8 ms fades at
   each sentence and a pause expander that turns the copied reference hiss down 12–15 dB
   between words (measured on a real scene); speech unchanged.
+- 2026-10-17 — **Real-world Tech Explainer, step 1**: `stock/` module (Commons search with
+  contact User-Agent, Openverse anonymous with 24 h cache, Pixabay, optional Pexels), licence
+  parsing/filter (CC0, PD, CC BY; BY-SA behind a switch; never NC/ND), local ranking with
+  low-res and AI-generated detection, per-project downloads with `assets.json` licence records,
+  Settings → Stock photos & videos, `scene.visual` data model. Spec `docs/11-real-world-visuals.md`.

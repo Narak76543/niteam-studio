@@ -44,6 +44,98 @@ export interface GpuInfo {
   vram_mb: number;
 }
 
+/** Settings → Stock photos & videos (docs/11-real-world-visuals.md). */
+export interface StockSettings {
+  pexels: boolean;
+  pixabay: boolean;
+  openverse: boolean;
+  commons: boolean;
+  /** Off by default: the video may have to be shared under CC BY-SA too. */
+  allow_by_sa: boolean;
+  auto_pick: boolean;
+}
+
+export type StockSource = "pexels" | "pixabay" | "openverse" | "wikimedia" | "user";
+export type StockMedia = "photo" | "video";
+export type LicenseCode = "pexels" | "pixabay" | "cc0" | "pdm" | "by" | "by_sa" | "own";
+
+export interface StockLicense {
+  code: LicenseCode;
+  version: string | null;
+  url: string | null;
+}
+
+/** One stock search result (`stock::Candidate`). */
+export interface StockCandidate {
+  source: StockSource;
+  source_id: string;
+  media: StockMedia;
+  title: string;
+  tags: string[];
+  author: string;
+  author_url: string | null;
+  license: StockLicense;
+  page_url: string;
+  file_url: string;
+  thumb_url: string;
+  width: number;
+  height: number;
+  duration_ms: number | null;
+  /** Commons reuse restrictions (trademarked, personality…). */
+  restrictions: string[];
+  ai_generated: boolean;
+  score: number;
+  low_res: boolean;
+}
+
+export interface SourceNotice {
+  source: StockSource;
+  kind: string;
+  message: string;
+  retry_at_utc: string | null;
+}
+
+export interface StockSearchOutcome {
+  candidates: StockCandidate[];
+  notices: SourceNotice[];
+}
+
+export interface StockTestOutcome {
+  ok: boolean;
+  results: number;
+  error_kind: string | null;
+  details: string | null;
+}
+
+export type VisualKind = "ai_image" | "real_photo" | "stock_video" | "diagram" | "code" | "screenshot";
+
+export interface DiagramSpec {
+  template: string;
+  mermaid: string;
+}
+
+export interface CodeSpec {
+  language: string;
+  text: string;
+  terminal: boolean;
+  type_out: boolean;
+}
+
+export interface SceneVisual {
+  kind: VisualKind;
+  keywords: string[];
+  diagram: DiagramSpec | null;
+  code: CodeSpec | null;
+  candidates: StockCandidate[];
+  asset: string | null;
+  focus: [number, number] | null;
+  auto_picked: boolean;
+  status: AssetStatus;
+  error: string | null;
+  error_kind: string | null;
+  render_path: string | null;
+}
+
 export interface LocalPrefs {
   cooldown_every: number;
   cooldown_seconds: number;
@@ -134,6 +226,7 @@ export interface Settings {
   render: RenderPrefs;
   gpu: GpuInfo | null;
   local: LocalPrefs;
+  stock: StockSettings;
 }
 
 /** Settings → Video. */
@@ -178,6 +271,12 @@ export interface RenderProgress {
 
 /** Stable error codes from `GeminiError::kind` / `ProjectError::kind`. */
 export type ErrorKind =
+  | "stock_no_key"
+  | "stock_bad_key"
+  | "stock_rate_limited"
+  | "stock_unavailable"
+  | "stock_bad_response"
+  | "stock_download"
   | "local_engine"
   | "ffmpeg_missing"
   | "ffmpeg"
@@ -198,6 +297,12 @@ export type ErrorKind =
   | "other";
 
 export const ERROR_KINDS: readonly ErrorKind[] = [
+  "stock_no_key",
+  "stock_bad_key",
+  "stock_rate_limited",
+  "stock_unavailable",
+  "stock_bad_response",
+  "stock_download",
   "local_engine",
   "ffmpeg_missing",
   "ffmpeg",
@@ -443,6 +548,8 @@ export interface Scene {
   source_pages: number[];
   /** Background explanation, not a claim from the document. */
   general_knowledge: boolean;
+  /** Real-world Tech Explainer: what the scene shows. */
+  visual: SceneVisual;
 }
 
 export interface ProofSuggestion {

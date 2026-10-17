@@ -12,4 +12,5 @@ pub mod retry_events;
 pub mod script;
 pub mod settings;
 pub mod source;
+pub mod stock;
 pub mod voices;

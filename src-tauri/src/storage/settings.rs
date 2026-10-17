@@ -26,6 +26,29 @@ pub struct Settings {
     /// Detected GPU (cached at startup, 08 §2).
     pub gpu: Option<crate::local::gpu::GpuInfo>,
     pub local: LocalPrefs,
+    pub stock: StockSettings,
+}
+
+/// "Real-world Tech Explainer" stock sources (`docs/11-real-world-visuals.md`). Pexels and
+/// Pixabay are used only when their key is stored.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct StockSettings {
+    pub pexels: bool,
+    pub pixabay: bool,
+    pub openverse: bool,
+    pub commons: bool,
+    /// CC BY-SA files. Off by default: a video that crops and pans them may count as an
+    /// adaptation that has to be shared under CC BY-SA too.
+    pub allow_by_sa: bool,
+    /// Gemini vision picks the best candidate (uses Gemini quota). Off = local ranking only.
+    pub auto_pick: bool,
+}
+
+impl Default for StockSettings {
+    fn default() -> Self {
+        Self { pexels: true, pixabay: true, openverse: true, commons: true, allow_by_sa: false, auto_pick: false }
+    }
 }
 
 /// Settings → Local images (08 §8, §9).
@@ -222,6 +245,7 @@ impl Default for Settings {
             render: RenderPrefs::default(),
             gpu: None,
             local: LocalPrefs::default(),
+            stock: StockSettings::default(),
         }
     }
 }

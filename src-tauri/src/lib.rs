@@ -8,6 +8,7 @@ mod pipeline;
 mod render;
 mod source;
 mod state;
+mod stock;
 mod storage;
 mod tts;
 
@@ -131,6 +132,12 @@ pub fn run() {
             commands::generate::scene_voice_audio,
             commands::generate::voices_catalog,
             commands::generate::voice_preview,
+            commands::stock::stock_key_set,
+            commands::stock::stock_key_exists,
+            commands::stock::stock_key_clear,
+            commands::stock::stock_key_test,
+            commands::stock::stock_search,
+            commands::stock::stock_pick,
             commands::images::cloudflare_token_set,
             commands::images::cloudflare_token_exists,
             commands::images::cloudflare_token_clear,

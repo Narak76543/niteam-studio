@@ -92,6 +92,16 @@ impl AppPaths {
         self.project_dir(id).join("project.json")
     }
 
+    /// `projects/<id>/assets/`: downloaded stock photos/videos + `assets.json` (licenses).
+    pub fn project_assets_dir(&self, id: &str) -> PathBuf {
+        self.project_dir(id).join("assets")
+    }
+
+    /// `%LOCALAPPDATA%/NiteanStudio/cache/stock`: stock search results (kept 24 h).
+    pub fn stock_cache_dir(&self) -> PathBuf {
+        self.local_root.join("cache").join("stock")
+    }
+
     /// `projects/<id>/logs/pipeline.log` (no secrets).
     pub fn project_log(&self, id: &str) -> PathBuf {
         self.project_dir(id).join("logs").join("pipeline.log")

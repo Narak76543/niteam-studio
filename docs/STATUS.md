@@ -3,13 +3,17 @@
 Read this first when continuing. Details live in the numbered docs; this file is the short
 "what is done / what is next" list.
 
+**v0.1.0 released 2026-10-17:** repo on GitHub (`Narak76543/niteam-studio`, public), tag
+`v0.1.0`, NSIS installer attached to the GitHub Release. Next (not started): GitHub Actions
+build, code signing.
+
 **2026-10-17:** the 2026-10-16 work below is committed (`5e47a1f` Z-Image profiles, `421ab84`
 settings patch fix, `cc58dac` image prompts / UI pass / voice refs). Soft 2D Explainer preset
 (`ec2b957`) and culture-notes fix (`96f930d`) committed; owner approved the look. Brief and
 results: `docs/tasks/soft-2d-explainer-style.md`.
 
 **"Video from a document"** built 2026-10-17 (spec `docs/10-document-source.md`, roadmap
-section of the same name), not committed yet: waiting for the owner's OK and UI test. Note:
+section of the same name), committed (`2d04431`); owner UI test still to do. Note:
 the free tier gave gemini-3.8-flash a 20-requests/day limit during testing.
 
 ## Done (committed on `main`)

@@ -11,7 +11,6 @@ use tokio_util::sync::CancellationToken;
 
 use super::engine::{EngineConfig, EngineError, GenRequest, SdServer};
 use super::manifest::Profile;
-use crate::images::prompt_sd15::NEGATIVE;
 use crate::images::provider::{Aspect, GeneratedImage, ImageError, ImageProvider, ImageRequest};
 
 /// Size for the one automatic retry after running out of GPU memory (08 §6).
@@ -47,7 +46,9 @@ impl LocalSdCpp {
         let g = &self.profile.generation;
         GenRequest {
             prompt: req.prompt.clone(),
-            negative_prompt: NEGATIVE.into(),
+            // Z-Image Turbo runs at cfg 1.0, where a negative prompt has no effect: rules
+            // like "no text" go in the positive prompt.
+            negative_prompt: String::new(),
             width: size.0,
             height: size.1,
             seed: i64::from(req.seed),

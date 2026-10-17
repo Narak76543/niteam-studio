@@ -1,4 +1,4 @@
-import { Cpu, Download, ExternalLink, Gauge, ShieldCheck, Square, Trash2 } from "lucide-react";
+import { Check, Cpu, Download, ExternalLink, Gauge, ShieldCheck, Square, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "./Badge";
@@ -99,6 +99,13 @@ export function LocalImagesSection({ settings, onSave, onReload }: Props) {
       await onReload();
     });
 
+  const select = (p: LocalProfileStatus) =>
+    run(`select-${p.id}`, async () => {
+      await api.localSelect(p.id);
+      toast.show(t("local.installed"), "ok");
+      await onReload();
+    });
+
   const benchmark = () =>
     run("benchmark", async () => {
       const r = await api.localBenchmark();
@@ -192,9 +199,16 @@ export function LocalImagesSection({ settings, onSave, onReload }: Props) {
                       {p.downloaded_mb > 0 ? t("local.resume") : t("local.install")}
                     </Button>
                   ) : (
-                    <Button variant="pill" icon={<ShieldCheck {...ICON} />} disabled={busy !== null} onClick={() => void verify(p)}>
-                      {busy === `verify-${p.id}` ? t("local.verifying") : t("local.verify")}
-                    </Button>
+                    <>
+                      {status.selected !== p.id && (
+                        <Button variant="pill" icon={<Check {...ICON} />} disabled={busy !== null} onClick={() => void select(p)}>
+                          {t("local.use")}
+                        </Button>
+                      )}
+                      <Button variant="pill" icon={<ShieldCheck {...ICON} />} disabled={busy !== null} onClick={() => void verify(p)}>
+                        {busy === `verify-${p.id}` ? t("local.verifying") : t("local.verify")}
+                      </Button>
+                    </>
                   )}
                   {(p.installed || p.downloaded_mb > 0) && !downloading && (
                     <Button variant="pill" icon={<Trash2 {...ICON} />} disabled={busy !== null} onClick={() => setConfirmDelete(p)}>

@@ -50,7 +50,7 @@ export interface LocalPrefs {
 
 export interface LocalFileInfo {
   name: string;
-  role: "model" | "diffusion" | "vae" | "clip_l" | "t5xxl" | "lora";
+  role: "model" | "diffusion" | "vae" | "clip_l" | "t5xxl" | "llm" | "lora";
   size_mb: number;
   license: string;
   license_url: string;

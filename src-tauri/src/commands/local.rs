@@ -9,8 +9,7 @@ use tauri::{AppHandle, Emitter, State};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{CmdResult, to_cmd};
-use crate::images::prompt::PromptParts;
-use crate::images::prompt_sd15::build_prompt_sd15;
+use crate::images::prompt::{PromptParts, build_prompt};
 use crate::images::provider::{ImageProvider, ImageRequest, ProviderId};
 use crate::local::engine::{EngineConfig, device_for, list_devices};
 use crate::local::gpu::GpuInfo;
@@ -55,7 +54,12 @@ pub async fn local_status(state: State<'_, AppState>) -> CmdResult<LocalStatus> 
     let installing = state.install_jobs.running_keys().into_iter().next();
     Ok(LocalStatus {
         capable: s.gpu.as_ref().is_some_and(GpuInfo::local_capable),
-        profiles: install::status(&m.profiles, &state.paths.models_dir(), s.gpu.as_ref().map(|g| g.vram_mb)),
+        // A small variant is not listed on cards above its `max_vram_mb` (the full one is).
+        profiles: install::status(
+            m.profiles.iter().filter(|p| p.max_vram_mb.is_none_or(|max| s.gpu.as_ref().is_none_or(|g| g.vram_mb < max))),
+            &state.paths.models_dir(),
+            s.gpu.as_ref().map(|g| g.vram_mb),
+        ),
         engine_version: m.engine_version,
         engine_present: state.paths.engine_exe().is_file(),
         gpu: s.gpu,
@@ -200,6 +204,24 @@ pub async fn local_delete(state: State<'_, AppState>, profile_id: String) -> Cmd
     .await
 }
 
+/// "Use this model": selects an installed profile (files already on disk, or switching
+/// between installed profiles) and, like a finished download, moves images off Cloudflare.
+#[tauri::command]
+pub async fn local_select(state: State<'_, AppState>, profile_id: String) -> CmdResult<Settings> {
+    let (_, profile) = manifest_profile(&profile_id)?;
+    if !install::installed(&state.paths.models_dir(), &profile) {
+        return Err("Install this model first.".into());
+    }
+    save_settings(&state, |s| {
+        s.image.local_profile = Some(profile_id);
+        if s.image.provider == ProviderId::CloudflareFlux {
+            s.image.provider = ProviderId::LocalSdcpp;
+        }
+        s.local.offer_dismissed = true;
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn local_offer_dismiss(state: State<'_, AppState>) -> CmdResult<Settings> {
     save_settings(&state, |s| s.local.offer_dismissed = true).await
@@ -247,19 +269,16 @@ pub async fn local_benchmark(state: State<'_, AppState>) -> CmdResult<Benchmark>
     let Some(provider) = local_provider(&state, &settings).await? else {
         return Err("Install a local model first.".into());
     };
-    let short = presets::find("stickman").map_or("", |p| p.short_style);
-    let prompt = build_prompt_sd15(
-        &PromptParts {
-            style: "",
-            shot: Shot::Medium,
-            subject: "a stick figure waters a small plant on a table",
-            characters: vec![],
-            place: None,
-            culture_notes: None,
-            square: false,
-        },
-        short,
-    );
+    let style = presets::find("stickman").map_or("", |p| p.style_prompt);
+    let prompt = build_prompt(&PromptParts {
+        style,
+        shot: Shot::Medium,
+        subject: "a stick figure waters a small plant on a table",
+        characters: vec![],
+        place: None,
+        culture_notes: None,
+        square: false,
+    });
     let cancel = CancellationToken::new();
     let started = Instant::now();
     let mut times = Vec::new();

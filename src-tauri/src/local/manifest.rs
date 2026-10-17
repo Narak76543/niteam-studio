@@ -15,10 +15,13 @@ pub struct Profile {
     pub id: String,
     pub label: String,
     pub min_vram_mb: u64,
+    /// Offered only up to this much VRAM (a smaller variant for 4–5 GB GPUs).
+    #[serde(default)]
+    pub max_vram_mb: Option<u64>,
     pub files: Vec<ModelFile>,
     #[serde(rename = "gen")]
     pub generation: GenParams,
-    /// Prompt builder: "sd15" (short, ≤ 75 tokens) or "flux" (full prompt, like Cloudflare).
+    /// Prompt builder; only "full" (the 07 §3 prompt, like Cloudflare) for now.
     pub prompt_style: String,
     /// Extra `sd-server` start flags (shipped with the app, e.g. `--diffusion-fa`).
     #[serde(default)]
@@ -29,13 +32,15 @@ pub struct Profile {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FileRole {
-    /// Full checkpoint (SD 1.5): `-m`.
+    /// Full single-file checkpoint: `-m`.
     Model,
     /// Standalone diffusion model (FLUX GGUF): `--diffusion-model`.
     Diffusion,
     Vae,
     ClipL,
     T5xxl,
+    /// LLM text encoder (Z-Image: Qwen3-4B): `--llm`.
+    Llm,
     /// Applied per request (`lora` field), from `--lora-model-dir`.
     Lora,
 }
@@ -49,6 +54,7 @@ impl FileRole {
             Self::Vae => Some("--vae"),
             Self::ClipL => Some("--clip_l"),
             Self::T5xxl => Some("--t5xxl"),
+            Self::Llm => Some("--llm"),
             Self::Lora => None,
         }
     }
@@ -72,7 +78,9 @@ pub struct GenParams {
     pub height: u32,
     pub steps: u32,
     pub cfg: f32,
-    pub sampler: String,
+    /// `None` = the engine's default for the model (Z-Image sets none).
+    #[serde(default)]
+    pub sampler: Option<String>,
     #[serde(default)]
     pub scheduler: Option<String>,
     #[serde(default)]
@@ -99,6 +107,9 @@ pub trait Package {
     fn id(&self) -> &str;
     fn label(&self) -> &str;
     fn min_vram_mb(&self) -> u64;
+    fn max_vram_mb(&self) -> Option<u64> {
+        None
+    }
     fn files(&self) -> &[ModelFile];
     fn total_mb(&self) -> u64 {
         self.files().iter().map(|f| f.size_mb).sum()
@@ -114,6 +125,9 @@ impl Package for Profile {
     }
     fn min_vram_mb(&self) -> u64 {
         self.min_vram_mb
+    }
+    fn max_vram_mb(&self) -> Option<u64> {
+        self.max_vram_mb
     }
     fn files(&self) -> &[ModelFile] {
         &self.files
@@ -162,7 +176,7 @@ impl Manifest {
             if !p.files.iter().any(|f| matches!(f.role, FileRole::Model | FileRole::Diffusion)) {
                 return Err(format!("profile '{}' has no model file", p.id));
             }
-            if !matches!(p.prompt_style.as_str(), "sd15" | "flux") {
+            if p.prompt_style != "full" {
                 return Err(format!("profile '{}' has an unknown prompt_style", p.id));
             }
             if p.engine_args.iter().any(|a| !a.starts_with("--") || a.contains(char::is_whitespace)) {
@@ -216,7 +230,7 @@ mod tests {
                      "size_mb": 128, "license": "OpenRAIL++", "license_url": "https://example.org/l" }}
                 ],
                 "gen": {{ "width": 768, "height": 448, "steps": 6, "cfg": 1.5, "sampler": "lcm", "vae_tiling": true }},
-                "prompt_style": "sd15" }}] }}"#
+                "prompt_style": "full" }}] }}"#
         )
     }
 

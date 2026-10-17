@@ -8,8 +8,6 @@ pub struct StylePreset {
     /// English label (UI shows the i18n string `preset.<id>`).
     pub label: &'static str,
     pub style_prompt: &'static str,
-    /// ≤ 12 words for SD 1.5's 77-token prompt (`images::prompt_sd15`, 08 §7).
-    pub short_style: &'static str,
 }
 
 pub const PRESETS: &[StylePreset] = &[
@@ -20,28 +18,24 @@ pub const PRESETS: &[StylePreset] = &[
         style_prompt: "simple hand-drawn stick figure doodle, bold clean black marker lines, flat pure white \
                        background filling the whole frame, stick figures with round heads and simple dot eyes, \
                        minimal flat colour accents, whiteboard explainer style, lots of white space",
-        short_style: "stick figure doodle, black marker lines, white background, flat colour accents",
     },
     StylePreset {
         id: "storybook_watercolor",
         label: "Storybook watercolor",
         style_prompt: "warm watercolor storybook illustration, soft natural light, gentle textured paper, \
                        muted earthy palette, hand-painted details, calm and inviting",
-        short_style: "watercolor storybook illustration, soft light, muted earthy colours",
     },
     StylePreset {
         id: "cinematic_realistic",
         label: "Cinematic realistic",
         style_prompt: "cinematic realistic digital painting, dramatic natural lighting, shallow depth of field, \
                        rich color grading, wide establishing composition, highly detailed",
-        short_style: "cinematic realistic digital painting, dramatic light, detailed",
     },
     StylePreset {
         id: "flat_2d",
         label: "Flat 2D",
         style_prompt: "clean flat 2D vector illustration, simple geometric shapes, limited harmonious palette, \
                        soft shadows, friendly modern explainer style",
-        short_style: "flat 2D vector illustration, simple shapes, limited palette",
     },
 ];
 

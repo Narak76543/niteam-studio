@@ -108,6 +108,7 @@ pub fn run() {
             commands::local::local_benchmark,
             commands::render::scene_image_full,
             commands::render::render_set_subtitle_style,
+            commands::local::local_select,
             commands::generate::generate_start,
             commands::generate::generate_cancel,
             commands::generate::generate_running,

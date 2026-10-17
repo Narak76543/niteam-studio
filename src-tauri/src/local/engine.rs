@@ -20,10 +20,10 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[cfg(windows)]
 const BELOW_NORMAL_PRIORITY_CLASS: u32 = 0x0000_4000;
 
-/// Loading SD 1.5 from disk takes a few seconds; a cold start on a slow HDD much longer.
+/// Loading FLUX (~11 GB) from disk takes a while; a cold start on a slow HDD much longer.
 const START_TIMEOUT: Duration = Duration::from_secs(180);
 const POLL: Duration = Duration::from_millis(250);
-/// One 768×448 LCM image takes seconds; this only catches a hung engine.
+/// One image takes seconds to a minute; this only catches a hung engine.
 const JOB_TIMEOUT: Duration = Duration::from_secs(300);
 const LOG_TAIL: usize = 2_000;
 
@@ -106,7 +106,8 @@ pub struct GenRequest {
     pub seed: i64,
     pub steps: u32,
     pub cfg: f32,
-    pub sampler: String,
+    /// `None` = the engine's default for the model.
+    pub sampler: Option<String>,
     pub scheduler: Option<String>,
     pub vae_tiling: bool,
     /// (file name inside `lora_dir`, multiplier)
@@ -116,10 +117,12 @@ pub struct GenRequest {
 /// Body for `POST /sdcpp/v1/img_gen` (fields from the server's api.md).
 pub fn request_body(r: &GenRequest) -> serde_json::Value {
     let mut sample = json!({
-        "sample_method": r.sampler,
         "sample_steps": r.steps,
         "guidance": { "txt_cfg": r.cfg }
     });
+    if let Some(s) = &r.sampler {
+        sample["sample_method"] = json!(s);
+    }
     if let Some(s) = &r.scheduler {
         sample["scheduler"] = json!(s);
     }
@@ -386,7 +389,7 @@ mod tests {
             seed: 42,
             steps: 6,
             cfg: 1.5,
-            sampler: "lcm".into(),
+            sampler: Some("lcm".into()),
             scheduler: None,
             vae_tiling: true,
             loras: vec![("lcm-lora-sdv1-5.safetensors".into(), 1.0)],

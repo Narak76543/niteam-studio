@@ -149,6 +149,7 @@ export const api = {
   // local voices (docs/09-voice-profiles.md)
   voicesStatus: () => invoke<VoicesStatus>("voices_status"),
   voicesModelInstall: () => invoke<null>("voices_model_install"),
+  localSelect: (profileId: string) => invoke<Settings>("local_select", { profileId }),
   voicesModelVerify: () => invoke<boolean>("voices_model_verify"),
   voicesModelDelete: () => invoke<null>("voices_model_delete"),
   /** Makes candidate samples for a described voice; returns how many. */

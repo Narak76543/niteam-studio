@@ -71,7 +71,7 @@ pub fn status<'a, P: Package + 'a>(
             label: p.label().to_owned(),
             min_vram_mb: p.min_vram_mb(),
             total_mb: p.files().iter().map(|f| f.size_mb).sum(),
-            fits: vram_mb.is_some_and(|v| v >= p.min_vram_mb()),
+            fits: vram_mb.is_some_and(|v| v >= p.min_vram_mb() && p.max_vram_mb().is_none_or(|max| v < max)),
             installed: installed(models_dir, p),
             downloaded_mb: downloaded_bytes(models_dir, p) / (1024 * 1024),
             files: p
@@ -185,20 +185,32 @@ mod tests {
             id: "sd15_lcm".into(),
             label: "Fast".into(),
             min_vram_mb: 3800,
+            max_vram_mb: None,
             files: vec![file(FileRole::Model, "m.safetensors"), file(FileRole::Lora, "l.safetensors")],
             generation: GenParams {
                 width: 768,
                 height: 448,
                 steps: 6,
                 cfg: 1.5,
-                sampler: "lcm".into(),
+                sampler: Some("lcm".into()),
                 scheduler: None,
                 vae_tiling: true,
                 lora_multiplier: 1.0,
             },
-            prompt_style: "sd15".into(),
+            prompt_style: "full".into(),
             engine_args: vec![],
         }
+    }
+
+    #[test]
+    fn a_small_variant_is_offered_only_below_its_max_vram() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut small = profile();
+        small.max_vram_mb = Some(5500);
+        let fits = |vram| status([&small], dir.path(), Some(vram))[0].fits;
+        assert!(fits(4096));
+        assert!(!fits(5920), "a 6 GB card gets the full profile instead");
+        assert!(!fits(2048));
     }
 
     #[test]

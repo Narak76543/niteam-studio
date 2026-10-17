@@ -1,4 +1,98 @@
 {
   "engine_version": "master-929-3f8527a",
-  "profiles": []
+  "profiles": [
+    {
+      "id": "zimage_turbo",
+      "label": "Z-Image Turbo (6 GB+ GPU)",
+      "min_vram_mb": 5500,
+      "files": [
+        {
+          "role": "diffusion",
+          "name": "z_image_turbo-Q4_K.gguf",
+          "url": "https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/c61c0e422dc8b541b7548cf33a4ef8302b0f8085/z_image_turbo-Q4_K.gguf",
+          "sha256": "14b375ab4f226bc5378f68f37e899ef3c2242b8541e61e2bc1aff40976086fbd",
+          "size_mb": 3686,
+          "license": "Apache-2.0",
+          "license_url": "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"
+        },
+        {
+          "role": "llm",
+          "name": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+          "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+          "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+          "size_mb": 2382,
+          "license": "Apache-2.0",
+          "license_url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507"
+        },
+        {
+          "role": "vae",
+          "name": "ae.safetensors",
+          "url": "https://huggingface.co/Comfy-Org/Lumina_Image_2.0_Repackaged/resolve/5b072540ef86570fecb8249c505f23d5bdeb88cd/split_files/vae/ae.safetensors",
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+          "size_mb": 320,
+          "license": "Apache-2.0",
+          "license_url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+        }
+      ],
+      "gen": {
+        "width": 1024,
+        "height": 576,
+        "steps": 8,
+        "cfg": 1.0,
+        "vae_tiling": false
+      },
+      "prompt_style": "full",
+      "engine_args": [
+        "--diffusion-fa",
+        "--offload-to-cpu"
+      ]
+    },
+    {
+      "id": "zimage_turbo_small",
+      "label": "Z-Image Turbo, smaller (4–5 GB GPU)",
+      "min_vram_mb": 3800,
+      "max_vram_mb": 5500,
+      "files": [
+        {
+          "role": "diffusion",
+          "name": "z_image_turbo-Q3_K.gguf",
+          "url": "https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/c61c0e422dc8b541b7548cf33a4ef8302b0f8085/z_image_turbo-Q3_K.gguf",
+          "sha256": "4b44bdaa7814f20d7cf144e3939bd93aa32f50660204dd0c2aea5c5376232980",
+          "size_mb": 2998,
+          "license": "Apache-2.0",
+          "license_url": "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"
+        },
+        {
+          "role": "llm",
+          "name": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+          "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+          "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+          "size_mb": 2382,
+          "license": "Apache-2.0",
+          "license_url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507"
+        },
+        {
+          "role": "vae",
+          "name": "ae.safetensors",
+          "url": "https://huggingface.co/Comfy-Org/Lumina_Image_2.0_Repackaged/resolve/5b072540ef86570fecb8249c505f23d5bdeb88cd/split_files/vae/ae.safetensors",
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+          "size_mb": 320,
+          "license": "Apache-2.0",
+          "license_url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+        }
+      ],
+      "gen": {
+        "width": 1024,
+        "height": 576,
+        "steps": 8,
+        "cfg": 1.0,
+        "vae_tiling": false
+      },
+      "prompt_style": "full",
+      "engine_args": [
+        "--diffusion-fa",
+        "--offload-to-cpu"
+      ]
+    }
+  ]
 }

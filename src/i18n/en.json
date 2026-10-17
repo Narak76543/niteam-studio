@@ -426,6 +426,7 @@
   "images.estimate.localTime": "{n} on your GPU (free, ~{min} min)",
   "images.onBattery": "Your laptop is on battery. Making many images on the GPU drains it quickly — plug in the charger first.",
   "images.speed": "≈ {s} s / image · {left} left · ~{min} min",
+  "local.use": "Use this model",
   "local.title": "Local images",
   "local.body": "Make images on your own graphics card: free, no daily limit, works offline. Needs a GPU with at least 4 GB of memory and a one-time model download.",
   "local.vram": "{gb} GB video memory",

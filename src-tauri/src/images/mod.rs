@@ -12,7 +12,6 @@ pub mod gemini;
 pub mod plan;
 pub mod postprocess;
 pub mod prompt;
-pub mod prompt_sd15;
 #[cfg(test)]
 mod style_probe;
 pub mod provider;

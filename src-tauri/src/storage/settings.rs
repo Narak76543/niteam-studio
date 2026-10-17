@@ -309,9 +309,55 @@ pub fn save(paths: &AppPaths, settings: &Settings) -> Result<(), StorageError> {
     atomic::write_json(&paths.settings_file(), settings)
 }
 
+/// Applies a partial update (only the fields one Settings section changed) on top of the
+/// current settings, so a section saved from an older copy cannot undo changes made
+/// elsewhere (a finished model download, another section). Objects merge field by field;
+/// anything else, `null` included, replaces the old value.
+pub fn merged(current: &Settings, patch: &serde_json::Value) -> Result<Settings, StorageError> {
+    let mut value = serde_json::to_value(current)?;
+    merge(&mut value, patch);
+    serde_json::from_value(value).map_err(|e| StorageError::InvalidSetting(e.to_string()))
+}
+
+fn merge(target: &mut serde_json::Value, patch: &serde_json::Value) {
+    match (target, patch) {
+        (serde_json::Value::Object(t), serde_json::Value::Object(p)) => {
+            for (k, v) in p {
+                match t.get_mut(k) {
+                    Some(old) if old.is_object() && v.is_object() => merge(old, v),
+                    _ => {
+                        t.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+        (t, p) => *t = p.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_patch_changes_only_its_own_fields() {
+        let mut current = Settings::default();
+        current.local.offer_dismissed = true;
+        current.image.local_profile = Some("flux_schnell_gguf".into());
+        let patch = serde_json::json!({ "local": { "cooldown_every": 7 }, "output_dir": "D:/videos" });
+        let s = merged(&current, &patch).unwrap();
+        assert_eq!(s.local.cooldown_every, 7);
+        assert!(s.local.offer_dismissed, "a field the section did not touch survives");
+        assert_eq!(s.image.local_profile.as_deref(), Some("flux_schnell_gguf"));
+        assert_eq!(s.output_dir.as_deref(), Some("D:/videos"));
+        let cleared = merged(&s, &serde_json::json!({ "output_dir": null })).unwrap();
+        assert_eq!(cleared.output_dir, None);
+    }
+
+    #[test]
+    fn a_patch_with_a_wrong_type_is_rejected() {
+        assert!(merged(&Settings::default(), &serde_json::json!({ "local": { "cooldown_every": "x" } })).is_err());
+    }
 
     #[test]
     fn missing_fields_fall_back_to_defaults() {

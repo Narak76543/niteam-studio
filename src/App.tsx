@@ -6,6 +6,7 @@ import { detectLanguage } from "./i18n/context";
 import { I18nProvider } from "./i18n/I18nProvider";
 import { api, errorMessage } from "./lib/api";
 import type { Route } from "./lib/route";
+import { settingsPatch } from "./lib/settingsPatch";
 import type { Language, ProjectSummary, Settings } from "./lib/types";
 import { NewProjectPage } from "./pages/NewProjectPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
@@ -78,11 +79,15 @@ export default function App() {
 
   const lang: Language = settings?.ui_language ?? detectLanguage();
 
-  const saveSettings = useCallback(async (next: Settings) => {
-    const saved = await api.settingsSave(next);
-    setSettings(saved);
-    return saved;
-  }, []);
+  // Sections build `next` from this copy; only what they changed is sent and merged.
+  const saveSettings = useCallback(
+    async (next: Settings) => {
+      const saved = await api.settingsSave(settingsPatch(settings, next));
+      setSettings(saved);
+      return saved;
+    },
+    [settings],
+  );
 
   const reloadSettings = useCallback(async () => {
     try {

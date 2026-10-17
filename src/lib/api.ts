@@ -40,7 +40,8 @@ import type {
 export const api = {
   // settings
   settingsGet: () => invoke<Settings>("settings_get"),
-  settingsSave: (settings: Settings) => invoke<Settings>("settings_save", { settings }),
+  /** Saves only the changed fields (`settingsPatch`); returns the full merged settings. */
+  settingsSave: (patch: Record<string, unknown>) => invoke<Settings>("settings_save", { patch }),
 
   // API key (the key itself is never returned)
   apiKeySet: (key: string) => invoke<null>("api_key_set", { key }),

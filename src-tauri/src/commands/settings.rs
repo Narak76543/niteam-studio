@@ -17,11 +17,15 @@ pub async fn settings_get(state: State<'_, AppState>) -> CmdResult<Settings> {
     Ok(state.settings.read().await.clone())
 }
 
+/// Saves only the fields a Settings section changed (`patch`), merged into the current
+/// settings, and returns the full result.
 #[tauri::command]
-pub async fn settings_save(state: State<'_, AppState>, settings: Settings) -> CmdResult<Settings> {
-    settings::save(&state.paths, &settings).map_err(to_cmd)?;
-    *state.settings.write().await = settings.clone();
-    Ok(settings)
+pub async fn settings_save(state: State<'_, AppState>, patch: serde_json::Value) -> CmdResult<Settings> {
+    let mut current = state.settings.write().await;
+    let next = settings::merged(&current, &patch).map_err(to_cmd)?;
+    settings::save(&state.paths, &next).map_err(to_cmd)?;
+    *current = next.clone();
+    Ok(next)
 }
 
 #[tauri::command]

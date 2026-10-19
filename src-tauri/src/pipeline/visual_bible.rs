@@ -138,9 +138,7 @@ CHOSEN ART STYLE: {style}\n\
 Write everything in ENGLISH, with positive phrasing only (describe what is there, never what is absent).\n\
 - `style`: one line expanding the chosen art style (medium, light, palette, texture). Keep its medium.\n\
 - `characters`: every person or animal that appears in more than one scene, with a short snake_case key \
-(e.g. `farmer`) and a precise visual description (age, build, skin, hair, clothing with colours) so it can be \
-drawn the same way every time. Generic people only — no real living people; historical figures only as \
-statues, carvings or unnamed generic figures. Use [] if the story has no recurring characters.\n\
+(e.g. `thomas_edison`, `farmer`) and a precise visual description (for historical figures: era-appropriate historical likeness, age, hairstyle, clothing with colours; for generic characters: age, build, clothing with colours). No real living people. Use [] if the story has no recurring characters.\n\
 - `places`: every recurring location, with a snake_case key and a visual description (architecture, \
 landscape, plants, era).\n\
 - `culture_notes`: if the topic is Cambodian / Khmer, one short phrase (at most 25 words) of visual \

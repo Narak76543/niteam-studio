@@ -106,13 +106,49 @@ fn digits_to_words(digits: &[u32]) -> String {
     to_words(n)
 }
 
+fn is_ascii_context(chars: &[char], idx: usize) -> bool {
+    if idx == 0 {
+        return false;
+    }
+    let prev = chars[idx - 1];
+    if prev.is_ascii_alphanumeric()
+        || (prev == '-' && idx > 1 && chars[idx - 2].is_ascii_alphabetic())
+    {
+        return true;
+    }
+    if prev == ' ' {
+        let mut p = idx - 1;
+        while p > 0 && chars[p - 1] == ' ' {
+            p -= 1;
+        }
+        if p > 0 {
+            let mut word_start = p;
+            while word_start > 0 && chars[word_start - 1].is_ascii_alphabetic() {
+                word_start -= 1;
+            }
+            if word_start < p {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Replaces every number in `text` with Khmer words.
 /// Handles thousands separators (`1,500`), decimals (`3.5` → បីចុចប្រាំ) and `%`.
+/// Digits belonging to English names/designations (e.g. `Apollo 11`, `MP4`, `F-1`) are kept in Latin.
 pub fn replace_digits(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while i < chars.len() {
+        if let Some(c) = chars.get(i) {
+            if c.is_ascii_digit() && is_ascii_context(&chars, i) {
+                out.push(*c);
+                i += 1;
+                continue;
+            }
+        }
         let Some(first) = chars.get(i).copied().and_then(ascii_digit) else {
             if let Some(c) = chars.get(i) {
                 out.push(*c);
@@ -209,5 +245,7 @@ mod tests {
         // A comma not followed by exactly three digits is punctuation.
         assert_eq!(replace_digits("1, 2"), "មួយ, ពីរ");
         assert_eq!(replace_digits("end."), "end.");
+        assert_eq!(replace_digits("Apollo 11 និង Saturn 5"), "Apollo 11 និង Saturn 5");
+        assert_eq!(replace_digits("MP4 និង F-1"), "MP4 និង F-1");
     }
 }

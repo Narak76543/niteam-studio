@@ -119,6 +119,9 @@ different voice on every request, so it is only used to *find* a voice:
 - **From a description:** the user describes the voice (English); the app speaks a fixed test
   sentence 3 times with different seeds (`voices/_design/0..2.wav`); the chosen sample becomes
   `reference.wav` and the test sentence its transcript (mode `design`, ultimate cloning).
+  The New Voice dialog includes Khmer male and female documentary narrator presets that fill the
+  name, language, and description; the user still auditions the three generated samples and chooses
+  which one to save.
 - **From my recording:** WAV/MP3/M4A/FLAC/OGG → FFmpeg to 16 kHz mono, cleaned
   (`volume=0.7,highpass=f=80,afftdn=nr=12:nf=-35:tn=1`: headroom, rumble cut, gentle noise
   reduction — the model copies a clip's noise into every scene) → silence trimmed →

@@ -69,17 +69,33 @@ fn own_plan(project: &Project, scene: &Scene) -> ScenePlan {
         })
         .unwrap_or_default();
     let place = bible.and_then(|b| scene.place.as_ref().and_then(|p| b.places.get(p)));
-    let cambodia = is_cambodia_related(
-        project.language == Language::Km,
-        &[&project.topic, &project.title],
-    );
+    let soft_2d = project.style.preset == "soft_2d_explainer";
+    let cambodia = if soft_2d {
+        super::prompt::is_cambodia_topic(&[&project.topic, &project.title])
+    } else {
+        is_cambodia_related(project.language == Language::Km, &[&project.topic, &project.title])
+    };
     let culture = bible
         .map(|b| b.culture_notes.as_str())
         .filter(|c| cambodia && !c.trim().is_empty());
+    let subject = if soft_2d {
+        let topic_guidance = presets::topic_visual_rules(&[
+            &project.topic,
+            &project.title,
+            &scene.narration,
+            &scene.image_prompt,
+        ]);
+        format!(
+            "visually explain this exact scene subject and action: {}. {}",
+            scene.image_prompt, topic_guidance
+        )
+    } else {
+        scene.image_prompt.clone()
+    };
     let parts = PromptParts {
         style,
         shot: scene.shot,
-        subject: &scene.image_prompt,
+        subject: &subject,
         characters,
         place: place.map(String::as_str),
         culture_notes: culture,

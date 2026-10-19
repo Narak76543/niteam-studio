@@ -94,9 +94,10 @@ Check every scene for:\n\
 - grammar mistakes\n\
 - awkward or unnatural phrasing — it must sound like natural spoken {lang}, the way a good storyteller talks, \
 not a literal translation\n\
-- `narration` and `spoken_text` that do not say the same thing\n\n\
+- `narration` and `spoken_text` that do not say the same thing\n\
+- repeated sentences or scenes that explain the same point: compare scenes in the order provided. Keep the first clear version and suggest a fix for the later scene only when it repeats a full sentence or substantially repeats the same explanation. Repeated technical terms are fine; preserve distinct examples, useful callbacks and facts.\n\n\
 Rules:\n\
-- Make the SMALLEST change that fixes the problem. Keep the meaning, facts, tone and length (one or two short sentences).\n\
+- Make the SMALLEST change that fixes the problem. For repetition, change only the later scene so it advances the explanation with a new detail or removes the repeated sentence. Keep the meaning, facts, tone and length (one or two short sentences).\n\
 - Do not rewrite a scene that is already correct and natural.\n\
 {names}\n\
 - {spoken_rule}\n\

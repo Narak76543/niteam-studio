@@ -26,6 +26,10 @@ const SECONDS_PER_SCENE: u32 = 7;
 const SCENES_PER_CHAPTER: u32 = 5;
 const MIN_CHAPTERS: u32 = 2;
 const MAX_CHAPTERS: u32 = 10;
+/// Keep structured-output responses small enough for Gemini to accept and finish reliably.
+/// Long projects can have 10-18 scenes in an outline chapter, so one request per chapter is
+/// too large even though the outline itself is valid.
+const MAX_SCENES_PER_REQUEST: usize = 5;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -197,60 +201,183 @@ impl ScriptJob<'_> {
                 .rev()
                 .find(|s| s.chapter < index as u32)
                 .map(|s| s.narration.clone());
-            let ctx = ChapterContext {
-                title: &outline.title,
-                hook: &outline.hook,
-                chapters: outline
-                    .chapters
+            let brief = brief(&project, style_label, source.as_deref());
+            let bible = project.visual_bible.as_ref().map_or_else(BibleKeys::default, |b| BibleKeys {
+                characters: b
+                    .characters
                     .iter()
-                    .map(|c| (c.title.as_str(), c.summary.as_str()))
+                    .map(|(k, d)| (k.as_str(), d.as_str()))
                     .collect(),
-                index,
-                scene_count: chapter.scene_count as usize,
-                previous_narration: previous.as_deref(),
-                previous_shots: project
+                places: b
+                    .places
+                    .iter()
+                    .map(|(k, d)| (k.as_str(), d.as_str()))
+                    .collect(),
+            });
+            let chapters: Vec<_> = outline
+                .chapters
+                .iter()
+                .map(|c| (c.title.as_str(), c.summary.as_str()))
+                .collect();
+            let chapter_scene_count = chapter.scene_count as usize;
+            let mut replies: Vec<SceneReply> = Vec::with_capacity(chapter_scene_count);
+            let mut models = Vec::new();
+            for start in (0..chapter_scene_count).step_by(MAX_SCENES_PER_REQUEST) {
+                let count = (chapter_scene_count - start).min(MAX_SCENES_PER_REQUEST);
+                let mut shot_history: Vec<String> = project
                     .scenes
                     .iter()
                     .filter(|s| s.chapter < index as u32)
                     .rev()
                     .take(2)
-                    .map(|s| s.shot.as_str())
-                    .collect(),
-                bible: project
-                    .visual_bible
-                    .as_ref()
-                    .map_or_else(BibleKeys::default, |b| BibleKeys {
-                        characters: b
-                            .characters
-                            .iter()
-                            .map(|(k, d)| (k.as_str(), d.as_str()))
-                            .collect(),
-                        places: b
-                            .places
-                            .iter()
-                            .map(|(k, d)| (k.as_str(), d.as_str()))
-                            .collect(),
-                    }),
-            };
-            let brief = brief(&project, style_label, source.as_deref());
-            let (reply, model): (ChapterReply, String) = script::request_json(
-                self.client,
-                self.key,
-                self.models,
-                script::chapter_prompt(&brief, &ctx),
-                script::chapter_schema(ctx.scene_count, &ctx.bible, source.is_some(), brief.real_world),
-                self.hooks,
-            )
-            .await?;
+                    .map(|s| s.shot.as_str().to_owned())
+                    .collect();
+                shot_history.reverse();
+                shot_history.extend(replies.iter().map(|s| s.shot.clone()));
+                let shot_start = shot_history.len().saturating_sub(2);
+                let previous_shots: Vec<String> = shot_history.into_iter().skip(shot_start).collect();
+                let previous_shot_refs = previous_shots.iter().map(String::as_str).collect();
+                let previous_narration = replies
+                    .last()
+                    .map(|s: &SceneReply| s.narration.as_str())
+                    .or(previous.as_deref());
+                let ctx = ChapterContext {
+                    title: &outline.title,
+                    hook: &outline.hook,
+                    chapters: chapters.clone(),
+                    index,
+                    scene_count: count,
+                    segment_start: start,
+                    chapter_total_scenes: chapter_scene_count,
+                    previous_narration,
+                    previous_shots: previous_shot_refs,
+                    bible: BibleKeys {
+                        characters: bible.characters.clone(),
+                        places: bible.places.clone(),
+                    },
+                };
+                let mut prompt = script::chapter_prompt(&brief, &ctx);
+                let mut covered = String::from(
+                    "\nALREADY COVERED IN THIS VIDEO — continuation context, not new material:\n",
+                );
+                let mut prior_chapters: Vec<u32> = project
+                    .scenes
+                    .iter()
+                    .filter(|s| s.chapter < index as u32)
+                    .map(|s| s.chapter)
+                    .collect();
+                prior_chapters.sort_unstable();
+                prior_chapters.dedup();
+                for prior_chapter in prior_chapters {
+                    let chapter_text = project
+                        .scenes
+                        .iter()
+                        .filter(|s| s.chapter == prior_chapter)
+                        .map(|s| s.narration.trim())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if !chapter_text.is_empty() {
+                        covered.push_str(&format!(
+                            "Earlier chapter {}: {}\n",
+                            prior_chapter + 1,
+                            chapter_text.chars().take(700).collect::<String>()
+                        ));
+                    }
+                }
+                for (offset, scene) in replies.iter().enumerate() {
+                    covered.push_str(&format!(
+                        "Already written in this chapter, scene {}: {}\n",
+                        offset + 1,
+                        scene.narration.trim()
+                    ));
+                }
+                let mut recent_visuals: Vec<String> = project
+                    .scenes
+                    .iter()
+                    .filter(|s| s.chapter < index as u32)
+                    .map(|s| s.image_prompt.trim().to_owned())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                recent_visuals.extend(
+                    replies
+                        .iter()
+                        .map(|s| s.image_prompt.trim().to_owned())
+                        .filter(|s| !s.is_empty()),
+                );
+                let visual_start = recent_visuals.len().saturating_sub(8);
+                if visual_start < recent_visuals.len() {
+                    covered.push_str("RECENT VISUALS ALREADY USED (avoid repeating these setups):\n");
+                    for (offset, visual) in recent_visuals.iter().skip(visual_start).enumerate() {
+                        covered.push_str(&format!(
+                            "{}. {}\n",
+                            visual_start + offset + 1,
+                            visual.chars().take(180).collect::<String>()
+                        ));
+                    }
+                }
+                covered.push_str(
+                    "Give each new scene a distinct purpose and add a new fact, example, consequence, or step. Do not repeat a hook, definition, claim, example, transition, sentence, or sentence opening already covered. Continue the explanation from the next logical point. For every image_prompt, name a concrete topic-specific object and action; for technology scenes show real computing tools or a developer at work, not a generic classroom, group or landscape. Choose a different setting, composition and visible action from recent visuals unless the narration requires continuity. Use natural varied Khmer phrasing; do not force awkward synonyms.\n",
+                );
+                prompt.push_str(&covered);
+                if chapter_scene_count > MAX_SCENES_PER_REQUEST {
+                    prompt.push_str(&format!(
+                        "\nThis is segment {} of {} for this chapter, covering chapter scenes {}–{}. \
+                         This segment continues the same chapter. Continue chronologically from the previous scene; \
+                         do not restart the hook or repeat earlier scenes. Advance the story to the next event.\n",
+                        start / MAX_SCENES_PER_REQUEST + 1,
+                        chapter_scene_count.div_ceil(MAX_SCENES_PER_REQUEST),
+                        start + 1,
+                        start + count,
+                    ));
+                }
+                let (reply, model): (ChapterReply, String) = script::request_json(
+                    self.client,
+                    self.key,
+                    self.models,
+                    prompt.clone(),
+                    script::chapter_schema(count, &ctx.bible, source.is_some(), brief.real_world),
+                    self.hooks,
+                )
+                .await?;
+                models.push(model);
+                let mut candidate_scenes = reply.scenes;
+                let has_dup = candidate_scenes.iter().any(|new_s| {
+                    let n = new_s.narration.trim();
+                    replies.iter().any(|old_s| old_s.narration.trim() == n)
+                });
+                if has_dup && !replies.is_empty() {
+                    self.log.warn(&format!(
+                        "chapter {} segment duplicate scenes returned, retrying with strict non-duplication prompt",
+                        index + 1
+                    ));
+                    let mut retry_prompt = prompt;
+                    retry_prompt.push_str("\nRETRY WARNING: Your previous output repeated earlier scenes of this chapter. You MUST write completely NEW scenes describing the NEXT steps of the story.\n");
+                    if let Ok((retry_reply, retry_model)) = script::request_json::<ChapterReply>(
+                        self.client,
+                        self.key,
+                        self.models,
+                        retry_prompt,
+                        script::chapter_schema(count, &ctx.bible, source.is_some(), brief.real_world),
+                        self.hooks,
+                    ).await {
+                        models.push(retry_model);
+                        candidate_scenes = retry_reply.scenes;
+                    }
+                }
+                replies.extend(candidate_scenes);
+            }
             self.log.info(&format!(
-                "chapter {}/{total} ({} scenes) written by {model}",
+                "chapter {}/{total} ({} scenes) written in {} request(s) by {}",
                 index + 1,
-                reply.scenes.len()
+                replies.len(),
+                models.len(),
+                models.join(", ")
             ));
             project = self
                 .store
                 .update(id, |p| {
-                    append_chapter(p, index, reply.scenes);
+                    append_chapter(p, index, replies);
                     Ok(())
                 })
                 .await?

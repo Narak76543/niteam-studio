@@ -61,11 +61,10 @@ pub const PRESETS: &[StylePreset] = &[
     StylePreset {
         id: "soft_2d_explainer",
         label: "Soft 2D Explainer",
-        style_prompt: "flat 2D cartoon illustration, simple calm explainer-video style, characters with round \
-                       bald peach-coloured heads, dot eyes, small smiles, thin stick legs and clean thick black \
-                       outlines, simple painterly background with soft brush shading and no line art, few \
-                       background elements, distant layers fading into mist, muted green, sage and grey-blue \
-                       palette with soft earth tones, gentle lighting, lots of empty space",
+        style_prompt: "polished flat 2D educational cartoon; recurring friendly stickman guide with round peach head, \
+                       dot eyes, small smile, thin black stick limbs and small teal scarf; crisp silhouettes and \
+                       thick clean outlines; soft painterly backgrounds without outlines; muted sage green, grey-blue \
+                       and earth tones, gentle light, subtle texture, one clear focal subject",
         prompt_rules: SOFT_2D_RULES,
         real_world: false,
     },
@@ -83,10 +82,69 @@ pub const PRESETS: &[StylePreset] = &[
 
 /// The one figure design of `soft_2d_explainer`, repeated in every prompt (with the
 /// background and no-text rules).
-const SOFT_2D_RULES: &str = "every person drawn with the same simple design: round bald peach-coloured head, \
-                             dot eyes, small smile, thin stick legs, clean thick black outline; only the \
-                             people have outlines, buildings, hills and plants are soft brush shading without \
-                             line art; no text, no letters, no watermark";
+const SOFT_2D_RULES: &str = "Faithfully show the exact named subject and action in this scene as the main focal \
+                             point; never replace it with a generic person, group, landscape or symbol. For historical \
+                             or biographical stories, depict named historical figures with authentic likeness and period clothing; \
+                             otherwise a friendly explainer guide demonstrates the subject. Use only props, people and settings that \
+                             fit the topic, narration and scene's actual time period; do not add unrelated modern technology, \
+                             historical objects or scenery. Vary setting, composition, props and pose; no generic \
+                             meadow, classroom or crowd unless the scene needs one. Keep backgrounds soft and unoutlined. no text, no \
+                             letters, no watermark; no words, no Chinese characters, no Hanzi, no pseudo-text, no numbers, no signs, no labels, no posters, no banners, no title cards, no speech balloons, no logos \
+                             or badges; interpret topic wording as meaning, never as text to copy";
+
+/// Topic-sensitive visual guidance for prompts and final image requests. Check history first so a
+/// historical technology topic does not automatically become a modern computer scene.
+pub fn topic_visual_rules(texts: &[&str]) -> &'static str {
+    if is_prehistoric_topic(texts) {
+        "accurately depict the named prehistoric creature, plants, terrain and period-appropriate setting; \
+         show no modern tools, computers, buildings or modern clothing unless explicitly needed for a historical comparison."
+    } else if is_historical_topic(texts) {
+        "accurately depict the authentic historical era, location, period-accurate clothing, tools, workshop equipment \
+         and architecture; all people and objects must faithfully match the historical period."
+    } else if is_technology_topic(texts) {
+        "accurately depict the specific machinery, physical components, laboratory instruments and practical tools \
+         named in this scene; focus on concrete physical objects without modern computer clutter or unrelated screens."
+    } else {
+        "choose concrete visual details directly from this scene's narration; do not invent unrelated props or scenery."
+    }
+}
+
+pub fn is_technology_topic(texts: &[&str]) -> bool {
+    const TERMS: &[&str] = &[
+        "ai", "artificial intelligence", "agentic", "computer", "technology",
+        "software", "programming", "coding", "developer", "code", "algorithm", "machine learning",
+        "robotics", "robot", "internet", "api", "cpu", "gpu", "digital", "cyber",
+        "បច្ចេកវិទ្យា", "កុំព្យូទ័រ",
+    ];
+    texts.iter().any(|text| contains_topic_term(text, TERMS))
+}
+
+pub fn is_historical_topic(texts: &[&str]) -> bool {
+    const TERMS: &[&str] = &[
+        "history", "historical", "ancient", "prehistoric", "medieval", "civilization", "dynasty",
+        "empire", "world war", "wwii", "ww2", "archaeology", "archaeological", "ដាយណូស័រ",
+        "បុរាណ", "ប្រវត្តិសាស្ត្រ",
+    ];
+    texts.iter().any(|text| contains_topic_term(text, TERMS))
+}
+
+pub fn is_prehistoric_topic(texts: &[&str]) -> bool {
+    const TERMS: &[&str] = &["dinosaur", "dinosaurs", "prehistoric", "ដាយណូស័រ"];
+    texts.iter().any(|text| contains_topic_term(text, TERMS))
+}
+
+fn contains_topic_term(text: &str, terms: &[&str]) -> bool {
+    let lower = text.to_lowercase();
+    terms.iter().any(|term| {
+        if term.chars().all(|ch| ch.is_ascii_alphanumeric()) {
+            lower
+                .split(|ch: char| !ch.is_ascii_alphanumeric())
+                .any(|word| word == *term)
+        } else {
+            lower.contains(term)
+        }
+    })
+}
 
 pub fn find(id: &str) -> Option<&'static StylePreset> {
     PRESETS.iter().find(|p| p.id == id)
@@ -107,7 +165,7 @@ pub enum Figures {
 
 pub fn figures(style_prompt: &str) -> Figures {
     let s = style_prompt.to_ascii_lowercase();
-    if s.contains("round bald") {
+    if s.contains("round bald") || s.contains("round peach") || s.contains("soft 2d") {
         Figures::SharedCartoon
     } else if s.contains("stick figure") || s.contains("stickman") || s.contains("stick-figure") {
         Figures::StickFigure

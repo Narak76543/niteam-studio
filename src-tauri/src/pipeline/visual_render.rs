@@ -17,6 +17,9 @@ use crate::stock::rank::max_zoom;
 use crate::storage::atomic;
 
 const PHOTO_JPEG_QUALITY: u8 = 92;
+/// Bump when the real-world clip graphs change (2: converted to TV range), so those clips are
+/// re-rendered; AI-image clips are not affected.
+const VISUAL_CLIP_VERSION: &str = "2";
 
 /// A photo (or a clip's poster) cut and sized for the frame, written once per input.
 #[derive(Debug, Clone, PartialEq)]
@@ -65,7 +68,7 @@ pub fn plan(p: &Project, s: &Scene, index: usize, dir: &Path, registry: &AssetRe
             let Some(path) = v.render_path.clone().filter(|r| v.status == AssetStatus::Done && dir.join(r).is_file()) else {
                 return ScenePlan::Missing("diagram or code picture");
             };
-            let hash = sha(&["drawn", &path, v.render_hash.as_deref().unwrap_or("")]);
+            let hash = sha(&["drawn", VISUAL_CLIP_VERSION, &path, v.render_hash.as_deref().unwrap_or("")]);
             let typed = v.kind == VisualKind::Code
                 && v.code.as_ref().is_some_and(|c| c.type_out)
                 && v.frames.len() > 1
@@ -80,13 +83,13 @@ pub fn plan(p: &Project, s: &Scene, index: usize, dir: &Path, registry: &AssetRe
                 return ScenePlan::Missing("photo or clip");
             };
             if r.media == Media::Video {
-                let hash = sha(&["video", &r.file, &r.sha256, &format!("{focus:?}")]);
+                let hash = sha(&["video", VISUAL_CLIP_VERSION, &r.file, &r.sha256, &format!("{focus:?}")]);
                 return ScenePlan::Ready { input: Input::Video { path: r.file.clone(), focus }, prep: None, hash };
             }
             let zoom = max_zoom(r.width, r.height, frame.width);
             let motion = if zoom > 1.005 { Motion::Zoom { to: zoom, zoom_in: index.is_multiple_of(2) } } else { Motion::Still };
             let prep = photo_prep(&s.id, &r.file, (r.width, r.height), focus, frame, motion.zoom(), res);
-            let hash = sha(&["photo", &r.sha256, &prep.out, motion.as_str(), &format!("{:.4}", motion.zoom())]);
+            let hash = sha(&["photo", VISUAL_CLIP_VERSION, &r.sha256, &prep.out, motion.as_str(), &format!("{:.4}", motion.zoom())]);
             ScenePlan::Ready { input: Input::Image { path: prep.out.clone(), motion }, prep: Some(prep), hash }
         }
         VisualKind::AiImage => ScenePlan::AiImage,

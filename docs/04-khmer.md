@@ -95,15 +95,20 @@ and `30%` → សាមសិបភាគរយ); applied to every Khmer scene r
 
 ## 4c. Names stay as written
 
-Names of products, brands, companies, apps, websites, programming languages, frameworks,
-software, devices and technical terms (React Native, Android, iPhone, Google, YouTube,
-JavaScript, Wi-Fi, AI …) are **never translated or transliterated in `narration`** (subtitles):
-they stay in Latin letters with their usual capitalization. In `spoken_text` they are written
-in Khmer letters as Cambodians pronounce them, so the Khmer voice says them correctly. The
-project's **Names** list (`project.keep_terms`, Script page → Names) adds terms that must appear
-exactly as written. Rule text: `gemini::script::names_rule` (script prompts + proofreader); the
-proofreader also drops any correction that removes a listed name. Latin words inside Khmer
-subtitles use Kantumruy Pro's Latin glyphs.
+Names of products, brands, companies, people (e.g. Neil Armstrong, Buzz Aldrin, Michael Collins),
+spacecraft and missions (e.g. Apollo 11, Saturn V, Eagle, Columbia), apps, software, devices and
+technical terms (React Native, Android, iPhone, Google, YouTube, JavaScript, Wi-Fi, AI …) are
+**never translated or transliterated**: they stay in Latin letters with their usual capitalization
+in **BOTH `narration` (subtitles) AND `spoken_text` (TTS input)**. This allows speech synthesis
+engines (like VoxCPM2 and multilingual TTS) to speak them directly in clean, authentic English.
+The project's **Names** list (`project.keep_terms`, Script page → Names) adds terms that must
+appear exactly as written. Rule text: `gemini::script::names_rule` (script prompts + proofreader).
+Latin words inside Khmer subtitles use Kantumruy Pro's Latin glyphs.
+
+ASCII digits belonging to English names, designations or models (e.g. `Apollo 11`, `Saturn 5`,
+`Falcon 9`, `MP4`, `F-1`) are preserved by `khmer_numbers::replace_digits` so TTS speaks them
+in English rather than converting them to Khmer words. Khmer numbers and years (like `ឆ្នាំ 1863`,
+`1,500 នាក់`, `30%`) continue to be converted to Khmer words as usual.
 
 ## 5. Script quality
 

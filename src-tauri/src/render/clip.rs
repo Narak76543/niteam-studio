@@ -176,14 +176,16 @@ pub fn clip_args(spec: &ClipSpec) -> Vec<String> {
             let last = ((spec.duration_ms() * u64::from(FPS)).div_ceil(1000)).saturating_sub(1).max(1);
             let (from, end) = if *zoom_in { (1.0, *to) } else { (*to, 1.0) };
             format!(
-                "[0:v]zoompan=z='{from:.4}+({:.4})*on/{last}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps={FPS}[bg]",
+                "[0:v]zoompan=z='{from:.4}+({:.4})*on/{last}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps={FPS},scale=out_range=tv[bg]",
                 end - from
             )
         }
-        Input::Image { motion: Motion::Still, .. } => format!("[0:v]scale={w}:{h},setsar=1[bg]"),
-        Input::Frames { .. } => format!("[0:v]scale={w}:{h},fps={FPS},setsar=1[bg]"),
+        // JPEG photos decode as full range (yuvj420p): every real-world input is converted to
+        // TV range so all clips of a video match (AI-image PNGs already are).
+        Input::Image { motion: Motion::Still, .. } => format!("[0:v]scale={w}:{h}:out_range=tv,setsar=1[bg]"),
+        Input::Frames { .. } => format!("[0:v]scale={w}:{h}:out_range=tv,fps={FPS},setsar=1[bg]"),
         Input::Video { focus, .. } => format!(
-            "[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}:x='(iw-ow)*{:.3}':y='(ih-oh)*{:.3}',fps={FPS},setsar=1[bg]",
+            "[0:v]scale={w}:{h}:force_original_aspect_ratio=increase:out_range=tv,crop={w}:{h}:x='(iw-ow)*{:.3}':y='(ih-oh)*{:.3}',fps={FPS},setsar=1[bg]",
             focus[0].clamp(0.0, 1.0),
             focus[1].clamp(0.0, 1.0)
         ),
@@ -284,7 +286,7 @@ mod tests {
         let a = clip_args(&s);
         let i = a.iter().position(|x| x == "scenes/s001/code/track.ffconcat").unwrap();
         assert_eq!(&a[i - 5..i], ["-f", "concat", "-safe", "0", "-i"]);
-        assert!(graph(&a).starts_with("[0:v]scale=1920:1080,fps=30,setsar=1[bg]"));
+        assert!(graph(&a).starts_with("[0:v]scale=1920:1080:out_range=tv,fps=30,setsar=1[bg]"));
     }
 
     #[test]
@@ -294,7 +296,7 @@ mod tests {
         let g = graph(&clip_args(&s)).to_owned();
         // 6.4 s at 30 fps = 192 frames → last frame 191.
         assert!(g.contains("zoompan=z='1.0000+(0.0800)*on/191'"), "{g}");
-        assert!(g.contains(":d=1:s=1920x1080:fps=30[bg]"), "{g}");
+        assert!(g.contains(":d=1:s=1920x1080:fps=30,scale=out_range=tv[bg]"), "{g}");
         s.input = Input::Image { path: "p.jpg".into(), motion: Motion::Zoom { to: 1.05, zoom_in: false } };
         assert!(graph(&clip_args(&s)).contains("z='1.0500+(-0.0500)*on/191'"));
         assert_eq!(Motion::Zoom { to: 1.05, zoom_in: false }.as_str(), "zoom_out");
@@ -304,13 +306,13 @@ mod tests {
     fn stills_and_clips() {
         let mut s = spec(true, Pan::LeftToRight);
         s.input = Input::Image { path: "scenes/s001/visual.png".into(), motion: Motion::Still };
-        assert!(graph(&clip_args(&s)).starts_with("[0:v]scale=1920:1080,setsar=1[bg];[bg][2:v]overlay"));
+        assert!(graph(&clip_args(&s)).starts_with("[0:v]scale=1920:1080:out_range=tv,setsar=1[bg];[bg][2:v]overlay"));
         s.input = Input::Video { path: "assets/pixabay_1.mp4".into(), focus: [0.5, 0.25] };
         let a = clip_args(&s);
         let i = a.iter().position(|x| x == "assets/pixabay_1.mp4").unwrap();
         assert_eq!(&a[i - 5..i], ["-stream_loop", "-1", "-t", "6.400", "-i"]);
         let g = graph(&a);
-        assert!(g.contains("force_original_aspect_ratio=increase,crop=1920:1080:x='(iw-ow)*0.500':y='(ih-oh)*0.250',fps=30"), "{g}");
+        assert!(g.contains("force_original_aspect_ratio=increase:out_range=tv,crop=1920:1080:x='(iw-ow)*0.500':y='(ih-oh)*0.250',fps=30"), "{g}");
         assert!(g.contains("[1:a]apad"), "the clip's own sound is not used: {g}");
     }
 
@@ -357,6 +359,7 @@ mod tests {
             let probe = std::process::Command::new(&ffmpeg).current_dir(d).args(["-i", &format!("{name}.mkv")]).output().unwrap();
             let info = String::from_utf8_lossy(&probe.stderr).into_owned();
             assert!(info.contains("1920x1080") && info.contains("Duration: 00:00:02.9"), "{name}: {info}");
+            assert!(info.contains("yuv420p(tv"), "{name}: TV range expected: {info}");
         }
     }
 

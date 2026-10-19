@@ -130,6 +130,32 @@ export function NewVoiceDialog({ onCreated, onCancel }: Props) {
 
         {source === "design" ? (
           <>
+            <div className="row">
+              <Button
+                disabled={busy !== null}
+                onClick={() => {
+                  setName(t("voices.presetKhmerMaleName"));
+                  setLanguage("km");
+                  setDescription(t("voices.presetKhmerMaleDescription"));
+                  setSamples(0);
+                  setChosen(null);
+                }}
+              >
+                {t("voices.presetKhmerMale")}
+              </Button>
+              <Button
+                disabled={busy !== null}
+                onClick={() => {
+                  setName(t("voices.presetKhmerFemaleName"));
+                  setLanguage("km");
+                  setDescription(t("voices.presetKhmerFemaleDescription"));
+                  setSamples(0);
+                  setChosen(null);
+                }}
+              >
+                {t("voices.presetKhmerFemale")}
+              </Button>
+            </div>
             <label className="field">
               <span className="field__label">{t("voices.description")}</span>
               <textarea

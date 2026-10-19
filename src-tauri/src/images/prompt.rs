@@ -109,8 +109,26 @@ fn char_len(s: &str) -> usize {
     s.chars().count()
 }
 
+fn truncate_chars(s: &str, max: usize) -> String {
+    let mut end = 0;
+    let mut count = 0;
+    for (index, ch) in s.char_indices() {
+        if count == max {
+            break;
+        }
+        end = index + ch.len_utf8();
+        count += 1;
+    }
+    if end < s.len() {
+        if let Some(space) = s[..end].rfind(char::is_whitespace) {
+            end = space;
+        }
+    }
+    s[..end].trim_end().to_owned()
+}
+
 /// Builds the final prompt, at most [`MAX_PROMPT_CHARS`] characters: if too long, drop
-/// culture notes first, then the place, then shorten the subject.
+/// culture notes and place first, then shorten style rules before losing the scene subject.
 pub fn build_prompt(p: &PromptParts) -> String {
     let subject = inline_characters(p.subject, &p.characters);
     let composition = if p.square { SQUARE_COMPOSITION } else { "" };
@@ -133,12 +151,22 @@ pub fn build_prompt(p: &PromptParts) -> String {
             return full;
         }
     }
-    // Still too long: keep style/shot/composition/rules/no-lettering, cut the subject.
-    let fixed = join(&[p.style, shot, composition, p.rules, NO_LETTERING]);
-    let room = MAX_PROMPT_CHARS.saturating_sub(char_len(&fixed) + 2);
-    let cut: String = subject.chars().take(room).collect();
-    let out = join(&[p.style, shot, &cut, composition, p.rules, NO_LETTERING]);
-    out.chars().take(MAX_PROMPT_CHARS).collect()
+    // Keep the scene's actual subject even when a custom bible/style makes the fixed text
+    // oversized. Preserve room for some style and preset guidance, then trim those descriptions.
+    let tail = join(&[shot, composition, NO_LETTERING]);
+    let separators = 4; // style + rules added to the three-part tail
+    let min_style = char_len(p.style).min(160);
+    let min_rules = char_len(p.rules).min(160);
+    let subject_room = MAX_PROMPT_CHARS
+        .saturating_sub(char_len(&tail) + separators + min_style + min_rules);
+    let subject = truncate_chars(&subject, subject_room);
+    let base = join(&[shot, &subject, composition, NO_LETTERING]);
+    let room = MAX_PROMPT_CHARS.saturating_sub(char_len(&base) + 4);
+    let style_budget = char_len(p.style).min(600).min(room * 2 / 3);
+    let style = truncate_chars(p.style, style_budget);
+    let rules_budget = char_len(p.rules).min(room.saturating_sub(char_len(&style)));
+    let rules = truncate_chars(p.rules, rules_budget);
+    join(&[&style, shot, &subject, composition, &rules, NO_LETTERING])
 }
 
 /// Cambodia-related projects get the bible's culture notes (07 §3).
@@ -157,6 +185,31 @@ pub fn is_cambodia_related(khmer_project: bool, texts: &[&str]) -> bool {
             .iter()
             .any(|k| t.contains(k))
         })
+}
+
+/// Whether the topic itself is about Cambodia, regardless of the narration language.
+/// Soft 2D image prompts use this to avoid adding Cambodian visual motifs to unrelated
+/// Khmer-language stories.
+pub fn is_cambodia_topic(texts: &[&str]) -> bool {
+    texts.iter().any(|text| {
+        let text = text.to_lowercase();
+        [
+            "cambod",
+            "khmer",
+            "angkor",
+            "phnom penh",
+            "mekong",
+            "tonle sap",
+            "កម្ពុជា",
+            "ខ្មែរ",
+            "អង្គរ",
+            "ភ្នំពេញ",
+            "មេគង្គ",
+            "ទន្លេសាប",
+        ]
+        .iter()
+        .any(|needle| text.contains(needle))
+    })
 }
 
 /// Scene number from its id (`s012` → 12). Stable when scenes are reordered.

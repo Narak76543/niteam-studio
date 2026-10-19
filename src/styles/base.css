@@ -601,6 +601,56 @@ input[type="range"] {
   justify-content: center;
   color: var(--text);
 }
+.shortcut-option {
+  display: flex;
+  flex: 0 0 132px;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-1);
+}
+.shortcut-option .shortcut {
+  width: 100%;
+}
+.shortcut__art--sample {
+  width: 96px;
+  height: 64px;
+  padding: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2px;
+}
+.shortcut__art--sample img {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  object-fit: cover;
+}
+.shortcut__sample-photo {
+  grid-row: 1 / 3;
+}
+.shortcut__sample-stack {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+}
+.shortcut__preview {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 2px var(--s-1);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+.shortcut__preview:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
 
 /* ---------- badges / progress ---------- */
 .badge {
@@ -744,6 +794,57 @@ input[type="range"] {
   justify-content: flex-end;
   gap: var(--s-2);
   margin-top: var(--s-3);
+}
+.dialog--preset-sample {
+  width: min(920px, calc(100vw - 2 * var(--s-6)));
+  max-height: calc(100vh - 2 * var(--s-6));
+  overflow-y: auto;
+}
+.preset-sample__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+.preset-sample__heading p {
+  margin: var(--s-1) 0 0;
+}
+.preset-sample__close {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: var(--s-1) var(--s-2);
+  background: var(--bg-subtle);
+  cursor: pointer;
+}
+.preset-sample__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-3);
+}
+.preset-sample__item {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-subtle);
+}
+.preset-sample__item img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+.preset-sample__item figcaption {
+  padding: var(--s-2) var(--s-3);
+}
+.preset-sample__credit {
+  margin: 0;
+  color: var(--text-muted);
+}
+.preset-sample__credit a {
+  color: inherit;
 }
 
 .toasts {
@@ -1237,6 +1338,80 @@ input[type="range"] {
   gap: var(--s-1);
   color: var(--text-muted);
 }
+.scene-card--playing {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  background: var(--bg-selected);
+}
+
+/* Continuous Voice Player Bar (Audition all voices) */
+.voice-player-bar {
+  position: sticky;
+  bottom: var(--s-3);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+  background: var(--bg-shell);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(8px);
+  margin-top: var(--s-3);
+  margin-bottom: var(--s-2);
+}
+.voice-player-bar__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+.voice-player-bar__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+.voice-player-bar__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.voice-player-bar__progress-track {
+  flex: 1;
+  min-width: 140px;
+  height: 6px;
+  background: var(--border);
+  border-radius: var(--r-xs);
+  overflow: hidden;
+  cursor: pointer;
+  position: relative;
+}
+.voice-player-bar__progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 80ms linear;
+}
+.voice-player-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-left: auto;
+}
+.voice-player-bar__narration {
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--text);
+  background: var(--bg-subtle);
+  border-left: 3px solid var(--accent);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-xs);
+  margin: 0;
+  max-height: 4.5em;
+  overflow-y: auto;
+}
+
 .images-panel {
   display: flex;
   flex-direction: column;
@@ -2098,6 +2273,12 @@ input[type="range"] {
   border-radius: var(--r-sm);
   background: var(--bg-subtle);
   border: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .preset-sample__grid {
+    grid-template-columns: 1fr;
+  }
 }
 .diagram-preview {
   max-width: 100%;

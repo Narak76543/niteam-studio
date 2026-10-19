@@ -342,4 +342,9 @@ _Add one line per finished phase: date — phase — notes._
 - 2026-10-17 — **Real-world Tech Explainer, step 6**: code / terminal cards drawn in the WebView
   (Shiki JS engine, GitHub Dark, JetBrains Mono with Kantumruy fallback), typed out as one
   frame per line shown over the voice with an `ffconcat` track (`Input::Frames`), live preview.
-
+- 2026-10-17 - Soft 2D Explainer: strengthened scene relevance, kept title wording out of final image prompts, added the recurring stickman guide, and limited Cambodia culture notes to Cambodia-related topics.
+- 2026-10-17 - Long-script generation: split chapters into requests of at most five scenes so 13-20 minute projects avoid oversized Gemini structured-output requests; existing outlines resume with the same batching.
+- 2026-10-17 - Khmer technical speech: added explicit letter-name pronunciation guidance for AI and common technical initialisms to script and proofreading prompts.
+- 2026-10-17 - Script quality: carry narration context across scene batches and have proofreading flag repeated sentences and explanations for later scenes.
+- 2026-10-17 - Soft 2D image relevance: preserve scene subjects under the image prompt size limit, require concrete technology visuals for AI/code scenes, and vary compositions using recent scene prompts.
+- 2026-10-18 - Script & Speech improvements: fixed chapter batching continuation index bug to prevent duplicated scenes; added deduplication guard fallback; updated names rules to keep English people/spacecraft/mission/tech names and designations in Latin script across both narration and spoken_text for clean VoxCPM / TTS pronunciation; preserved English designations in khmer_numbers.

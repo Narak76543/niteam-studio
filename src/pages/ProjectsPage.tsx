@@ -1,4 +1,4 @@
-import { Film, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
+import { Eye, Film, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ProjectStatusBadge } from "../components/Badge";
@@ -10,6 +10,10 @@ import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { PresetIcon } from "../components/PresetIcon";
 import { SceneThumb } from "../components/SceneThumb";
+import { TechPresetSampleDialog } from "../components/TechPresetSampleDialog";
+import techCodeSample from "../assets/preset-samples/tech-code.jpg";
+import techDiagramSample from "../assets/preset-samples/tech-diagram.jpg";
+import techPhotoSample from "../assets/preset-samples/tech-photo.jpg";
 import { useToast } from "../components/toast";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage } from "../lib/api";
@@ -31,6 +35,7 @@ export function ProjectsPage({ projects, hasKey, navigate, onChanged, searchToke
   const toast = useToast();
   const [query, setQuery] = useState("");
   const [toDelete, setToDelete] = useState<ProjectSummary | null>(null);
+  const [showTechSample, setShowTechSample] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -183,15 +188,43 @@ export function ProjectsPage({ projects, hasKey, navigate, onChanged, searchToke
         </div>
         <div className="shortcuts">
           {PRESET_IDS.map((id) => (
-            <button key={id} className="shortcut" onClick={() => navigate({ name: "new", preset: id })}>
-              <span className="shortcut__art">
-                <PresetIcon id={id} />
-              </span>
-              <span className="t-small">{t(presetKey(id))}</span>
-            </button>
+            <div key={id} className="shortcut-option">
+              <button className="shortcut" onClick={() => navigate({ name: "new", preset: id })}>
+                <span className={`shortcut__art${id === "tech_explainer" ? " shortcut__art--sample" : ""}`}>
+                  {id === "tech_explainer" ? (
+                    <>
+                      <img className="shortcut__sample-photo" src={techPhotoSample} alt="" />
+                      <span className="shortcut__sample-stack">
+                        <img src={techDiagramSample} alt="" />
+                        <img src={techCodeSample} alt="" />
+                      </span>
+                    </>
+                  ) : (
+                    <PresetIcon id={id} />
+                  )}
+                </span>
+                <span className="t-small">{t(presetKey(id))}</span>
+              </button>
+              {id === "tech_explainer" && (
+                <button className="shortcut__preview" onClick={() => setShowTechSample(true)}>
+                  <Eye size={14} strokeWidth={1.5} aria-hidden="true" />
+                  {t("projects.sample.view")}
+                </button>
+              )}
+            </div>
           ))}
         </div>
       </section>
+
+      {showTechSample && (
+        <TechPresetSampleDialog
+          onClose={() => setShowTechSample(false)}
+          onStart={() => {
+            setShowTechSample(false);
+            navigate({ name: "new", preset: "tech_explainer" });
+          }}
+        />
+      )}
 
       {toDelete && (
         <ConfirmDialog

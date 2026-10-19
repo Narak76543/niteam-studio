@@ -92,16 +92,17 @@ props (cap, scarf, hat) stay recognisable. Look & feel → **Style** switches an
 
 **Soft 2D Explainer** (`soft_2d_explainer`, owner 2026-10-17, brief in
 `docs/tasks/soft-2d-explainer-style.md`): calm explainer cartoon, our own figure design.
-- Style: "flat 2D cartoon illustration, simple calm explainer-video style, characters with round
-  bald peach-coloured heads, dot eyes, small smiles, thin stick legs and clean thick black
-  outlines, simple painterly background with soft brush shading and no line art, few background
-  elements, distant layers fading into mist, muted green, sage and grey-blue palette with soft
-  earth tones, gentle lighting, lots of empty space".
-- **Preset rules** (`StylePreset::prompt_rules`, added word for word to every final prompt, §3,
-  also when the bible's `style` line was edited): "every person drawn with the same simple design:
-  round bald peach-coloured head, dot eyes, small smile, thin stick legs, clean thick black
-  outline; only the people have outlines, buildings, hills and plants are soft brush shading
-  without line art; no text, no letters, no watermark".
+- Style: polished flat 2D educational illustration with one recurring stickman guide as the main
+  character: round peach head, dot eyes, small smile, thin black stick body and limbs, and a small
+  teal scarf. Keep the guide prominent and interacting with the scene's exact subject. Use crisp
+  silhouettes, balanced composition, purposeful soft-painted details, restrained texture, gentle
+  light, muted green/sage/grey-blue and earth tones, and intentional empty space.
+- **Preset rules** (`StylePreset::prompt_rules`, added word for word to every final prompt): clearly
+  show the exact scene object, event or action; show changes for process scenes; avoid generic people,
+  crowds and landscapes. For AI, software or coding scenes, include the specific computing tools and
+  developer action from the narration. Historical and prehistoric scenes use period-correct details and exclude modern objects unless the scene explicitly compares eras. Vary setting and composition between scenes; keep the recurring
+  stickman guide interacting with the subject. Never draw writing, pseudo-text, numbers, signs, labels,
+  titles, logos, badges or watermarks. Video topic wording is omitted to reduce accidental image text.
   Negative phrasing is deliberate: Z-Image runs at cfg 1.0, where the negative prompt does
   nothing, and its Qwen3 encoder follows "no …" in the positive prompt (08 §13).
 - Figures rule: see §2 (`Figures::SharedCartoon`).
@@ -146,10 +147,14 @@ edited style keeps its rule):
   palette; the bible's `style` is the chosen style copied word for word. Scene `image_prompt`s
   get the same rule (clothing, prop, action; never faces or bodies).
 
-`culture_notes` is added to **every** image (§3), so the bible prompt asks for one short phrase
+`culture_notes` may be added to an image (§3), so the bible prompt asks for one short phrase
 (≤ 25 words) that fits every scene — clothing style, roof / carving shapes, landscape — and never a
 list of objects or events from only some scenes (2026-10-17: a list of "stilt houses, rice
 paddies, temples, crowns, lanterns" put an Angkor temple into the prehistoric scene of every seed).
+For Soft 2D, these notes are included only when the project title or topic itself mentions Cambodia,
+Khmer, or a related place in English or Khmer; Khmer narration alone does not make an unrelated
+topic Cambodian. The final image prompt uses the scene's specific visual description instead of
+copying the project's title or raw topic wording into the prompt.
 
 Rules for the script model:
 - Every recurring person/place gets **one** bible entry; scenes refer to it by key.
@@ -179,7 +184,7 @@ Rules for the script model:
   "clear blue sky", not "no birds".
 - **Never ask for text in the image.** Titles/subtitles are drawn by the app.
 - No real living people. Historical figures only as statues/carvings or generic figures.
-- Truncate to 2,048 chars (Flux limit), dropping `culture_notes` first, then place.
+- Truncate to 2,048 chars (Flux limit), dropping `culture_notes` and place first. If oversized style descriptions still exceed the limit, trim those before cutting the scene subject so topic-specific objects and actions remain.
 - **Seed:** `visual_bible.seed + scene_index`. "Regenerate" in the UI uses a new random
   seed and stores it on the scene. Cloudflare Flux does not accept a seed (§1a): there the
   seed is used only in the cache hash (§8), so a new seed still forces a fresh image, but

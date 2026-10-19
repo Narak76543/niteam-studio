@@ -1,4 +1,4 @@
-import { AlertTriangle, Clapperboard, ImageIcon, ImagePlus, Images, PencilLine, Play, RotateCcw, ScanSearch, Sparkles, Square, Volume2, WandSparkles } from "lucide-react";
+import { AlertTriangle, Clapperboard, Headphones, ImageIcon, ImagePlus, Images, Pause, PencilLine, Play, RotateCcw, ScanSearch, Sparkles, Square, Volume2, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AssetStatusBadge, Badge, ProjectStatusBadge } from "../components/Badge";
@@ -16,9 +16,10 @@ import { RetryStatus } from "../components/RetryStatus";
 import { SceneThumb } from "../components/SceneThumb";
 import { useToast } from "../components/toast";
 import { VisualDialog } from "../components/VisualDialog";
+import { VoicePlayerBar } from "../components/VoicePlayerBar";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage, onGenerateProgress, onGeminiRetry, onPromptRewriteProgress, onSceneProgress } from "../lib/api";
-import { mimeForPath, onPlayingChange, playAudio, stopAudio } from "../lib/audioPlayer";
+import { mimeForPath, onAudioTimeUpdate, onPlayingChange, pauseAudio, playAudio, resumeAudio, seekAudio, stopAudio } from "../lib/audioPlayer";
 import { prepareVisuals } from "../lib/prepareVisuals";
 import { isRealWorld } from "../lib/presets";
 import type { Navigate } from "../lib/route";
@@ -110,6 +111,10 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
   /** When each image of the current run finished (for "≈ s / image · ~min left"). */
   const [imageTimes, setImageTimes] = useState<number[]>([]);
   const [playing, setPlaying] = useState<string | null>(null);
+  const [continuousMode, setContinuousMode] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [audioTime, setAudioTime] = useState<{ currentTime: number; duration: number }>({ currentTime: 0, duration: 0 });
+  const [autoScroll, setAutoScroll] = useState(true);
   const [promptEdit, setPromptEdit] = useState<Scene | null>(null);
   const [rewrite, setRewrite] = useState<{ running: boolean; progress: RewriteProgress | null }>({
     running: false,
@@ -199,7 +204,15 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       });
   }, [needsDrawing, projectId, reload, toast]);
 
-  useEffect(() => onPlayingChange(setPlaying), []);
+  useEffect(() => {
+    return onPlayingChange((key) => {
+      setPlaying(key);
+      if (!key) {
+        setIsPaused(false);
+      }
+    });
+  }, []);
+  useEffect(() => onAudioTimeUpdate(setAudioTime), []);
   useEffect(() => () => stopAudio(), []);
 
   useEffect(() => {
@@ -284,9 +297,138 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
     void start("image", () => api.imagesStart(projectId));
   };
 
+  const readyScenes = useMemo(
+    () => scenes.filter((s) => s.voice.path !== null && s.voice.status === "done"),
+    [scenes],
+  );
+  const totalVoiceMs = useMemo(
+    () => readyScenes.reduce((acc, s) => acc + (s.voice.duration_ms ?? 0), 0),
+    [readyScenes],
+  );
+  const currentVoiceSceneIndex = useMemo(() => {
+    return playing ? readyScenes.findIndex((s) => s.id === playing) + 1 : 0;
+  }, [playing, readyScenes]);
+
+  const elapsedBeforeMs = useMemo(() => {
+    if (!playing) return 0;
+    const idx = readyScenes.findIndex((s) => s.id === playing);
+    if (idx <= 0) return 0;
+    return readyScenes.slice(0, idx).reduce((acc, s) => acc + (s.voice.duration_ms ?? 0), 0);
+  }, [playing, readyScenes]);
+
+  const activePlayingScene = useMemo(() => {
+    return scenes.find((s) => s.id === playing) ?? null;
+  }, [scenes, playing]);
+
+  const playSceneRef = useRef<(id: string) => Promise<void>>(() => Promise.resolve());
+
+  const playSceneInPlaylist = useCallback(
+    async (sceneId: string) => {
+      const targetIndex = scenes.findIndex((s) => s.id === sceneId);
+      if (targetIndex === -1) return;
+      const scene = scenes[targetIndex];
+      if (!scene) return;
+      if (scene.voice.status !== "done") {
+        const nextReady = scenes.slice(targetIndex + 1).find((s) => s.voice.status === "done");
+        if (nextReady) {
+          void playSceneRef.current(nextReady.id);
+        } else {
+          stopAudio();
+          setContinuousMode(false);
+          setIsPaused(false);
+        }
+        return;
+      }
+
+      setIsPaused(false);
+
+      if (autoScroll) {
+        const el = document.getElementById(`scene-${scene.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }
+
+      try {
+        const bytes = await api.sceneVoiceAudio(projectId, scene.id);
+        await playAudio(scene.id, bytes, mimeForPath(scene.voice.path), () => {
+          const nextReady = scenes.slice(targetIndex + 1).find((s) => s.voice.status === "done");
+          if (nextReady) {
+            void playSceneRef.current(nextReady.id);
+          } else {
+            setContinuousMode(false);
+            setIsPaused(false);
+            toast.show(t("scenes.playbackFinished"), "ok");
+          }
+        });
+      } catch (e) {
+        toast.show(`${t("scenes.playError")} ${errorMessage(e)}`, "danger");
+        setContinuousMode(false);
+        setIsPaused(false);
+      }
+    },
+    [scenes, autoScroll, projectId, toast, t],
+  );
+
+  useEffect(() => {
+    playSceneRef.current = playSceneInPlaylist;
+  }, [playSceneInPlaylist]);
+
+  const startContinuous = useCallback(() => {
+    const firstReady = (playing ? scenes.find((s) => s.id === playing && s.voice.status === "done") : null)
+      ?? scenes.find((s) => s.voice.status === "done");
+    if (!firstReady) {
+      toast.show(t("scenes.noVoice"), "neutral");
+      return;
+    }
+    setContinuousMode(true);
+    void playSceneInPlaylist(firstReady.id);
+  }, [playing, scenes, toast, t, playSceneInPlaylist]);
+
+  const toggleContinuousPlay = useCallback(() => {
+    if (!continuousMode) {
+      startContinuous();
+      return;
+    }
+    if (isPaused) {
+      void resumeAudio();
+      setIsPaused(false);
+    } else {
+      pauseAudio();
+      setIsPaused(true);
+    }
+  }, [continuousMode, isPaused, startContinuous]);
+
+  const stopContinuous = useCallback(() => {
+    stopAudio();
+    setContinuousMode(false);
+    setIsPaused(false);
+  }, []);
+
+  const stepContinuousScene = useCallback(
+    (direction: -1 | 1) => {
+      const curIdx = scenes.findIndex((s) => s.id === playing);
+      if (curIdx === -1) return;
+      if (direction === 1) {
+        const next = scenes.slice(curIdx + 1).find((s) => s.voice.status === "done");
+        if (next) void playSceneInPlaylist(next.id);
+      } else {
+        const prev = [...scenes.slice(0, curIdx)].reverse().find((s) => s.voice.status === "done");
+        if (prev) void playSceneInPlaylist(prev.id);
+      }
+    },
+    [scenes, playing, playSceneInPlaylist],
+  );
+
   const play = async (scene: Scene) => {
     if (playing === scene.id) {
       stopAudio();
+      setContinuousMode(false);
+      setIsPaused(false);
+      return;
+    }
+    if (continuousMode) {
+      void playSceneInPlaylist(scene.id);
       return;
     }
     try {
@@ -452,6 +594,17 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
                 </Button>
               )
             )}
+            {voices.done > 0 && !jobs.voice.running && (
+              <Button
+                variant={continuousMode ? "primary" : "secondary"}
+                icon={continuousMode && !isPaused ? <Pause {...ICON} /> : <Headphones {...ICON} />}
+                onClick={toggleContinuousPlay}
+              >
+                {continuousMode
+                  ? (isPaused ? t("scenes.resumeAll") : t("scenes.pauseAll"))
+                  : t("scenes.playAllVoices")}
+              </Button>
+            )}
             {realWorld &&
               (jobs.visual.running ? (
                 <Button icon={<Square {...ICON} />} onClick={() => void api.visualsCancel(projectId)}>
@@ -524,6 +677,27 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
         )}
       </div>
 
+      {continuousMode && activePlayingScene && (
+        <VoicePlayerBar
+          currentScene={activePlayingScene}
+          currentIndex={currentVoiceSceneIndex}
+          totalScenes={readyScenes.length}
+          isPaused={isPaused}
+          currentTime={audioTime.currentTime}
+          duration={audioTime.duration}
+          totalVoiceMs={totalVoiceMs}
+          elapsedBeforeMs={elapsedBeforeMs}
+          language={lang}
+          autoScroll={autoScroll}
+          onToggleAutoScroll={() => setAutoScroll((v) => !v)}
+          onPlayPause={toggleContinuousPlay}
+          onNext={() => stepContinuousScene(1)}
+          onPrev={() => stepContinuousScene(-1)}
+          onStop={stopContinuous}
+          onSeek={seekAudio}
+        />
+      )}
+
       {scenes.length === 0 ? (
         <EmptyState icon={<Volume2 size={18} strokeWidth={1.5} />} title={t("scenes.empty")} body="" />
       ) : (
@@ -553,7 +727,11 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
                     : null;
                 const pick = s.visual.candidates.find((c) => assetId(c) === s.visual.asset);
                 return (
-                  <article key={s.id} className="scene-card card">
+                  <article
+                    key={s.id}
+                    id={`scene-${s.id}`}
+                    className={`scene-card card ${playing === s.id ? "scene-card--playing" : ""}`}
+                  >
                     <SceneThumb
                       projectId={projectId}
                       sceneId={s.id}

@@ -23,10 +23,11 @@ with `models.document`.
 Scene budget: ~6–8 s per scene →
 `scene_count ≈ target_minutes * 60 / 7` (20 min ≈ 170 scenes).
 
-For long videos generate in **two calls**:
+For long videos generate in two stages:
 1. **Outline**: title, hook, 5–10 chapters with one-line summaries.
-2. **Scenes per chapter**: one call per chapter, returning that chapter's scenes.
-   (Avoids output-token limits and keeps each response small enough to retry.)
+2. **Scenes per chapter**: request up to five scenes per call; larger chapters are split into
+   sequential calls and joined before saving the chapter. (Keeps structured responses small and
+   lets failed chapters resume without duplicating scenes.)
 
 Scene JSON returned by the model:
 
@@ -54,11 +55,16 @@ Validate the JSON with serde; on parse failure retry once with the error appende
   `responseJsonSchema` for the rest of the session. Parts with `thought: true` are ignored.
 - Scene plan (`script_job::plan_scenes`): `total = round(minutes·60/7)` clamped to 3–200,
   `chapters = clamp(total/5, 2, 10)`, scenes spread evenly (3 min → 26 scenes / 5 chapters,
-  20 min → 171 / 10). The outline schema asks for exactly that many chapters; each chapter
-  call asks for exactly its scene count.
-- `project.json` is saved after the outline and after each chapter (`chapter.done = true`).
+  20 min → 171 / 10). The outline schema asks for exactly that many chapters; chapters with more
+  than five scenes are divided into exact-size request batches.
+- `project.json` is saved after the outline and after each complete chapter (`chapter.done = true`).
   Re-running `script_generate` skips the outline and finished chapters. A retried chapter
   replaces its own scenes, never duplicates them.
+- A chapter with more than five scenes is generated in sequential batches of at most five. Later
+  batches receive recent shot types, the current chapter's earlier narration, and compact narration
+  context from completed chapters. The prompt asks the writer to continue with distinct information
+  instead of restarting hooks, definitions or examples; the chapter is persisted only after all
+  batches succeed.
 - Each chapter prompt gets the full outline and the previous chapter's last narration line for
   continuity; chapter 1 must open with the hook, middle chapters end on a cliffhanger, the last
   one concludes.

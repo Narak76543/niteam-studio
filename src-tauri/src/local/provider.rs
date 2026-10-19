@@ -44,8 +44,14 @@ impl LocalSdCpp {
 
     fn request(&self, req: &ImageRequest, size: (u32, u32), vae_tiling: bool) -> GenRequest {
         let g = &self.profile.generation;
+        let mut prompt = req.prompt.clone();
+        // Z-Image Turbo runs at cfg 1.0 (no negative prompt). Its Qwen3 LLM text encoder is
+        // prone to rendering banners and Chinese hanzi when infographics/cartoons are drawn.
+        if !prompt.contains("no Chinese characters") {
+            prompt.push_str(", no text, no Chinese characters, no Hanzi, no posters, no banners, no speech bubbles, clean visual art without writing");
+        }
         GenRequest {
-            prompt: req.prompt.clone(),
+            prompt,
             // Z-Image Turbo runs at cfg 1.0, where a negative prompt has no effect: rules
             // like "no text" go in the positive prompt.
             negative_prompt: String::new(),

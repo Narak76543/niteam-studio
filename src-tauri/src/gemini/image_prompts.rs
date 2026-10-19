@@ -92,7 +92,7 @@ SCENES:\n{scenes_json}",
         topic = ctx.topic,
         title = ctx.title,
         bible = bible_section(&ctx.bible),
-        rules = image_prompt_rules(ctx.figures),
+        rules = image_prompt_rules(ctx.figures, ctx.topic, ctx.title),
     )
 }
 

@@ -157,8 +157,11 @@ used only when their key is stored; Commons and Openverse need none.
   words in the narration language (Khmer with Latin product names), no styling / HTML. Code:
   ≤ 12 lines, `$ ` prompts for terminals, documentation addresses only (example.com,
   192.0.2.x, 203.0.113.x).
-- Validation (fed back to the model once): photo/video need keywords; a diagram's Mermaid must
-  start with one of the allowed headers (`script::mermaid_template`); code must not be empty.
+- The structured-output schema keeps the added visual fields to basic string / array / boolean
+  types to avoid Gemini rejecting a complex chapter schema. Allowed values are described in the
+  prompt and normalized in Rust: photo/video need keywords; a diagram's Mermaid must start with
+  one of the allowed headers (`script::mermaid_template`); code must not be empty; unknown code
+  languages become `text`; keywords are limited to four.
 - `script_job::visual_from_reply` → `scene.visual`: keywords trimmed, de-duplicated, ≤ 4;
   a diagram that still has unusable Mermaid becomes a photo (or an AI image without keywords);
   unknown code languages become `text`; `type_out` on by default.

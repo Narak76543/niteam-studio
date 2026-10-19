@@ -12,7 +12,7 @@ use super::client::ModelChain;
 use super::models::{Content, GenerateContentRequest, GenerationConfig};
 use super::retry::RetryHooks;
 use super::{GeminiClient, GeminiError};
-use crate::pipeline::presets::Figures;
+use crate::pipeline::presets::{self, Figures};
 use crate::pipeline::project::Language;
 use crate::storage::ApiKey;
 
@@ -223,10 +223,13 @@ pub fn chapter_schema(scene_count: usize, bible: &BibleKeys, with_source: bool, 
     let mut schema = scene_schema(scene_count, bible);
     if real_world {
         let item = &mut schema["properties"]["scenes"]["items"];
-        item["properties"]["visual_type"] = json!({ "type": "string", "enum": VISUAL_TYPES });
-        item["properties"]["keywords"] = json!({ "type": "array", "items": { "type": "string" }, "maxItems": 4 });
+        // Keep this extension deliberately simple: Gemini can reject complex structured-output
+        // schemas with a generic INVALID_ARGUMENT. The prompt describes the allowed values, and
+        // visual_from_reply validates/normalizes them after parsing.
+        item["properties"]["visual_type"] = json!({ "type": "string" });
+        item["properties"]["keywords"] = json!({ "type": "array", "items": { "type": "string" } });
         item["properties"]["mermaid"] = json!({ "type": "string" });
-        item["properties"]["code_language"] = json!({ "type": "string", "enum": CODE_LANGUAGES });
+        item["properties"]["code_language"] = json!({ "type": "string" });
         item["properties"]["code"] = json!({ "type": "string" });
         item["properties"]["terminal"] = json!({ "type": "boolean" });
         if let Some(req) = item["required"].as_array_mut() {
@@ -291,11 +294,13 @@ fn scene_schema(scene_count: usize, bible: &BibleKeys) -> Value {
 pub fn names_rule(language: Language, keep_terms: &[String]) -> String {
     let base = match language {
         Language::Km => {
-            "- NAMES STAY AS WRITTEN: names of products, brands, companies, apps, websites, programming languages, \
-frameworks, software, devices and technical terms (for example React Native, Android, iPhone, Google, YouTube, \
-JavaScript, Wi-Fi, AI) stay EXACTLY as written, in Latin letters with their usual capitalization, in `narration` \
-and in titles. Never translate them and never transliterate them into Khmer letters there. In `spoken_text`, \
-write them in Khmer letters the way Cambodians pronounce them, so the Khmer voice says them correctly."
+            "- NAMES, TECH & PROPER NOUNS STAY IN ENGLISH: names of people (e.g. Neil Armstrong, Buzz Aldrin, Michael Collins), \
+spacecraft, rockets and missions (e.g. Apollo 11, Saturn V, Eagle, Columbia), organizations (NASA), products, \
+brands, companies, apps, programming languages, devices, and technical terms stay in LATIN letters with their official \
+spelling and capitalization in BOTH `narration` (subtitles) and `spoken_text` (TTS). Never translate them and DO NOT \
+transliterate them into Khmer script in `spoken_text`. Keep them in English so the speech synthesis engine (TTS/VoxCPM) \
+speaks them directly in natural, clean English. Technical initialisms (AI, API, CPU, GPU, USB) also stay in Latin letters \
+in both fields. Historical years and designations tied to English names (e.g. Apollo 11, 1969) stay in Latin letters."
         }
         Language::En => {
             "- NAMES STAY AS WRITTEN: names of products, brands, companies, apps, websites, programming languages, \
@@ -324,7 +329,7 @@ fn language_rules_base(language: Language) -> &'static str {
             "LANGUAGE: Khmer.\n\
 - Write `narration` in natural, spoken Khmer, the way a Cambodian storyteller talks — not a literal translation from English. Prefer common everyday words over formal or literary vocabulary.\n\
 - End sentences with ។ . Do not insert zero-width spaces.\n\
-- `spoken_text` is the same content written exactly as it must be SPOKEN in Khmer: numbers, years, percentages, units, abbreviations and foreign names written out in Khmer words. Examples: 1,500 → មួយពាន់ប្រាំរយ; year 1863 → ឆ្នាំមួយពាន់ប្រាំបីរយហុកសិបបី; 30% → សាមសិបភាគរយ; 5 km → ប្រាំគីឡូម៉ែត្រ; Mesopotamia → មេសូប៉ូតាមី; BC → មុនគ្រិស្តសករាជ; AD → គ្រិស្តសករាជ. No digits (0-9 or ០-៩) may remain in `spoken_text`.\n\
+- `spoken_text` is the same content written exactly as it must be SPOKEN: numbers, percentages, and units written out in Khmer words (1,500 → មួយពាន់ប្រាំរយ; 30% → សាមសិបភាគរយ; 5 km → ប្រាំគីឡូម៉ែត្រ). Year numbers can be spoken in Khmer (e.g. ឆ្នាំមួយពាន់ប្រាំបួនរយដប់បួន) or accompanied by the English designation. Foreign names of people, places, missions, and technical terms stay in Latin letters in BOTH fields (see names rule below). No standalone Khmer digits (០-៩) in `spoken_text`.\n\
 - `title` and chapter titles in Khmer. `fact_note` in Khmer."
         }
         Language::En => {
@@ -338,7 +343,9 @@ fn language_rules_base(language: Language) -> &'static str {
 const SYSTEM_PROMPT: &str = "You are the head writer of a faceless YouTube explainer channel in the \
 'why / history / science' style. You write narration for one storyteller voice over a sequence of \
 illustrations (one illustration per scene, each scene about 6–8 seconds of speech). The tone is \
-storytelling: curious, vivid, warm, never dry. Facts must be accurate; when a claim is uncertain, \
+storytelling: curious, vivid, warm, never dry. Ground every scene in concrete historical, scientific \
+or technical facts: specific years, dates, named individuals, locations, mechanisms, and cause-and-effect \
+progress. NEVER write repetitive filler or re-tell already covered events. When a claim is uncertain, \
 disputed or a simplification, say so in that scene's `fact_note` (otherwise leave it empty). \
 Reply with JSON only, matching the given schema.";
 
@@ -361,7 +368,11 @@ VISUAL STYLE (for your information only): {style}\n\
 Return:\n\
 - `title`: a catchy video title.\n\
 - `hook`: the surprising question or fact that opens the video in the first 10 seconds.\n\
-- `chapters`: exactly {chapter_count} chapters in story order, each with a short `title` and a one-line `summary`. \
+- `chapters`: exactly {chapter_count} chapters in strict chronological and logical progression. \
+Each chapter must cover a distinct phase or aspect of the story without overlapping: \
+never rush ahead to events that belong to later chapters, and never duplicate coverage. \
+Each chapter needs a short `title` and a clear, fact-specific one-line `summary` outlining the key events, \
+years, people, and turning points for that chapter. \
 The video will have about {scene_count} scenes in total, spread evenly across the chapters. \
 The last chapter wraps up the story with a satisfying conclusion.",
         minutes = brief.target_minutes,
@@ -379,6 +390,8 @@ pub struct ChapterContext<'a> {
     pub chapters: Vec<(&'a str, &'a str)>,
     pub index: usize,
     pub scene_count: usize,
+    pub segment_start: usize,
+    pub chapter_total_scenes: usize,
     /// Last narration line of the previous chapter, for continuity.
     pub previous_narration: Option<&'a str>,
     /// Shots of the previous chapter's last two scenes (to keep shots varied).
@@ -403,7 +416,8 @@ pub fn bible_section(b: &BibleKeys) -> String {
 
 /// How each scene's `image_prompt` is written (`docs/07-image-generation.md` §3): the image
 /// must explain THIS scene's narration with topic-specific detail, not a generic mood shot.
-pub fn image_prompt_rules(figures: Figures) -> String {
+pub fn image_prompt_rules(figures: Figures, topic: &str, title: &str) -> String {
+    let topical_rules = presets::topic_visual_rules(&[topic, title]);
     let people = match figures {
         Figures::StickFigure => {
             "People are drawn as simple stick figures: show who they are through props, tools, clothing \
@@ -412,7 +426,10 @@ accents and what they are doing, never through faces or bodies. "
         Figures::SharedCartoon => {
             "All people share ONE simple cartoon design that is added to the image automatically: show who \
 they are only through their clothing (type and colour), at most one prop or headwear, and what they are doing; never \
-describe faces, skin, hair, age or bodies. Describe places as soft painted landscapes or simple buildings. "
+describe faces, skin, hair, age or bodies. Describe places as soft painted landscapes or simple buildings. Keep the \
+exact object, event or action named in this scene visually dominant; do not substitute a generic person in scenery. \
+Use only scene-specific props that help explain the narration, omit unrelated recurring motifs, and include only the \
+people needed by the narration (no default crowd or classroom). "
         }
         Figures::Free => "",
     };
@@ -428,12 +445,14 @@ animals, plants, buildings, clothing, instruments) — never generic filler like
 something visible: side-by-side comparison, before/after, step-by-step sequence of objects left to right, \
 cutaway or cross-section, a magnified inset circle, a size comparison next to a familiar object, a simple map shape, \
 or a row of objects showing growth.\n\
+{topical_rules}\n\
+Give every scene in this batch a different setting, composition and visible action while keeping the same guide.\n\
   {people}Refer to Visual Bible characters and places by their key word (e.g. \"the farmer\") instead of describing \
 their look again. Use positive phrasing only (say \"clear blue sky\", not \"no birds\"). Never mention text, letters, \
 numbers written on things, signs, labels or captions. No art-style, lighting or camera words (watercolor, photo, \
 cartoon, illustration, cinematic, lighting, detailed, 4k) — the style is added separately. Keep sensitive topics \
-tasteful and educational (objects, diagrams, historical settings; no nudity). No real living people; historical \
-figures only as statues, carvings or generic figures.\n"
+tasteful and educational (objects, diagrams, historical settings; no nudity). No real living people. Historical \
+figures must be depicted with authentic historical likeness and era-appropriate attire (e.g. Thomas Edison as an adult 19th-century inventor).\n"
     )
 }
 
@@ -480,17 +499,26 @@ pub fn chapter_prompt(brief: &ScriptBrief, ctx: &ChapterContext) -> String {
         .collect();
     let total = ctx.chapters.len();
     let number = ctx.index + 1;
-    let position = if ctx.index == 0 {
+    let is_chapter_start = ctx.segment_start == 0;
+    let is_chapter_end = ctx.segment_start + ctx.scene_count >= ctx.chapter_total_scenes.max(ctx.scene_count);
+
+    let position = if ctx.index == 0 && is_chapter_start {
         "This is the FIRST chapter: scenes 1–2 must deliver the hook — open with the surprising question or fact so the viewer keeps watching."
-    } else if number == total {
+    } else if number == total && is_chapter_end {
         "This is the LAST chapter: end the video with a satisfying conclusion that answers the hook."
-    } else {
+    } else if is_chapter_end {
         "End this chapter's last scene with a small cliffhanger that pulls the viewer into the next chapter."
+    } else {
+        "Advance the narrative chronologically toward the chapter's key event; do not wrap up or conclude the chapter yet."
     };
     let previous = ctx
         .previous_narration
         .map(|p| {
-            format!("The previous chapter ended with: \"{p}\". Continue naturally from there.\n")
+            if is_chapter_start {
+                format!("The previous chapter ended with: \"{p}\". Continue naturally from there.\n")
+            } else {
+                format!("The immediately preceding scene ended with: \"{p}\". Continue naturally from there without repeating.\n")
+            }
         })
         .unwrap_or_default();
     let previous_shots = if ctx.previous_shots.is_empty() {
@@ -506,13 +534,51 @@ pub fn chapter_prompt(brief: &ScriptBrief, ctx: &ChapterContext) -> String {
     } else {
         "true for the FIRST scene of this chapter; false otherwise"
     };
+    let chapter_title = ctx.chapters.get(ctx.index).map_or("", |c| c.0);
+    let chapter_summary = ctx.chapters.get(ctx.index).map_or("", |c| c.1);
+    let chapter_header = if is_chapter_start {
+        format!(
+            "Write scenes 1–{count} (out of {total_in_ch}) for chapter {number} of {total} of the video \"{title}\".\n\
+CURRENT CHAPTER: {number}. {chapter_title}\n\
+CHAPTER FOCUS & BOUNDARY: {chapter_summary}\n\
+CRITICAL SCOPE RULE: Cover ONLY the events and facts designated for Chapter {number}. DO NOT jump ahead to future chapters ({next}..{total}). DO NOT repeat events already covered in earlier chapters.\n",
+            count = ctx.scene_count,
+            total_in_ch = ctx.chapter_total_scenes.max(ctx.scene_count),
+            number = number,
+            total = total,
+            title = ctx.title,
+            chapter_title = chapter_title,
+            chapter_summary = chapter_summary,
+            next = (number + 1).min(total),
+        )
+    } else {
+        format!(
+            "CONTINUATION OF CHAPTER {number}: {chapter_title}.\n\
+CHAPTER FOCUS & BOUNDARY: {chapter_summary}\n\
+Write scenes {start_1}–{end_1} (out of {total_in_ch}) for the video \"{title}\".\n\
+CRITICAL INSTRUCTION: DO NOT restart this chapter. Scenes 1–{start} are ALREADY written. Continue the story chronologically from scene {start}.\n\
+CRITICAL SCOPE RULE: Stay strictly within Chapter {number}'s topic. DO NOT repeat scenes already written. DO NOT jump ahead to future chapters ({next}..{total}).\n",
+            number = number,
+            chapter_title = chapter_title,
+            chapter_summary = chapter_summary,
+            start_1 = ctx.segment_start + 1,
+            end_1 = ctx.segment_start + ctx.scene_count,
+            total_in_ch = ctx.chapter_total_scenes.max(ctx.segment_start + ctx.scene_count),
+            title = ctx.title,
+            start = ctx.segment_start,
+            next = (number + 1).min(total),
+        )
+    };
     format!(
-        "Write the scenes for chapter {number} of {total} of the video \"{title}\".\n\
+        "{chapter_header}\
 TOPIC: {topic}\n\
 HOOK: {hook}\n\
 FULL OUTLINE:\n{outline}\n\
-CURRENT CHAPTER: {number}. {chapter_title}\n\
 {previous}{position}\n\n\
+STORYTELLING & FACTUAL SPECIFICITY:\n\
+1. PROGRESSION: Each scene must deliver NEW facts or narrative beats that advance the story forward. Never loop back or repeat the same event, idea, or phrasing across different scenes.\n\
+2. CONCRETE FACTS: Anchor the narration with specific historical dates, years, named individuals, locations, missions, measurements, and cause-and-effect explanations. Avoid vague or repetitive filler.\n\
+3. STORY FLOW: Flow naturally from the previous scene, maintaining curiosity and excitement without jumping disjointedly.\n\n\
 {bible}\n\
 {rules}\n{source}\n\
 Write exactly {scenes} scenes. For each scene:\n\
@@ -526,24 +592,28 @@ Write exactly {scenes} scenes. For each scene:\n\
 - `shot`: one of {shots}. Vary shots: never more than 2 consecutive scenes with the same shot.\n\
 {previous_shots}\
 - `key_scene`: {key_rule}.{source_fields}{visuals}",
-        visuals = if brief.real_world { format!("\n{}", visual_rules(brief.language)) } else { String::new() },
+        chapter_header = chapter_header,
+        topic = brief.topic,
+        hook = ctx.hook,
+        outline = outline,
+        previous = previous,
+        position = position,
+        bible = bible_section(&ctx.bible),
+        rules = language_rules(brief),
         source = brief.source.map_or(String::new(), |s| format!("\n{s}")),
+        scenes = ctx.scene_count,
+        image_rules = image_prompt_rules(brief.figures, brief.topic, ctx.title),
+        moods = MOODS.join(", "),
+        shots = SHOTS.join(", "),
+        previous_shots = previous_shots,
+        key_rule = key_rule,
         source_fields = if brief.source.is_some() {
             "\n- `source_pages`: page numbers from the source the scene's claims come from ([] if none).\n\
 - `general_knowledge`: true only for background explanation that is not from the document."
         } else {
             ""
         },
-        bible = bible_section(&ctx.bible),
-        image_rules = image_prompt_rules(brief.figures),
-        shots = SHOTS.join(", "),
-        title = ctx.title,
-        topic = brief.topic,
-        hook = ctx.hook,
-        chapter_title = ctx.chapters.get(ctx.index).map(|c| c.0).unwrap_or_default(),
-        rules = language_rules(brief),
-        scenes = ctx.scene_count,
-        moods = MOODS.join(", "),
+        visuals = if brief.real_world { format!("\n{}", visual_rules(brief.language)) } else { String::new() },
     )
 }
 
@@ -672,13 +742,15 @@ mod tests {
             chapters: vec![("c1", "s1")],
             index: 0,
             scene_count: 3,
+            segment_start: 0,
+            chapter_total_scenes: 3,
             previous_narration: None,
             previous_shots: vec![],
             bible: BibleKeys::default(),
         };
         let schema = chapter_schema(3, &ctx.bible, false, true);
         let item = &schema["properties"]["scenes"]["items"];
-        assert_eq!(item["properties"]["visual_type"]["enum"][0], "real_photo");
+        assert_eq!(item["properties"]["visual_type"]["type"], "string");
         assert!(item["required"].as_array().unwrap().iter().any(|r| r == "keywords"));
         let plain = chapter_schema(3, &ctx.bible, false, false);
         assert!(plain["properties"]["scenes"]["items"]["properties"].get("visual_type").is_none());
@@ -730,6 +802,8 @@ mod tests {
             chapters: vec![("A", "a")],
             index: 0,
             scene_count: 3,
+            segment_start: 0,
+            chapter_total_scenes: 3,
             previous_narration: None,
             previous_shots: vec![],
             bible: BibleKeys { characters: vec![], places: vec![] },
@@ -758,6 +832,8 @@ mod tests {
             chapters: vec![("A", "a")],
             index: 0,
             scene_count: 5,
+            segment_start: 0,
+            chapter_total_scenes: 5,
             previous_narration: None,
             previous_shots: vec![],
             bible: BibleKeys { characters: vec![], places: vec![] },
@@ -827,6 +903,8 @@ mod tests {
             chapters,
             index: 0,
             scene_count: 5,
+            segment_start: 0,
+            chapter_total_scenes: 5,
             previous_narration: None,
             previous_shots: vec![],
             bible: BibleKeys {

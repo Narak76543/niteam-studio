@@ -9,12 +9,14 @@ import type { Route } from "./lib/route";
 import { settingsPatch } from "./lib/settingsPatch";
 import { useTheme } from "./lib/theme";
 import type { Language, ProjectSummary, Settings } from "./lib/types";
+import { HorrorAudioPage } from "./pages/HorrorAudioPage";
 import { NewProjectPage } from "./pages/NewProjectPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { RenderPage } from "./pages/RenderPage";
 import { ScenesPage } from "./pages/ScenesPage";
 import { ScriptPage } from "./pages/ScriptPage";
 import { SettingsPage } from "./pages/SettingsPage";
+
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -147,6 +149,9 @@ export default function App() {
                 hasKey={hasKey}
                 navigate={navigate}
               />
+            )}
+            {route.name === "horror_audio" && (
+              <HorrorAudioPage navigate={navigate} />
             )}
             {route.name === "script" && (
               <ScriptPage key={route.projectId} projectId={route.projectId} navigate={navigate} />

@@ -2,7 +2,6 @@
 export type Route =
   | { name: "projects" }
   | { name: "new"; preset?: string }
-  | { name: "horror_audio" }
   | { name: "script"; projectId: string }
   | { name: "scenes"; projectId: string }
   | { name: "render"; projectId: string }

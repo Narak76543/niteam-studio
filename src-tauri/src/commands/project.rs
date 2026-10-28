@@ -5,7 +5,7 @@ use tauri::State;
 use crate::error::{CmdResult, to_cmd};
 use crate::pipeline::editing::{self, NewProjectInput};
 use crate::pipeline::presets::{PRESETS, StylePreset};
-use crate::pipeline::project::{Project, ProjectSummary};
+use crate::pipeline::project::{Aspect, Project, ProjectSummary};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -32,6 +32,20 @@ pub async fn project_create(
 #[tauri::command]
 pub async fn project_get(state: State<'_, AppState>, project_id: String) -> CmdResult<Project> {
     state.store.get(&project_id).await.map_err(to_cmd)
+}
+
+#[tauri::command]
+pub async fn project_set_aspect(
+    state: State<'_, AppState>,
+    project_id: String,
+    aspect: Aspect,
+) -> CmdResult<Project> {
+    state
+        .store
+        .update(&project_id, |p| editing::set_aspect(p, aspect))
+        .await
+        .map(|(p, ())| p)
+        .map_err(to_cmd)
 }
 
 #[tauri::command]

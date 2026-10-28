@@ -44,7 +44,12 @@ Prompt rules to include:
   no text/letters in the image, no real living people.
 - Facts must be accurate; mark uncertain claims so the user can check them.
 
-Validate the JSON with serde; on parse failure retry once with the error appended.
+Validate the JSON with serde. A parse or validation error gets one focused repair request to the
+model that answered. For Thai/Lao letters, the repair identifies the affected scene and field and
+asks for the correct spelling in the project's language while preserving Latin names, digits,
+facts and unaffected content. If the repair still fails, the next model in the configured chain
+gets one attempt with the invalid output and repair instruction as context. A valid response ends
+the retry path immediately; the chapter is persisted only after it passes validation.
 
 **Implementation (Phase 1):**
 - Endpoint: `POST /v1beta/models/{text_model}:generateContent`, key in the `x-goog-api-key`
@@ -65,6 +70,11 @@ Validate the JSON with serde; on parse failure retry once with the error appende
   context from completed chapters. The prompt asks the writer to continue with distinct information
   instead of restarting hooks, definitions or examples; the chapter is persisted only after all
   batches succeed.
+- Every returned scene's narration is compared (NFC, collapsed spaces, case-folded) with **all**
+  scenes already in the project, not just the current chapter. A batch that repeats existing scenes
+  keeps only its new ones and is re-asked for the missing count (up to two retries) with an explicit
+  "these already exist" warning; repeated scenes are never appended, so the voiceover cannot speak
+  the same line twice in another section.
 - Each chapter prompt gets the full outline and the previous chapter's last narration line for
   continuity; chapter 1 must open with the hook, middle chapters end on a cliffhanger, the last
   one concludes.
@@ -76,7 +86,8 @@ Validate the JSON with serde; on parse failure retry once with the error appende
 `pipeline/proofread.rs` + `gemini/proofread.rs`, owner request 2026-10-15.
 - Only in `script_draft`. Scenes are sent in batches of 15 (`scene_id`, `narration`,
   `spoken_text`) through the same `script::request_json` path as the script (text model chain,
-  retries, `gemini-retry` scope `script`, one re-ask on invalid JSON). Schema:
+  retries, `gemini-retry` scope `script`, focused repair on invalid output, then escalation to the
+  next configured model if validation still fails). Schema:
   `{fixes: [{scene_id (enum of the batch ids), narration, spoken_text, note}]}`.
 - Prompt: careful copy editor in the project language; fix spelling (Khmer coeng/vowels), grammar,
   unnatural phrasing, narration ≠ spoken_text; **smallest change**, keep meaning/facts/length;
@@ -94,6 +105,20 @@ Validate the JSON with serde; on parse failure retry once with the error appende
   suggestions, error, error_kind}`. Commands: `proofread_start / _cancel / _running`,
   `proofread_accept / proofread_dismiss(project_id, scene_ids)`. Script generation and the check
   never run at the same time for a project.
+- **Copy full script** (header, `script_draft`): copies the whole script as plain text, scene by
+  scene, with chapter headings, narration, spoken text and fact notes
+  (`src/lib/scriptReview.ts`), so it can be checked in ChatGPT/Gemini before **Approve script**.
+  Unsaved edits of the open scene are included. The app only writes the clipboard — nothing is
+  uploaded.
+- **Paste corrections** (header, `script_draft`): pastes the corrected script back
+  (`src/lib/scriptImport.ts`). Scenes are matched by their `Scene N` / `ឈុតទី N` number and applied
+  through `scene_update`, keeping image prompt, mood and visual fields. Every current scene must
+  appear once with both Narration and Spoken, otherwise **Apply corrections** stays disabled.
+  The parser accepts Markdown bold/headings/bullets, English or Khmer labels (`Narration` /
+  `អត្ថបទនិទាន`, `Spoken` / `អត្ថបទសម្រាប់អាន`), Khmer digits and `៖`, joins wrapped lines and
+  collapses each field to one trimmed line. A summary shows found / changed scenes, and a
+  **Preview formatted script** shows exactly what will be saved. Pending autosaves are discarded
+  and any write already in flight is awaited, so the pasted text is what ends up stored.
 
 ## Step 1c — Improve image prompts (Scenes page, optional)
 
@@ -183,8 +208,10 @@ post-processing, budget, quota pause, caching. Summary:
 - Prompt = style + shot phrase + subject (bible descriptions inlined) + place + culture notes
   + composition phrase (square providers) + "clean image without any lettering", ≤ 2,048 chars.
 - Seed = `visual_bible.seed` + scene number; Regenerate uses a new random seed.
-- Raw image saved; square → center-crop 16:9; Lanczos3 upscale to the pan size
-  (2150×1210 for 1080p, 1434×806 for 720p); 384×216 `thumb.jpg`.
+- Raw image saved; square → center-crop to the project's aspect (16:9 or 9:16, see the
+  "Aspect" section in Step 6); Lanczos3 upscale to the pan size (1.12× the frame, even-rounded:
+  2150×1210 at 16:9 1080p, 1434×806 at 720p, 1210×2150 at 9:16); thumb = the crop's
+  1/10 (384×216 at 16:9, 216×384 at 9:16) `thumb.jpg`.
 - Key scenes first; Cloudflare 2 at a time; cached by prompt hash.
 - Daily Cloudflare allowance used up → `paused_quota`, resume after 00:00 UTC.
 - Safety blocks: mark `failed` with the reason; the user edits the prompt and retries.
@@ -234,7 +261,8 @@ Every Gemini request (script, key test, and later TTS / images) goes through
   are saved and **Try again** resumes at the failed one.
 - Same key throughout — model fallback, never key rotation.
 - Khmer guard: chapter replies whose narration or spoken text contain Thai/Lao letters
-  (U+0E00–U+0EFF) are rejected and re-asked once (lite models occasionally mix them in).
+  (U+0E00-U+0EFF) are rejected, repaired with field-specific feedback, then escalated to the next
+  configured model if the repair still fails.
 
 ### Logs
 
@@ -266,28 +294,53 @@ Done in React because only the browser shapes Khmer reliably. Details in `04-khm
    off, one state per cue. Word times come from `timeLines` over the words (Edge phrase
    timings interpolated by grapheme count). States are consecutive and cover the whole voice.
    Each state is drawn on a transparent `<canvas>` by `paintCue` (`src/lib/subtitleCanvas.ts`):
-   full frame width × 240 px at 1080p (160 px at 720p), 56 px Kantumruy Pro 600, line height
+   full frame width × 240 px (1080p and 9:16; 160 px at 720p), 56 px Kantumruy Pro 600, line height
    1.6, white fill, ~6 px dark outline + soft shadow, highlight box behind the spoken word,
    lines bottom-aligned. The font is awaited with `document.fonts.load` and checked first.
    The editor preview draws with the same `paintCue`, so preview and export match.
 4. `subs_plan(project_id)` lists scenes whose subtitles are missing or outdated
    (`subs.hash` ≠ `hashing::subs_hash` = narration + voice hash + duration + resolution +
-   language + `SUBS_VERSION`). For each: draw → base64 PNGs → `subs_save(project_id,
+   aspect + language + `SUBS_VERSION`). For each: draw → base64 PNGs → `subs_save(project_id,
    scene_id, hash, cues)`. Rust re-checks the hash (the scene may have changed meanwhile),
    validates the PNGs and times (≤ 600 states, in time order), writes
    `scenes/<id>/subs/NNN.png` plus **`subs/track.ffconcat`** (`render/subs_track.rs`: each image
    with `duration` = next start − its start, last file repeated as the concat demuxer
    requires), and marks a done clip stale. The subtitle hash includes the highlight colour.
-   Bump `SUBS_VERSION` when the subtitle look or line breaking changes (now 2).
+   Bump `SUBS_VERSION` when the subtitle look or line breaking changes (now 3; a project
+   aspect change is covered by the hash above, no version bump needed).
 
 ## Step 6 — Render (FFmpeg)
 
 Render **per scene to `clip.mp4`, then concat**. Never build one giant filter graph
 for 170 scenes.
 
+### Aspect (owner decision, 2026-10-25)
+
+Every project carries `aspect: "16:9" | "9:16"`. Old `project.json` files without the field
+get `"16:9"` by a serde default — nothing to migrate. The single source of frame / band / margin
+sizes is `Frame::for_project` (`render/clip.rs`); everything downstream derives from it:
+
+| Aspect | Frame | Subtitle band | Margin | Pan size (1.12×) | Thumb | Stock/search crops |
+|---|---|---|---|---|---|---|
+| 16:9 | 1920×1080 (720p render: 1280×720) | 1920×240 (720p: 160) | 24 (16) | 2150×1210 (1434×806) | 384×216 | subject crop, ratio 16:9 |
+| 9:16 | 1080×1920 | 1080×240 | 24 | 1210×2150 | 216×384 | ratio 9:16 (`crop_for(1920,1080)` → 607×1080 column) |
+
+- `720p` stays a 16:9-only option; a vertical project renders at 1080×1920 (30 fps, same
+  encoder choice and loudness chain as 16:9).
+- Switching aspect per project (`project_set_aspect`) force-stales every scene's
+  image/subs/clip assets (voices stay), refuses while rendering, and resets `done` →
+  `review`/`generating` from the normal state rules — images, subtitles and clips are simply
+  regenerated on the next run.
+- Aspect goes into `subs_hash`, `draw_hash` and `clip_hash`, so even without the explicit
+  stale-mark an aspect switch invalidates the caches (the image cache deliberately does **not**
+  hash the aspect: the invalidation happens via the stale-mark above).
+- Vertical line breaking is provisional for now: ≤ 24 (km) / 26 (en) graphemes per line
+  (`MAX_GRAPHEMES_VERTICAL`); this may be retuned when the vertical layout is finished.
+
 ### 6a. Scene clip
 
-Variables: `W×H` = 1920×1080, `D` = scene duration in seconds (voice + 0.25 s),
+Variables: `W×H` = the frame from the Aspect table (example: 1920×1080),
+`D` = scene duration in seconds (voice + 0.25 s),
 `IW×IH` = enlarged image size. Pan direction alternates per scene (left→right,
 right→left, top→bottom, bottom→top; scenes 2k / 2k+1 always opposite, so the two scenes of a
 shared image pan in opposite directions) so motion doesn't feel repetitive.

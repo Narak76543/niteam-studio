@@ -111,18 +111,16 @@ fn char_len(s: &str) -> usize {
 
 fn truncate_chars(s: &str, max: usize) -> String {
     let mut end = 0;
-    let mut count = 0;
-    for (index, ch) in s.char_indices() {
+    for (count, (index, ch)) in s.char_indices().enumerate() {
         if count == max {
             break;
         }
         end = index + ch.len_utf8();
-        count += 1;
     }
-    if end < s.len() {
-        if let Some(space) = s[..end].rfind(char::is_whitespace) {
-            end = space;
-        }
+    if end < s.len()
+        && let Some(space) = s[..end].rfind(char::is_whitespace)
+    {
+        end = space;
     }
     s[..end].trim_end().to_owned()
 }

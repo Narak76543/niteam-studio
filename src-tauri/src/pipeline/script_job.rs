@@ -2,6 +2,8 @@
 //! `project.json` is saved after the outline and after every chapter, so a crash or
 //! cancel resumes at the first chapter that isn't `done`.
 
+use std::collections::HashSet;
+
 use serde::Serialize;
 
 use super::ProjectError;
@@ -30,6 +32,10 @@ const MAX_CHAPTERS: u32 = 10;
 /// Long projects can have 10-18 scenes in an outline chapter, so one request per chapter is
 /// too large even though the outline itself is valid.
 const MAX_SCENES_PER_REQUEST: usize = 5;
+/// Extra requests when a batch re-writes scenes that already exist in the project.
+const MAX_DUPLICATE_RETRIES: usize = 2;
+/// How many earlier chapters are summarised in "already covered" context.
+const MAX_COVERED_CHAPTERS: usize = 3;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -221,6 +227,13 @@ impl ScriptJob<'_> {
                 .collect();
             let chapter_scene_count = chapter.scene_count as usize;
             let mut replies: Vec<SceneReply> = Vec::with_capacity(chapter_scene_count);
+            // Every narration already written, so later chapters cannot repeat a scene
+            // ("the same line in another section").
+            let mut seen: HashSet<String> = project
+                .scenes
+                .iter()
+                .map(|s| scene_key(&s.narration))
+                .collect();
             let mut models = Vec::new();
             for start in (0..chapter_scene_count).step_by(MAX_SCENES_PER_REQUEST) {
                 let count = (chapter_scene_count - start).min(MAX_SCENES_PER_REQUEST);
@@ -268,7 +281,10 @@ impl ScriptJob<'_> {
                     .collect();
                 prior_chapters.sort_unstable();
                 prior_chapters.dedup();
-                for prior_chapter in prior_chapters {
+                // Only the latest chapters: the `seen` set already blocks exact repeats, and
+                // the prompt would otherwise grow with every chapter of a 20-minute video.
+                let skip = prior_chapters.len().saturating_sub(MAX_COVERED_CHAPTERS);
+                for prior_chapter in prior_chapters.into_iter().skip(skip) {
                     let chapter_text = project
                         .scenes
                         .iter()
@@ -331,41 +347,62 @@ impl ScriptJob<'_> {
                         start + count,
                     ));
                 }
-                let (reply, model): (ChapterReply, String) = script::request_json(
-                    self.client,
-                    self.key,
-                    self.models,
-                    prompt.clone(),
-                    script::chapter_schema(count, &ctx.bible, source.is_some(), brief.real_world),
-                    self.hooks,
-                )
-                .await?;
-                models.push(model);
-                let mut candidate_scenes = reply.scenes;
-                let has_dup = candidate_scenes.iter().any(|new_s| {
-                    let n = new_s.narration.trim();
-                    replies.iter().any(|old_s| old_s.narration.trim() == n)
-                });
-                if has_dup && !replies.is_empty() {
-                    self.log.warn(&format!(
-                        "chapter {} segment duplicate scenes returned, retrying with strict non-duplication prompt",
-                        index + 1
-                    ));
-                    let mut retry_prompt = prompt;
-                    retry_prompt.push_str("\nRETRY WARNING: Your previous output repeated earlier scenes of this chapter. You MUST write completely NEW scenes describing the NEXT steps of the story.\n");
-                    if let Ok((retry_reply, retry_model)) = script::request_json::<ChapterReply>(
+                let mut fresh: Vec<SceneReply> = Vec::new();
+                let mut attempts = 0;
+                loop {
+                    let (reply, model): (ChapterReply, String) = script::request_json(
                         self.client,
                         self.key,
                         self.models,
-                        retry_prompt,
-                        script::chapter_schema(count, &ctx.bible, source.is_some(), brief.real_world),
+                        prompt.clone(),
+                        script::chapter_schema(
+                            count.saturating_sub(fresh.len()).max(1),
+                            &ctx.bible,
+                            source.is_some(),
+                            brief.real_world,
+                        ),
                         self.hooks,
-                    ).await {
-                        models.push(retry_model);
-                        candidate_scenes = retry_reply.scenes;
+                    )
+                    .await?;
+                    models.push(model);
+                    let (mut unique, dropped) = take_unique_scenes(reply.scenes, &mut seen);
+                    fresh.append(&mut unique);
+                    if dropped == 0 {
+                        break;
+                    }
+                    self.log.warn(&format!(
+                        "chapter {} segment {}-{} repeated {dropped} scene(s) already written elsewhere",
+                        index + 1,
+                        start + 1,
+                        start + count
+                    ));
+                    if fresh.len() >= count || attempts >= MAX_DUPLICATE_RETRIES {
+                        if fresh.len() < count {
+                            self.log.warn(&format!(
+                                "chapter {} segment {}-{} kept {} of {count} scene(s); skipped the repeated ones",
+                                index + 1,
+                                start + 1,
+                                start + count,
+                                fresh.len()
+                            ));
+                        }
+                        break;
+                    }
+                    attempts += 1;
+                    prompt.push_str(&format!(
+                        "\nRETRY WARNING: your previous answer repeated {dropped} scene(s) that already exist in this video. \
+                         Do NOT restate them. Write completely NEW scenes describing the NEXT steps of the story. \
+                         Return exactly {} new scene(s).\n",
+                        count - fresh.len()
+                    ));
+                    for scene in &fresh {
+                        prompt.push_str(&format!(
+                            "Just written in this batch (do not repeat): {}\n",
+                            scene.narration.trim()
+                        ));
                     }
                 }
-                replies.extend(candidate_scenes);
+                replies.extend(fresh);
             }
             self.log.info(&format!(
                 "chapter {}/{total} ({} scenes) written in {} request(s) by {}",
@@ -426,6 +463,34 @@ pub fn chapter_counts(p: &Project) -> (usize, usize) {
             o.chapters.len(),
         )
     })
+}
+
+/// Narration normalized for duplicate detection (NFC, collapsed spaces, case-folded).
+fn scene_key(text: &str) -> String {
+    normalize(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// Keeps only scenes whose narration has not been written yet; returns them plus how many
+/// repeats were dropped. A batch can repeat an earlier chapter, so `seen` spans the project.
+fn take_unique_scenes(
+    scenes: Vec<SceneReply>,
+    seen: &mut HashSet<String>,
+) -> (Vec<SceneReply>, usize) {
+    let mut dropped = 0;
+    let mut out = Vec::with_capacity(scenes.len());
+    for scene in scenes {
+        let key = scene_key(&scene.narration);
+        if key.is_empty() || !seen.insert(key) {
+            dropped += 1;
+        } else {
+            out.push(scene);
+        }
+    }
+    (out, dropped)
 }
 
 fn build_outline(reply: OutlineReply, plan: &[u32]) -> Outline {
@@ -693,6 +758,32 @@ mod tests {
     }
 
     #[test]
+    fn take_unique_scenes_drops_repeats_across_the_whole_project() {
+        let mut seen: HashSet<String> = HashSet::new();
+        let (kept, dropped) = take_unique_scenes(reply(2), &mut seen);
+        assert_eq!((kept.len(), dropped), (2, 0));
+
+        let mut repeat = reply(2);
+        repeat[0].narration = "  n0 ".into();
+        repeat[1].narration = "n1".into();
+        let (kept, dropped) = take_unique_scenes(repeat, &mut seen);
+        assert_eq!(
+            (kept.len(), dropped),
+            (0, 2),
+            "whitespace variants still count as repeats"
+        );
+    }
+
+    #[test]
+    fn take_unique_scenes_drops_repeats_inside_one_batch() {
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut scenes = reply(1);
+        scenes.push(scenes[0].clone());
+        let (kept, dropped) = take_unique_scenes(scenes, &mut seen);
+        assert_eq!((kept.len(), dropped), (1, 1));
+    }
+
+    #[test]
     fn short_outline_folds_extra_scenes() {
         let o = build_outline(
             OutlineReply {
@@ -738,6 +829,7 @@ mod tests {
                 topic: "How was Angkor Wat built?".into(),
                 language: Language::Km,
                 target_minutes: 1,
+                aspect: crate::pipeline::project::Aspect::Wide,
                 style_preset: "storybook_watercolor".into(),
             },
             &settings.models.tts,

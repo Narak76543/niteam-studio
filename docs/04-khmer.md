@@ -25,14 +25,16 @@ const graphemes = new Intl.Segmenter("km", { granularity: "grapheme" });
 Algorithm for one scene's narration:
 1. Split into sentences on `។ ៕ ! ?` and on spaces (phrase boundaries).
 2. Greedily pack **words** (from the word segmenter) into a line until the next word
-   would exceed **~38 graphemes** (count with the grapheme segmenter, not `.length`).
+   would exceed **~38 graphemes** (count with the grapheme segmenter, not `.length`;
+   vertical 9:16 projects: ~24 km / 26 en — `MAX_GRAPHEMES_VERTICAL` in
+   `src/lib/subtitles.ts`, provisional until the vertical layout is tuned, 03 Step 6).
 3. Prefer breaking at a space/phrase boundary if one exists in the last ~30 % of the line.
 4. Never end a line with a single short word; never start a line with `។`.
 5. Max 2 lines on screen at once.
 
 Unit-test with real sentences (`src/lib/subtitles.test.ts`), e.g.
 `តើស្រូវកើតមកពីណា? នេះជារឿងចៃដន្យដ៏ធំបំផុតក្នុងប្រវត្តិសាស្ត្រ។`
-Assert: no line breaks inside a word, each line ≤ 38 graphemes.
+Assert: no line breaks inside a word, each line ≤ 38 graphemes (16:9).
 
 ## 3. Fonts & rendering
 
@@ -58,29 +60,32 @@ Assert: no line breaks inside a word, each line ≤ 38 graphemes.
 
 ## 4. Text for TTS (`spoken_text`)
 
-The script model must produce `spoken_text` with everything written as it should be
-**spoken in Khmer**:
+The script model must produce `spoken_text` with numbers left as **digits**, written as they should be
+**spoken in Khmer**. The app converts the digits itself (`khmer_numbers.rs`); the model must never
+spell numbers out in Khmer words — in practice it hallucinates the rare tens words (observed in real
+projects: ចៅសិប for ចិតសិប, សែសាប់ for សែសិប, ប្រាំបាំ, dropped hundred-groups like ប្រាំរយ for
+ប្រាំបួនរយ, an English-calque និង inside the year, leftover digits such as ដប់ប្រាំ៦).
 
 | In narration | In spoken_text |
 |---|---|
-| Numbers `1,500` / `១៥០០` | Khmer words: មួយពាន់ប្រាំរយ |
-| Years `1863` | ឆ្នាំមួយពាន់ប្រាំបីរយហុកសិបបី |
-| Percent `30%` | សាមសិបភាគរយ |
-| Units `5 km` | ប្រាំគីឡូម៉ែត្រ |
+| Numbers `1,500` / `១៥០០` | digits stay `1,500` → app voices មួយពាន់ប្រាំរយ |
+| Years `1863` | `ឆ្នាំ 1863` (digits) → app voices ឆ្នាំមួយពាន់ប្រាំបីរយហុកសិបបី |
+| Percent `30%` | `30%` → app voices សាមសិបភាគរយ |
+| Units `5 km` | `5 គីឡូម៉ែត្រ` (unit words stay Khmer) |
 | Foreign names (e.g. "Mesopotamia") | Khmer transliteration: មេសូប៉ូតាមី |
-| Abbreviations `BC`, `AD` | មុនគ្រិស្តសករាជ / គ្រិស្តសករាជ |
+| Abbreviations `BC`, `AD` | មុនគ្រិស្តសករាជ / គ្រិស្តសករាជ (words: digits alone are not enough) |
 
-Also add a deterministic fallback in Rust: a Khmer number-to-words function
-(`pipeline/khmer_numbers.rs`) applied to any digits (Arabic `0-9` or Khmer `០-៩`)
-left in `spoken_text`. Unit-test it (0, 10, 11, 20, 100, 1,000, 10,000, 100,000,
-1,000,000, years like 1863 and 2026).
+The deterministic converter in Rust (`pipeline/khmer_numbers.rs`) is therefore the **primary**
+number-to-speech path, not just a fallback: it is applied to every Khmer scene right before TTS
+(`voice_job.rs`) and reads any digits (Arabic `0-9` or Khmer `០-៩`) left in `spoken_text` —
+`1,500`, `3.5` → បីចុចប្រាំ, `30%` → សាមសិបភាគរយ. Unit-test it (0, 10, 11, 20, 100, 1,000, 10,000,
+100,000, 1,000,000, years like 1863 and 2026).
 
 Khmer number words reference: មួយ ពីរ បី បួន ប្រាំ ប្រាំមួយ ប្រាំពីរ ប្រាំបី ប្រាំបួន ·
 ដប់ (10) · ម្ភៃ (20) · សាមសិប (30) · សែសិប (40) · ហាសិប (50) · ហុកសិប (60) ·
 ចិតសិប (70) · ប៉ែតសិប (80) · កៅសិប (90) · រយ (100) · ពាន់ (1,000) · ម៉ឺន (10,000) ·
 សែន (100,000) · លាន (1,000,000).
-Implemented in `src-tauri/src/pipeline/khmer_numbers.rs` (also handles `1,500`, `3.5` → បីចុចប្រាំ
-and `30%` → សាមសិបភាគរយ); applied to every Khmer scene right before TTS.
+Implemented in `src-tauri/src/pipeline/khmer_numbers.rs`.
 **Have a native speaker verify the converter output before release.**
 
 ## 4b. Voices

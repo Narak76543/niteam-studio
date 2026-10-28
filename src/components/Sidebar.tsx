@@ -1,4 +1,4 @@
-import { BookOpenText, FileText, Headphones, Languages, LayoutGrid, Plus, Search, Settings } from "lucide-react";
+import { BookOpenText, FileText, Languages, LayoutGrid, Plus, Search, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { IconTile } from "./IconTile";
@@ -79,12 +79,6 @@ export function Sidebar({ route, navigate, recent, onSearch, onToggleLanguage, c
           label={t("nav.newProject")}
           active={route.name === "new"}
           onClick={() => navigate({ name: "new" })}
-        />
-        <NavItem
-          icon={<Headphones {...ICON} />}
-          label={t("nav.horrorAudio")}
-          active={route.name === "horror_audio"}
-          onClick={() => navigate({ name: "horror_audio" })}
         />
         <NavItem
           icon={<Settings {...ICON} />}

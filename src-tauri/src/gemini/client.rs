@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use serde::de::DeserializeOwned;
 use tokio::sync::Semaphore;
@@ -38,6 +39,8 @@ pub enum EndpointKind {
 pub struct ModelChain {
     models: Vec<String>,
     current: AtomicUsize,
+    /// Per-attempt cap, shorter than the transport's 180 s (a hung call then fails over sooner).
+    attempt_timeout: Option<Duration>,
 }
 
 impl ModelChain {
@@ -52,11 +55,27 @@ impl ModelChain {
         Self {
             models: list,
             current: AtomicUsize::new(0),
+            attempt_timeout: None,
         }
+    }
+
+    /// Caps every HTTP attempt made through this chain at `timeout`.
+    pub fn with_attempt_timeout(mut self, timeout: Duration) -> Self {
+        self.attempt_timeout = Some(timeout);
+        self
     }
 
     pub fn models(&self) -> &[String] {
         &self.models
+    }
+
+    /// A fresh chain starting after `model`, used when a successful response fails validation.
+    pub fn after(&self, model: &str) -> Option<Self> {
+        let next = self.models.iter().position(|m| m == model)? + 1;
+        (next < self.models.len()).then(|| Self {
+            attempt_timeout: self.attempt_timeout,
+            ..Self::new(&self.models[next..])
+        })
     }
 }
 
@@ -110,11 +129,12 @@ impl GeminiClient {
             body: None,
             user_agent: None,
         };
-        self.call(EndpointKind::Text, model, request, hooks, MAX_ATTEMPTS)
+        self.call(EndpointKind::Text, model, request, hooks, MAX_ATTEMPTS, None)
             .await
     }
 
     /// `POST /models/{model}:generateContent` with up to `max_attempts` tries.
+    #[cfg(test)]
     pub async fn generate_content(
         &self,
         key: &ApiKey,
@@ -123,6 +143,21 @@ impl GeminiClient {
         body: &GenerateContentRequest,
         hooks: &RetryHooks,
         max_attempts: u32,
+    ) -> Result<GenerateContentResponse, GeminiError> {
+        self.generate_content_capped(key, model, kind, body, hooks, max_attempts, None)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn generate_content_capped(
+        &self,
+        key: &ApiKey,
+        model: &str,
+        kind: EndpointKind,
+        body: &GenerateContentRequest,
+        hooks: &RetryHooks,
+        max_attempts: u32,
+        attempt_timeout: Option<Duration>,
     ) -> Result<GenerateContentResponse, GeminiError> {
         let body = serde_json::to_vec(body)
             .map_err(|e| GeminiError::BadResponse(format!("could not encode request: {e}")))?;
@@ -133,7 +168,8 @@ impl GeminiClient {
             body: Some(body),
             user_agent: None,
         };
-        self.call(kind, model, request, hooks, max_attempts).await
+        self.call(kind, model, request, hooks, max_attempts, attempt_timeout)
+            .await
     }
 
     /// `POST /interactions` (Interactions API; used for TTS, see `gemini/tts.rs`).
@@ -155,7 +191,7 @@ impl GeminiClient {
             body: Some(body),
             user_agent: None,
         };
-        self.call(kind, model, request, hooks, max_attempts).await
+        self.call(kind, model, request, hooks, max_attempts, None).await
     }
 
     /// Text generation over the model chain: each model gets [`TEXT_CHAIN_ATTEMPTS`] tries
@@ -185,13 +221,14 @@ impl GeminiClient {
                 });
             }
             match self
-                .generate_content(
+                .generate_content_capped(
                     key,
                     model,
                     EndpointKind::Text,
                     body,
                     hooks,
                     TEXT_CHAIN_ATTEMPTS,
+                    chain.attempt_timeout,
                 )
                 .await
             {
@@ -222,6 +259,7 @@ impl GeminiClient {
         request: HttpRequest,
         hooks: &RetryHooks,
         max_attempts: u32,
+        attempt_timeout: Option<Duration>,
     ) -> Result<T, GeminiError> {
         retry::with_retry(hooks, model, max_attempts, || {
             let request = request.clone();
@@ -231,7 +269,13 @@ impl GeminiClient {
                     .acquire()
                     .await
                     .map_err(|_| GeminiError::Cancelled)?;
-                let response = self.transport.send(request).await.map_err(|e| match e {
+                let sent = match attempt_timeout {
+                    Some(limit) => tokio::time::timeout(limit, self.transport.send(request))
+                        .await
+                        .map_err(|_| GeminiError::Timeout)?,
+                    None => self.transport.send(request).await,
+                };
+                let response = sent.map_err(|e| match e {
                     TransportError::Timeout => GeminiError::Timeout,
                     TransportError::Network(m) => GeminiError::Network(m),
                 })?;

@@ -16,7 +16,7 @@ use crate::net::transport::{ReqwestTransport, Transport};
 use crate::pipeline::ProjectError;
 use crate::pipeline::events::JobEvents;
 use crate::pipeline::hashing::normalize;
-use crate::pipeline::project::{AssetStatus, CodeSpec, DiagramSpec, Project, ProjectStatus, VisualKind};
+use crate::pipeline::project::{Aspect, AssetStatus, CodeSpec, DiagramSpec, Project, ProjectStatus, VisualKind};
 use crate::pipeline::visual_job::{VisualJob, write_thumb};
 use crate::render::clip::Frame;
 use crate::state::AppState;
@@ -134,11 +134,14 @@ pub async fn stock_search(
     if query.trim().is_empty() {
         return Err("Type what to search for.".into());
     }
-    let resolution = match &project_id {
-        Some(id) => state.store.get(id).await.map_err(to_cmd)?.render.resolution,
-        None => "1080p".into(),
+    let (resolution, aspect) = match &project_id {
+        Some(id) => {
+            let p = state.store.get(id).await.map_err(to_cmd)?;
+            (p.render.resolution.clone(), p.aspect)
+        }
+        None => ("1080p".into(), Aspect::default()),
     };
-    let frame_width = Frame::for_resolution(&resolution).width;
+    let frame_width = Frame::for_project(aspect, &resolution).width;
     let searcher = searcher(&state, sources.as_deref()).await?;
     let keywords = if keywords.is_empty() { vec![query.clone()] } else { keywords };
     Ok(searcher
@@ -148,7 +151,12 @@ pub async fn stock_search(
 
 /// Sets the scene's file + thumbnail after a pick or an import.
 async fn use_asset(state: &AppState, project_id: &str, scene_id: &str, record: &AssetRecord, kind: VisualKind, candidate: Option<Candidate>) -> CmdResult<Project> {
-    let thumb = write_thumb(&state.paths.project_dir(project_id), scene_id, record, None).await.ok();
+    let project_frame = {
+        let p = state.store.get(project_id).await.map_err(to_cmd)?;
+        let f = Frame::for_project_settings(&p);
+        (f.width, f.height)
+    };
+    let thumb = write_thumb(&state.paths.project_dir(project_id), scene_id, record, None, project_frame).await.ok();
     let (project, ()) = state
         .store
         .update(project_id, |p| {
@@ -276,7 +284,10 @@ pub async fn scene_visual_update(state: State<'_, AppState>, project_id: String,
         .map_err(to_cmd)?;
     let Some(asset) = rethumb else { return Ok(project) };
     let Some(record) = registry.get(&asset) else { return Ok(project) };
-    let thumb = write_thumb(&state.paths.project_dir(&project_id), &scene_id, record, focus).await.map_err(|e| format!("Could not update the thumbnail: {e}"))?;
+    let f = Frame::for_project_settings(&project);
+    let thumb = write_thumb(&state.paths.project_dir(&project_id), &scene_id, record, focus, (f.width, f.height))
+        .await
+        .map_err(|e| format!("Could not update the thumbnail: {e}"))?;
     let (project, ()) = state
         .store
         .update(&project_id, |p| {

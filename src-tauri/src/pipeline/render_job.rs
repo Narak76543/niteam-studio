@@ -161,7 +161,7 @@ fn registry(dir: &Path) -> AssetRegistry {
 
 /// Plans every clip. Call after `check_ready`.
 pub fn plan_clips(p: &Project, dir: &Path, encoder: Encoder) -> Vec<ClipTask> {
-    let frame = Frame::for_resolution(&p.render.resolution);
+    let frame = Frame::for_project_settings(p);
     let real_world = super::presets::is_real_world(&p.style.preset);
     let registry = if real_world { registry(dir) } else { AssetRegistry::default() };
     p.scenes
@@ -190,7 +190,7 @@ pub fn plan_clips(p: &Project, dir: &Path, encoder: Encoder) -> Vec<ClipTask> {
                 s.voice.path.as_deref().unwrap_or(""),
             ];
             let voice_len = voice_ms.to_string();
-            parts.extend([&voice_len[..], s.subs.hash.as_deref().unwrap_or(""), encoder.name(), &p.render.resolution, motion]);
+            parts.extend([&voice_len[..], s.subs.hash.as_deref().unwrap_or(""), encoder.name(), &p.render.resolution, p.aspect.as_str(), motion]);
             // AI-image scenes keep their old hash (no needless re-render of existing projects).
             if !visual_hash.is_empty() {
                 parts.push(&visual_hash);

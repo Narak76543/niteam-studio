@@ -61,7 +61,7 @@ enum SceneResult {
 
 /// Writes `scenes/<id>/visual_thumb.jpg` from the asset (a video's poster) cropped around
 /// `focus`; returns the relative path. Decoding big photos is CPU work: blocking thread.
-pub async fn write_thumb(project_dir: &Path, scene_id: &str, record: &AssetRecord, focus: Option<[f32; 2]>) -> Result<String, String> {
+pub async fn write_thumb(project_dir: &Path, scene_id: &str, record: &AssetRecord, focus: Option<[f32; 2]>, frame: (u32, u32)) -> Result<String, String> {
     let src = match record.media {
         Media::Photo => record.file.clone(),
         Media::Video => record.poster.clone().ok_or("this clip has no preview picture")?,
@@ -72,7 +72,7 @@ pub async fn write_thumb(project_dir: &Path, scene_id: &str, record: &AssetRecor
     let focus = focus.unwrap_or([0.5, 0.5]);
     tokio::task::spawn_blocking(move || {
         let raw = std::fs::read(&src).map_err(|e| e.to_string())?;
-        let jpg = postprocess::thumb_at(&raw, focus).map_err(|e| e.to_string())?;
+        let jpg = postprocess::thumb_at(&raw, focus, frame).map_err(|e| e.to_string())?;
         atomic::write_bytes(&dest, &jpg).map_err(|e| e.to_string())
     })
     .await
@@ -153,7 +153,7 @@ impl VisualJob {
         let ids = todo(&project, &self.paths, only.as_deref());
         let total = ids.len();
         let (mut done, mut failed) = (0, 0);
-        let frame_width = Frame::for_resolution(&project.render.resolution).width;
+        let frame_width = Frame::for_project_settings(&project).width;
         let dir = self.paths.project_dir(project_id);
         let assets_dir = self.paths.project_assets_dir(project_id);
         progress(GenerateStage::Running, 0, 0, total, None, None);
@@ -177,7 +177,8 @@ impl VisualJob {
                     return progress(GenerateStage::PausedQuota, done, failed, total, None, Some(until));
                 }
                 Ok(SceneResult::Picked { candidates, record, video }) => {
-                    let thumb = write_thumb(&dir, &id, &record, None).await;
+                    let frame = Frame::for_project_settings(&p);
+                    let thumb = write_thumb(&dir, &id, &record, None, (frame.width, frame.height)).await;
                     if let Err(e) = &thumb {
                         self.log.info(&format!("scene {id}: thumbnail failed: {e}"));
                     }

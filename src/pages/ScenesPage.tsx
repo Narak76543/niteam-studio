@@ -121,6 +121,8 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
     progress: null,
   });
   const [confirmRewrite, setConfirmRewrite] = useState(false);
+  /** Aspect switch asked from the header badge (marks images/subtitles/clips outdated). */
+  const [aspectAsk, setAspectAsk] = useState(false);
   const reloadTimer = useRef<number | null>(null);
 
   const refreshEstimate = useCallback(() => {
@@ -561,6 +563,15 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
         meta={
           <div className="row">
             <ProjectStatusBadge status={project.status} />
+            <button
+              type="button"
+              className={`badge${project.aspect === "9:16" ? " badge--info" : ""}`}
+              disabled={anyRunning}
+              title={t("aspect.changeTitle")}
+              onClick={() => setAspectAsk(true)}
+            >
+              {project.aspect}
+            </button>
             <span className="t-small">
               {t("scenes.progress", { done: voices.done, total: scenes.length })} ·{" "}
               {realWorld
@@ -843,6 +854,22 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
           confirmLabel={t("prompts.action")}
           onConfirm={() => void startRewrite()}
           onCancel={() => setConfirmRewrite(false)}
+        />
+      )}
+
+      {aspectAsk && project && (
+        <ConfirmDialog
+          title={t("aspect.confirmTitle", { aspect: project.aspect === "16:9" ? "9:16" : "16:9" })}
+          body={t("aspect.confirmBody", { images: scenes.length })}
+          confirmLabel={t("aspect.confirmLabel", { aspect: project.aspect === "16:9" ? "9:16" : "16:9" })}
+          onConfirm={() => {
+            setAspectAsk(false);
+            api
+              .projectSetAspect(projectId, project.aspect === "16:9" ? "9:16" : "16:9")
+              .then(setProject)
+              .catch((e: unknown) => toast.show(errorMessage(e), "danger"));
+          }}
+          onCancel={() => setAspectAsk(false)}
         />
       )}
 

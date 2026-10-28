@@ -2,9 +2,9 @@
 // spoken, with start/end times. Used by the editor preview and by the export (one PNG per
 // state), so both show exactly the same thing.
 
-import { groupCues, splitLineWords, lineText, type Word } from "./subtitles";
+import { groupCues, splitLineWords, lineText, maxGraphemes, type Word } from "./subtitles";
 import { timeLines } from "./subtitleTiming";
-import type { Language, WordTiming } from "./types";
+import type { Aspect, Language, WordTiming } from "./types";
 
 export interface SubtitleState {
   /** Lines of the cue on screen. */
@@ -27,8 +27,8 @@ export interface SceneSubtitleInput {
  * phrase timings, interpolated by grapheme count inside a phrase) or, without them, from
  * each word's share of the text.
  */
-export function subtitleStates(scene: SceneSubtitleInput, lang: Language, tracker: boolean): SubtitleState[] {
-  const lines = splitLineWords(scene.narration, lang);
+export function subtitleStates(scene: SceneSubtitleInput, lang: Language, tracker: boolean, aspect: Aspect = "16:9"): SubtitleState[] {
+  const lines = splitLineWords(scene.narration, lang, maxGraphemes(lang, aspect));
   if (lines.length === 0 || scene.duration_ms <= 0) return [];
   const flat = lines.flat();
   const times = timeLines(

@@ -79,6 +79,7 @@ pub fn run() {
             commands::project::project_list,
             commands::project::project_create,
             commands::project::project_get,
+            commands::project::project_set_aspect,
             commands::project::project_delete,
             commands::script::script_generate,
             commands::script::script_cancel,

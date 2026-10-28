@@ -6,8 +6,8 @@ use super::ProjectError;
 use super::hashing::{self, normalize, normalize_spoken};
 use super::presets;
 use super::project::{
-    ImageSnapshot, Language, Project, ProjectStatus, RenderSettings, SCHEMA_VERSION, Scene, Shot,
-    Style, VisualBible, VoiceSettings,
+    Aspect, AssetStatus, ImageSnapshot, Language, Project, ProjectStatus, RenderSettings,
+    SCHEMA_VERSION, Scene, Shot, Style, VisualBible, VoiceSettings,
 };
 use super::store::now;
 use super::visual_bible;
@@ -25,6 +25,9 @@ pub struct NewProjectInput {
     pub topic: String,
     pub language: Language,
     pub target_minutes: u32,
+    /// `"16:9"` (default) or `"9:16"`.
+    #[serde(default)]
+    pub aspect: Aspect,
     pub style_preset: String,
 }
 
@@ -72,6 +75,7 @@ pub fn new_project(input: &NewProjectInput, tts_model: &str) -> Result<Project, 
         topic,
         language: input.language,
         target_minutes: input.target_minutes,
+        aspect: input.aspect,
         style: Style {
             preset: preset.id.to_owned(),
             style_prompt: preset.style_prompt.to_owned(),
@@ -299,6 +303,45 @@ pub fn set_scenes_per_image(p: &mut Project, n: u8) -> Result<(), ProjectError> 
     Ok(())
 }
 
+/// Switches the project aspect (16:9 ↔ 9:16). Images, subtitles and clips are marked
+/// outdated (voices keep: the audio doesn't depend on the frame). During rendering the
+/// change is refused.
+pub fn set_aspect(p: &mut Project, aspect: Aspect) -> Result<(), ProjectError> {
+    if p.status == ProjectStatus::Rendering {
+        return Err(ProjectError::WrongState("rendering".into()));
+    }
+    if p.aspect == aspect {
+        return Ok(());
+    }
+    p.aspect = aspect;
+    // Images keep their prompt hash (same prompt), so force-stale every generated asset.
+    for s in &mut p.scenes {
+        if s.image.status != AssetStatus::Pending {
+            s.image.status = AssetStatus::Stale;
+        }
+        if s.subs.status != AssetStatus::Pending {
+            s.subs.status = AssetStatus::Stale;
+        }
+        if s.clip.status != AssetStatus::Pending {
+            s.clip.status = AssetStatus::Stale;
+        }
+    }
+    update_status_for_aspect_change(p)?;
+    Ok(())
+}
+
+/// After invalidating assets the project can no longer be `done`.
+fn update_status_for_aspect_change(p: &mut Project) -> Result<(), ProjectError> {
+    if p.status == ProjectStatus::Done {
+        if p.script_complete() {
+            p.status = ProjectStatus::Review;
+        } else {
+            p.status = ProjectStatus::Generating;
+        }
+    }
+    Ok(())
+}
+
 /// script_draft → generating. Every scene must be complete.
 pub fn approve(p: &mut Project) -> Result<(), ProjectError> {
     require_draft(p)?;
@@ -347,6 +390,7 @@ mod tests {
             topic: "  តើស្រូវកើតមកពីណា?  ".into(),
             language: Language::Km,
             target_minutes: 3,
+            aspect: Aspect::Wide,
             style_preset: "storybook_watercolor".into(),
         }
     }
@@ -482,5 +526,51 @@ mod tests {
         assert!(set_style(&mut p, "nope").is_err());
         p.status = ProjectStatus::Rendering;
         assert!(set_style(&mut p, "flat_2d").is_err());
+    }
+
+    #[test]
+    fn switching_the_aspect_marks_images_subs_and_clips_outdated() {
+        let mut p = sample();
+        for (i, s) in p.scenes.iter_mut().enumerate() {
+            s.image.status = AssetStatus::Done;
+            s.subs.status = AssetStatus::Done;
+            s.clip.status = AssetStatus::Done;
+            s.voice.status = AssetStatus::Done;
+            s.order = (i + 1) as u32;
+        }
+        set_aspect(&mut p, Aspect::Vertical).unwrap();
+        assert_eq!(p.aspect, Aspect::Vertical);
+        assert!(p.scenes.iter().all(|s| s.image.status == AssetStatus::Stale
+            && s.subs.status == AssetStatus::Stale
+            && s.clip.status == AssetStatus::Stale));
+        assert!(p.scenes.iter().all(|s| s.voice.status == AssetStatus::Done));
+        // Same value: a no-op.
+        set_aspect(&mut p, Aspect::Vertical).unwrap();
+        assert!(p.scenes.iter().all(|s| s.image.status == AssetStatus::Stale));
+        // Not while rendering.
+        p.status = ProjectStatus::Rendering;
+        assert!(set_aspect(&mut p, Aspect::Wide).is_err());
+        p.status = ProjectStatus::Generating;
+        set_aspect(&mut p, Aspect::Wide).unwrap();
+        assert_eq!(p.aspect, Aspect::Wide);
+        assert!(p.scenes.iter().all(|s| s.image.status == AssetStatus::Stale));
+        // A done project goes back to review (complete script) or generating.
+        p.status = ProjectStatus::Done;
+        set_aspect(&mut p, Aspect::Vertical).unwrap();
+        assert_eq!(p.status, ProjectStatus::Generating);
+        let o = crate::pipeline::project::Outline {
+            title: "t".into(),
+            hook: "h".into(),
+            chapters: vec![crate::pipeline::project::OutlineChapter {
+                title: "c".into(),
+                summary: "s".into(),
+                scene_count: p.scenes.len() as u32,
+                done: true,
+            }],
+        };
+        p.outline = Some(o);
+        p.status = ProjectStatus::Done;
+        set_aspect(&mut p, Aspect::Wide).unwrap();
+        assert_eq!(p.status, ProjectStatus::Review);
     }
 }

@@ -3,11 +3,12 @@
 // draws the editor preview and the PNGs burned into the video, so the preview matches the
 // export. Khmer is shaped by the WebView, never by FFmpeg drawtext/libass.
 //
-// The band size must match `render::clip::Frame` in Rust (1920×240 at 1080p, 1280×160 at
-// 720p). Changing the look here? Bump `SUBS_VERSION` in src-tauri/src/pipeline/hashing.rs so
-// existing subtitle PNGs are redrawn.
+// The band sizes must match `render::clip::Frame` in Rust (1920×240 at 1080p 16:9,
+// 1280×160 at 720p, 1080×240 at 9:16). Changing the look here? Bump `SUBS_VERSION` in
+// src-tauri/src/pipeline/hashing.rs so existing subtitle PNGs are redrawn.
 
 import { lineText, type Word } from "./subtitles";
+import type { Aspect } from "./types";
 
 export interface Band {
   width: number;
@@ -15,8 +16,14 @@ export interface Band {
   fontPx: number;
 }
 
-export function bandFor(resolution: string, scale = 1): Band {
-  const base = resolution === "720p" ? { width: 1280, height: 160, fontPx: 29 } : { width: 1920, height: 240, fontPx: 44 };
+/** Band and margin constants, from `render::clip::Frame` (one source of truth in Rust). */
+export function bandFor(resolution: string, aspect: Aspect = "16:9", scale = 1): Band {
+  const base =
+    aspect === "9:16"
+      ? { width: 1080, height: 240, fontPx: 44 }
+      : resolution === "720p"
+        ? { width: 1280, height: 160, fontPx: 29 }
+        : { width: 1920, height: 240, fontPx: 44 };
   return { width: base.width * scale, height: base.height * scale, fontPx: base.fontPx * scale };
 }
 

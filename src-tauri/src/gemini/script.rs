@@ -1,6 +1,6 @@
 //! Script generation prompts: one outline call, then one call per chapter.
 //! Replies are JSON constrained by a schema, validated with serde + [`Validate`],
-//! and retried once with the error appended if they don't parse.
+//! and repaired once with targeted feedback; a second invalid response escalates to the next model.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use super::client::ModelChain;
 use super::models::{Content, GenerateContentRequest, GenerationConfig};
-use super::retry::RetryHooks;
+use super::retry::{RetryHooks, RetryNotice, RetryReason};
 use super::{GeminiClient, GeminiError};
 use crate::pipeline::presets::{self, Figures};
 use crate::pipeline::project::Language;
@@ -300,7 +300,7 @@ brands, companies, apps, programming languages, devices, and technical terms sta
 spelling and capitalization in BOTH `narration` (subtitles) and `spoken_text` (TTS). Never translate them and DO NOT \
 transliterate them into Khmer script in `spoken_text`. Keep them in English so the speech synthesis engine (TTS/VoxCPM) \
 speaks them directly in natural, clean English. Technical initialisms (AI, API, CPU, GPU, USB) also stay in Latin letters \
-in both fields. Historical years and designations tied to English names (e.g. Apollo 11, 1969) stay in Latin letters."
+in both fields. The digits of designations and years (e.g. Apollo 11, 1969) stay as plain digits — never spell them out in Khmer number words."
         }
         Language::En => {
             "- NAMES STAY AS WRITTEN: names of products, brands, companies, apps, websites, programming languages, \
@@ -329,7 +329,8 @@ fn language_rules_base(language: Language) -> &'static str {
             "LANGUAGE: Khmer.\n\
 - Write `narration` in natural, spoken Khmer, the way a Cambodian storyteller talks — not a literal translation from English. Prefer common everyday words over formal or literary vocabulary.\n\
 - End sentences with ។ . Do not insert zero-width spaces.\n\
-- `spoken_text` is the same content written exactly as it must be SPOKEN: numbers, percentages, and units written out in Khmer words (1,500 → មួយពាន់ប្រាំរយ; 30% → សាមសិបភាគរយ; 5 km → ប្រាំគីឡូម៉ែត្រ). Year numbers can be spoken in Khmer (e.g. ឆ្នាំមួយពាន់ប្រាំបួនរយដប់បួន) or accompanied by the English designation. Foreign names of people, places, missions, and technical terms stay in Latin letters in BOTH fields (see names rule below). No standalone Khmer digits (០-៩) in `spoken_text`.\n\
+- Write EVERY number with DIGITS (0-9), in BOTH `narration` and `spoken_text`: years `ឆ្នាំ 1969`, quantities `1,500 នាក់`, decimals `3.5`, percentages `30%`. NEVER spell a number or a year out in Khmer number words (write `ឆ្នាំ 1863`, never `ឆ្នាំមួយពាន់ប្រាំបីរយ…`): spelled-out Khmer numbers usually come out wrong, while the app reads the digits in correct Khmer itself.\n\
+- `spoken_text` is the same content written exactly as it must be SPOKEN: write units in Khmer words (km → គីឡូម៉ែត្រ) and translate English abbreviations (BC → មុនគ្រិស្តសករាជ, AD → គ្រិស្តសករាជ). Foreign names of people, places, missions, and technical terms stay in Latin letters in BOTH fields (see names rule below).\n\
 - `title` and chapter titles in Khmer. `fact_note` in Khmer."
         }
         Language::En => {
@@ -632,7 +633,8 @@ fn is_response_format_rejected(err: &GeminiError) -> bool {
 }
 
 /// Sends a JSON-schema request over the text model chain and parses the reply into `T`.
-/// On a parse/validation failure, retries once with the error appended.
+/// On a parse/validation failure, asks the answering model for a focused repair. If that
+/// response still fails validation, tries the next configured model with the same repair context.
 /// Returns the value and the model that produced it (for the log).
 pub async fn request_json<T: DeserializeOwned + Validate>(
     client: &GeminiClient,
@@ -656,22 +658,90 @@ pub async fn request_json_with<T: DeserializeOwned + Validate>(
     hooks: &RetryHooks,
 ) -> Result<(T, String), GeminiError> {
     let mut contents = vec![first];
-    let mut last_error = String::new();
-    for attempt in 0..2 {
-        let (raw, model) = generate_text(client, key, chain, system, &contents, &schema, hooks).await?;
-        match parse_reply::<T>(&raw) {
-            Ok(v) => return Ok((v, model)),
-            Err(e) if attempt == 0 => {
-                last_error = format!("{model}: {e}");
-                contents.push(Content::model(raw));
-                contents.push(Content::user(format!(
-                    "Your previous reply was invalid: {e}. Reply again with ONLY valid JSON that matches the schema."
-                )));
+    let (raw, model) = generate_text(client, key, chain, system, &contents, &schema, hooks).await?;
+    match parse_reply::<T>(&raw) {
+        Ok(value) => return Ok((value, model)),
+        Err(error) => {
+            notify_invalid(hooks, &model, 2, &error);
+            contents.push(Content::model(raw));
+            contents.push(Content::user(repair_instruction(&error)));
+            let (repaired, repair_model) =
+                generate_text(client, key, chain, system, &contents, &schema, hooks).await?;
+            match parse_reply::<T>(&repaired) {
+                Ok(value) => return Ok((value, repair_model)),
+                Err(repair_error) => {
+                    // Thai/Lao slips are random per scene: a fresh request on the same fast
+                    // model usually passes, and it avoids waiting on a slower model.
+                    if repair_error.contains("Thai/Lao character") {
+                        notify_invalid(hooks, &repair_model, 3, &repair_error);
+                        let strict = format!("{system}{SCRIPT_PURITY_REMINDER}");
+                        match generate_text(client, key, chain, &strict, &contents[..1], &schema, hooks).await {
+                            Ok((fresh, fresh_model)) => {
+                                if let Ok(value) = parse_reply::<T>(&fresh) {
+                                    return Ok((value, fresh_model));
+                                }
+                            }
+                            Err(GeminiError::Cancelled) => return Err(GeminiError::Cancelled),
+                            Err(_) => {}
+                        }
+                    }
+                    let last_error = format!("{repair_model}: {repair_error}");
+                    let Some(next_chain) = chain.after(&repair_model) else {
+                        return Err(GeminiError::BadResponse(last_error));
+                    };
+                    notify_invalid(hooks, &repair_model, 3, &repair_error);
+                    contents.push(Content::model(repaired));
+                    contents.push(Content::user(repair_instruction(&repair_error)));
+                    let (escalated, escalated_model) = generate_text(
+                        client,
+                        key,
+                        &next_chain,
+                        system,
+                        &contents,
+                        &schema,
+                        hooks,
+                    )
+                    .await?;
+                    match parse_reply::<T>(&escalated) {
+                        Ok(value) => Ok((value, escalated_model)),
+                        Err(error) => Err(GeminiError::BadResponse(format!(
+                            "{escalated_model}: {error}; previous model {last_error}"
+                        ))),
+                    }
+                }
             }
-            Err(e) => last_error = format!("{model}: {e}"),
         }
     }
-    Err(GeminiError::BadResponse(last_error))
+}
+
+/// Appended to the system prompt for the same-model retry after a Thai/Lao slip.
+const SCRIPT_PURITY_REMINDER: &str = "\n\nCRITICAL: write every word only in the script the task requires (for Khmer: Khmer script). \
+Never output Thai or Lao characters, even for words that look similar. Keep official names in Latin letters and preserve digits.";
+
+/// Makes the otherwise silent repair / escalation steps visible in the log and the UI.
+fn notify_invalid(hooks: &RetryHooks, model: &str, step: u32, error: &str) {
+    hooks.notify(&RetryNotice {
+        model: model.to_owned(),
+        previous_model: None,
+        reason: RetryReason::InvalidReply,
+        attempt: step,
+        max_attempts: 3,
+        delay_ms: 0,
+        status: None,
+        error: error.chars().take(300).collect(),
+    });
+}
+
+fn repair_instruction(error: &str) -> String {
+    if error.contains("Thai/Lao character") {
+        format!(
+            "Your previous JSON was rejected: {error}. Repair the specific scene and field named in the error. Replace the Thai/Lao character with the correct spelling in the language required by the original prompt. For Khmer, write Khmer words in Khmer script; keep official names in Latin letters and preserve digits. Keep all other scene content and facts unchanged. Return the complete JSON only, matching the schema."
+        )
+    } else {
+        format!(
+            "Your previous reply was invalid: {error}. Correct only the reported problem, preserve the meaning and all valid content, and return the complete JSON only, matching the schema."
+        )
+    }
 }
 
 async fn generate_text(
@@ -892,6 +962,12 @@ mod tests {
         let p = outline_prompt(&brief(), 4, 26);
         assert!(p.contains("Khmer"));
         assert!(p.contains("exactly 4 chapters"));
+        // Numbers stay as digits (the app voices them: docs/04-khmer.md §4) — the model
+        // must never spell years out in Khmer number words (it hallucinates them).
+        assert!(p.contains("ឆ្នាំ 1969"));
+        assert!(p.contains("NEVER spell"));
+        assert!(!p.contains("or accompanied by the English designation"));
+        assert!(!p.contains("written out in Khmer words"));
     }
 
     #[test]

@@ -47,9 +47,9 @@ impl Encoder {
     }
 }
 
-fn probe_args(enc: Encoder) -> Vec<String> {
+fn probe_args(enc: Encoder, width: u32, height: u32) -> Vec<String> {
     let mut v: Vec<String> = [
-        "-f", "lavfi", "-i", "testsrc=size=1920x1080:rate=30", "-t", "1", "-pix_fmt", "yuv420p",
+        "-f", "lavfi", "-i", &format!("testsrc=size={width}x{height}:rate=30"), "-t", "1", "-pix_fmt", "yuv420p",
     ]
     .iter()
     .map(|s| (*s).to_owned())
@@ -59,10 +59,12 @@ fn probe_args(enc: Encoder) -> Vec<String> {
     v
 }
 
-/// First encoder that can encode 1 s of 1080p on this machine.
-pub async fn detect(ffmpeg: &Ffmpeg, cwd: &Path, cancel: &CancellationToken) -> Result<Encoder, RenderError> {
+/// First encoder that can encode 1 s of the frame on this machine. The probe uses the
+/// frame it will encode (`Frame::for_project`); detection result is aspect-independent,
+/// so 1920×1080 by default.
+pub async fn detect(ffmpeg: &Ffmpeg, cwd: &Path, cancel: &CancellationToken, frame_size: (u32, u32)) -> Result<Encoder, RenderError> {
     for enc in ORDER {
-        match ffmpeg.run(&probe_args(enc), cwd, cancel, |_| {}).await {
+        match ffmpeg.run(&probe_args(enc, frame_size.0, frame_size.1), cwd, cancel, |_| {}).await {
             Ok(()) => return Ok(enc),
             Err(RenderError::Cancelled) => return Err(RenderError::Cancelled),
             Err(_) => {}
@@ -85,7 +87,7 @@ mod tests {
 
     #[test]
     fn probe_encodes_to_null() {
-        let a = probe_args(Encoder::Nvenc);
+        let a = probe_args(Encoder::Nvenc, 1920, 1080);
         assert!(a.windows(2).any(|w| w[0] == "-c:v" && w[1] == "h264_nvenc"));
         assert_eq!(a.last().map(String::as_str), Some("-"));
     }

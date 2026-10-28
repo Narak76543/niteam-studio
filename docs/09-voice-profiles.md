@@ -167,5 +167,7 @@ Only one local model on the GPU at a time:
   fake speaker (one request per sentence, same seed, retry with a new seed, OOM halving,
   timings, loudness).
 - Ignored, real GPU: `real_engine_speaks_a_khmer_scene` (`VOXCPM_MODEL`, `VOXCPM_REF`,
-  `VOXCPM_OUT`). Dev laptop, 2026-10-16: 2 Khmer sentences → 15.3 s of audio in 27.5 s
-  including model load, NVIDIA device chosen automatically.
+  `VOXCPM_OUT`; optional `VOXCPM_REPEAT` repeats the Khmer sample to test longer output). Dev
+  laptop, 2026-10-16: 2 Khmer sentences → 15.3 s of audio in 27.5 s including model load,
+  NVIDIA device chosen automatically. 2026-10-20: eight repeats → 121.14 s of audio in 84.4 s
+  across 16 sentence chunks on the RTX 4050 Laptop GPU.

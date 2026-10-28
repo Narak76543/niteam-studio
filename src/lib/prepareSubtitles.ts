@@ -4,12 +4,13 @@
 import { api } from "./api";
 import { bandFor, drawCuePng, ensureFont, toBase64 } from "./subtitleCanvas";
 import { cueText, subtitleStates } from "./subtitleStates";
-import type { CueIn, Language } from "./types";
+import type { Aspect, CueIn, Language } from "./types";
 
 export async function prepareSubtitles(
   projectId: string,
   lang: Language,
   resolution: string,
+  aspect: Aspect,
   highlight: string | null,
   onProgress: (done: number, total: number) => void,
   isCancelled: () => boolean,
@@ -17,14 +18,14 @@ export async function prepareSubtitles(
   const tasks = await api.subsPlan(projectId);
   onProgress(0, tasks.length);
   if (tasks.length === 0) return;
-  const band = bandFor(resolution);
+  const band = bandFor(resolution, aspect);
   await ensureFont(tasks[0]?.narration.slice(0, 40) || "ក", band);
 
   let done = 0;
   for (const task of tasks) {
     if (isCancelled()) return;
     const cues: CueIn[] = [];
-    for (const st of subtitleStates(task, lang, highlight !== null)) {
+    for (const st of subtitleStates(task, lang, highlight !== null, aspect)) {
       const png = await drawCuePng(st.lines, st.active, { highlight }, band);
       cues.push({ text: cueText(st.lines), start_ms: st.start_ms, end_ms: st.end_ms, png_base64: toBase64(png) });
     }

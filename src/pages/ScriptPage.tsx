@@ -3,6 +3,8 @@ import {
   ArrowUp,
   BookOpenText,
   CircleAlert,
+  ClipboardPaste,
+  Copy,
   GripVertical,
   ListPlus,
   PencilLine,
@@ -24,6 +26,7 @@ import { KeepTermsEditor } from "../components/KeepTermsEditor";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { SceneThumb } from "../components/SceneThumb";
+import { ScriptPasteDialog } from "../components/ScriptPasteDialog";
 import { SourceReview } from "../components/SourceReview";
 import { ProgressBar } from "../components/ProgressBar";
 import { RetryStatus } from "../components/RetryStatus";
@@ -33,6 +36,8 @@ import { VisualBibleEditor } from "../components/VisualBibleEditor";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage, onGeminiRetry, onProofreadProgress, onScriptProgress } from "../lib/api";
 import type { Navigate } from "../lib/route";
+import { scriptReviewText } from "../lib/scriptReview";
+import type { ParsedScene } from "../lib/scriptImport";
 import { pageRanges } from "../lib/sourceReview";
 import {
   MOODS,
@@ -93,11 +98,14 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
   const [proof, setProof] = useState<ProofProgress | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [confirm, setConfirm] = useState<Confirm>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
 
   const timer = useRef<number | null>(null);
   const pending = useRef<SceneEdit | null>(null);
+  // Serialize scene writes so an older autosave cannot land after a newer one.
+  const inflight = useRef<Promise<void>>(Promise.resolve());
 
   const reload = useCallback(async () => {
     try {
@@ -170,15 +178,19 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
   // ---- saving ----
   const save = useCallback(
     async (edit: SceneEdit) => {
-      setSaveState("saving");
-      try {
-        const p = await api.sceneUpdate(projectId, edit);
-        setProject(p);
-        setSaveState("saved");
-      } catch (e) {
-        setSaveState("idle");
-        toast.show(errorMessage(e), "danger");
-      }
+      const task = inflight.current.then(async () => {
+        setSaveState("saving");
+        try {
+          const p = await api.sceneUpdate(projectId, edit);
+          setProject(p);
+          setSaveState("saved");
+        } catch (e) {
+          setSaveState("idle");
+          toast.show(errorMessage(e), "danger");
+        }
+      });
+      inflight.current = task.catch(() => {});
+      await task;
     },
     [projectId, toast],
   );
@@ -280,6 +292,63 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
       return null;
     });
 
+  /** The whole script as plain text, for checking it in ChatGPT/Gemini before approval. */
+  const copyScript = () => {
+    if (!project) return;
+    // Unsaved edits of the open scene win, like the scene list does.
+    const current = scenes.map((s) =>
+      draft && s.id === draft.id ? { ...s, narration: draft.narration, spoken_text: draft.spoken_text } : s,
+    );
+    navigator.clipboard
+      .writeText(scriptReviewText(project, current))
+      .then(() => toast.show(t("script.copiedForReview"), "ok"))
+      .catch((e: unknown) => toast.show(errorMessage(e), "danger"));
+  };
+
+  /**
+   * Applies a corrected script pasted back from ChatGPT/Gemini. Only scenes whose text
+   * changed are sent; image prompt, mood and visual fields are kept.
+   */
+  const applyPasted = async (corrections: ParsedScene[]) => {
+    if (!project) return;
+    const byOrder = new Map(corrections.map((c) => [c.order, c]));
+    const changed = scenes.filter((s) => {
+      const c = byOrder.get(s.order);
+      return c !== undefined && (c.narration !== s.narration || c.spoken_text !== s.spoken_text);
+    });
+    // A pending autosave would overwrite the pasted text with the old draft.
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+    pending.current = null;
+    // Let any autosave already in flight finish before writing the pasted text.
+    await inflight.current;
+    try {
+      let latest = project;
+      for (const s of changed) {
+        const c = byOrder.get(s.order);
+        if (!c) continue;
+        latest = await api.sceneUpdate(projectId, {
+          id: s.id,
+          narration: c.narration,
+          spoken_text: c.spoken_text,
+          image_prompt: s.image_prompt,
+          mood: s.mood,
+          visual: { characters: s.characters, place: s.place, shot: s.shot },
+        });
+      }
+      setProject(latest);
+      setDraftState(null);
+      setPasteOpen(false);
+      toast.show(t("script.pasteApplied", { n: changed.length }), "ok");
+    } catch (e) {
+      await reload();
+      toast.show(errorMessage(e), "danger");
+      throw e;
+    }
+  };
+
   /** Accepting replaces the scene text, so any unsaved draft of it is dropped. */
   const acceptSuggestions = async (ids: string[]) => {
     await run(() => api.proofreadAccept(projectId, ids));
@@ -380,6 +449,16 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
     }
     return (
       <>
+        {hasScenes && (
+          <Button icon={<Copy {...ICON} />} onClick={copyScript}>
+            {t("script.copyForReview")}
+          </Button>
+        )}
+        {hasScenes && (
+          <Button icon={<ClipboardPaste {...ICON} />} onClick={() => setPasteOpen(true)}>
+            {t("script.paste")}
+          </Button>
+        )}
         {hasScenes && !incomplete && (
           <Button icon={<SpellCheck {...ICON} />} onClick={() => void checkGrammar()}>
             {t("proof.check")}
@@ -858,6 +937,9 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
         </div>
       )}
 
+      {pasteOpen && (
+        <ScriptPasteDialog scenes={scenes} onApply={applyPasted} onCancel={() => setPasteOpen(false)} />
+      )}
       {confirm?.kind === "regenerate" && (
         <ConfirmDialog
           title={t("script.regenerateTitle")}

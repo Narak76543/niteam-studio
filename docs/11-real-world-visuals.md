@@ -25,12 +25,12 @@ Scene (`pipeline/project.rs`), `visual` (older projects load as `ai_image`):
   "code": null,                    // { "language": "bash", "text": "…", "terminal": true, "type_out": true }
   "candidates": [ /* last search, Candidate below */ ],
   "asset": "wikimedia_123456",     // chosen AssetRecord id
-  "focus": [0.5, 0.4],             // subject centre for the 16:9 crop, null = centre
+  "focus": [0.5, 0.4],             // subject centre for the crop (project aspect: 16:9 / 9:16), null = centre
   "auto_picked": false,            // chosen by ranking/Gemini, shown as "check" until confirmed
   "status": "done", "error": null, "error_kind": null,
   "render_path": null,             // drawn still (diagram / code): scenes/<id>/visual.png
   "render_hash": null,             // what render_path was drawn from (stale when it differs)
-  "thumb_path": "scenes/s004/visual_thumb.jpg"   // 384×216 crop around focus, grid thumbnail
+  "thumb_path": "scenes/s004/visual_thumb.jpg"   // crop's 1/10 around focus (384×216 at 16:9, 216×384 at 9:16), grid thumbnail
 }
 ```
 
@@ -119,7 +119,7 @@ used only when their key is stored; Commons and Openverse need none.
   words in title/tags), resolution 0 when low-res else 10–30 (30 from 2× the frame width),
   shape (landscape 10, square 4, portrait 0), licence (CC0/PD/Pexels/Pixabay 10, CC BY 8,
   CC BY-SA 5). At most half of the grid from one source while others have results.
-- **Low-res** = narrower than the project frame (1920 / 1280) after the 16:9 crop
+- **Low-res** = narrower than the project frame (1920 / 1080) after the aspect crop
   (`min(w, h·16/9)`). **Max zoom** = `min(1.08, cropped width / frame width)`, 1.0 (no zoom)
   for low-res images.
 - 6 candidates per search in the picker.
@@ -197,8 +197,9 @@ used only when their key is stored; Commons and Openverse need none.
   Low-res, ⚠ restrictions, clip length, "Source page" link), **More results**; clicking a
   candidate downloads it and uses it. Licence note for Pexels / Pixabay; "Photos provided by
   Pexels" link when Pexels results are shown (Pexels API rule).
-- Subject point: the chosen photo (or poster) with the 16:9 crop box and the subtitle band
-  shaded; a click moves the point (saved, thumbnail re-cropped).
+- Subject point: the chosen photo (or poster) with the aspect-crop box (project aspect:
+  16:9 or 9:16) and the subtitle band shaded; a click moves the point (saved, thumbnail
+  re-cropped).
 - Diagram: Mermaid text; code: language, text, Terminal, Type out; screenshot: consent checkbox
   + file; AI image: uses the image prompt.
 - Render page side panel: **Credits** block with **Copy** (`project_credits`).
@@ -210,7 +211,7 @@ keep the pan over `image_1080.png` and their old clip hash.
 
 | Visual | Clip input | Motion |
 |---|---|---|
-| Photo / own screenshot | `scenes/<id>/photo_<res>_<hash>.jpg`: the 16:9 crop around the subject point, resized (Lanczos3) to **frame × zoom**, JPEG q92, made once before the clip (older ones deleted) | `zoompan` from 1 → zoom (even scenes) or zoom → 1 (odd), centred. **zoom = min(1.08, crop width / frame width)**: the last frame is 1:1, a photo is never enlarged past its own pixels; **low-res photos get no zoom** (`still`, upscaled once to the frame) |
+| Photo / own screenshot | `scenes/<id>/photo_<res>_<hash>.jpg`: the aspect crop (16:9 / 9:16) around the subject point, resized (Lanczos3) to **frame × zoom**, JPEG q92, made once before the clip (older ones deleted) | `zoompan` from 1 → zoom (even scenes) or zoom → 1 (odd), centred. **zoom = min(1.08, crop width / frame width)**: the last frame is 1:1, a photo is never enlarged past its own pixels; **low-res photos get no zoom** (`still`, upscaled once to the frame) |
 | Stock clip | `assets/<id>.mp4` with `-stream_loop -1 -t <scene>` (a short clip loops; hard cut) | `scale` to cover the frame (`force_original_aspect_ratio=increase`), `crop` around the subject point, 30 fps; the clip's own sound is dropped |
 | Diagram / code | the drawn picture (`render_path`, frame size) | still |
 

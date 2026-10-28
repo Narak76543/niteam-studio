@@ -59,7 +59,9 @@ pub async fn script_generate(
     let store = state.store.clone();
     let jobs = state.script_jobs.clone();
     let client = state.gemini.clone();
-    let models = ModelChain::new(&state.settings.read().await.models.script_chain(project.source.is_some()));
+    // A chapter normally answers in under a minute; don't sit through the transport's 180 s.
+    let models = ModelChain::new(&state.settings.read().await.models.script_chain(project.source.is_some()))
+        .with_attempt_timeout(std::time::Duration::from_secs(90));
     let log = LogFile::new(state.paths.project_log(&project_id)).redacting(key.expose());
     let hooks = retry_hooks(
         app.clone(),

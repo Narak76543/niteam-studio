@@ -142,12 +142,13 @@ pub fn replace_digits(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while i < chars.len() {
-        if let Some(c) = chars.get(i) {
-            if c.is_ascii_digit() && is_ascii_context(&chars, i) {
-                out.push(*c);
-                i += 1;
-                continue;
-            }
+        if let Some(c) = chars.get(i)
+            && c.is_ascii_digit()
+            && is_ascii_context(&chars, i)
+        {
+            out.push(*c);
+            i += 1;
+            continue;
         }
         let Some(first) = chars.get(i).copied().and_then(ascii_digit) else {
             if let Some(c) = chars.get(i) {

@@ -1,7 +1,22 @@
-# Status — where we stopped (2026-10-17)
+# Status — where we stopped (2026-10-25)
 
 Read this first when continuing. Details live in the numbered docs; this file is the short
 "what is done / what is next" list.
+
+**2026-10-25 — Vertical video 9:16, step (a) built, awaiting the owner's test.** Every
+project now has an aspect ratio ("16:9" old default, "9:16" TikTok/Reels/Shorts at
+1080×1920, export). Aspect picker in the wizard, switch control in the Scenes header
+(marks images/subtitles/clips regenerated next time; voices are kept). Code complete and
+green (298 Rust tests, clippy, lint, 51 vitest tests) + real-FFmpeg 16:9 regression render
+unchanged. **Not committed yet.** Owner to test per 05 "Vertical video 9:16". Next: step (b)
+local 576×1024 generation probe on the RTX 4050 (docs/08), then (c) vertical layout,
+(d) undersea-cables test video in both aspects. Note: the working tree also holds
+uncommitted script-review/paste + v0.3.0 WIP from 2026-10-21/23 — not from this step.
+
+**v0.3.0 built 2026-10-23:** NSIS installer (`Nitean Studio_0.3.0_x64-setup.exe`). Adds the
+Khmer years/numbers script rule fix (new projects; existing scripts need regeneration or a
+proofread pass) on top of everything in v0.2.0 (script review, version readout, duplicate-scene
+guard). Next (not started): GitHub Actions build, code signing.
 
 **v0.1.0 released 2026-10-17:** repo on GitHub (`Narak76543/niteam-studio`, public), tag
 `v0.1.0`, NSIS installer attached to the GitHub Release. Next (not started): GitHub Actions

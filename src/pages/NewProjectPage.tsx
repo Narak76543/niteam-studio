@@ -12,7 +12,7 @@ import { api, errorMessage } from "../lib/api";
 import { estimateScenes } from "../lib/format";
 import { PRESET_IDS, isPresetId, presetKey, type PresetId } from "../lib/presets";
 import type { Navigate } from "../lib/route";
-import type { Audience, Language, PdfInfo } from "../lib/types";
+import type { Aspect, Audience, Language, PdfInfo } from "../lib/types";
 
 const MIN_MINUTES = 1;
 const MAX_MINUTES = 20;
@@ -21,6 +21,7 @@ const EXAMPLES = ["wizard.topic.example1", "wizard.topic.example2", "wizard.topi
 const LANGUAGES: Language[] = ["km", "en"];
 const AUDIENCES: Audience[] = ["general", "students", "experts"];
 type Mode = "topic" | "document";
+const ASPECTS: Aspect[] = ["16:9", "9:16"];
 
 function sizeMb(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1);
@@ -39,6 +40,7 @@ export function NewProjectPage({ initialPreset, hasKey, navigate }: Props) {
   const [topic, setTopic] = useState("");
   const [language, setLanguage] = useState<Language>("km");
   const [minutes, setMinutes] = useState(DEFAULT_MINUTES);
+  const [aspect, setAspect] = useState<Aspect>("16:9");
   const [preset, setPreset] = useState<PresetId>(
     initialPreset && isPresetId(initialPreset) ? initialPreset : "stickman",
   );
@@ -89,6 +91,7 @@ export function NewProjectPage({ initialPreset, hasKey, navigate }: Props) {
         path: pdfPath,
         language,
         target_minutes: minutes,
+        aspect,
         style_preset: preset,
         audience,
         focus,
@@ -117,6 +120,7 @@ export function NewProjectPage({ initialPreset, hasKey, navigate }: Props) {
         topic,
         language,
         target_minutes: minutes,
+        aspect,
         style_preset: preset,
       });
       projectId = project.id;
@@ -259,6 +263,21 @@ export function NewProjectPage({ initialPreset, hasKey, navigate }: Props) {
 
           {step === 1 && (
             <>
+              <div className="field">
+                <span className="field__label">{t("wizard.aspect.label")}</span>
+                <div className="segmented" role="group" aria-label={t("wizard.aspect.label")}>
+                  {ASPECTS.map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      aria-pressed={aspect === a}
+                      onClick={() => setAspect(a)}
+                    >
+                      {t(`wizard.aspect.${a === "9:16" ? "tall" : "wide"}`)}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="field">
                 <span className="field__label">
                   {mode === "document" ? t("wizard.doc.language") : t("wizard.language.label")}

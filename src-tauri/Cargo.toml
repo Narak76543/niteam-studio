@@ -1,6 +1,6 @@
 [package]
 name = "nitean-studio"
-version = "0.1.0"
+version = "0.3.0"
 description = "Nitean Studio — narrated explainer video generator (Khmer / English)"
 authors = ["Nitean Studio"]
 edition = "2024"

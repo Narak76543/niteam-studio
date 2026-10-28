@@ -677,6 +677,7 @@ mod tests {
                 topic: "How was Angkor Wat built?".into(),
                 language: Language::Km,
                 target_minutes: 1,
+                aspect: crate::pipeline::project::Aspect::Wide,
                 style_preset: "storybook_watercolor".into(),
             },
             &settings.models.tts,

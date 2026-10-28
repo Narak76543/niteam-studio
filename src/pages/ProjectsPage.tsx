@@ -160,7 +160,8 @@ export function ProjectsPage({ projects, hasKey, navigate, onChanged, searchToke
                           minutes: p.target_minutes,
                           scenes: p.scene_count,
                           lang: t(`lang.${p.language}`),
-                        })}
+                        })}{" "}
+                        · <span className="badge">{p.aspect}</span>
                       </p>
                     </button>
                     <div className="project-card__footer">

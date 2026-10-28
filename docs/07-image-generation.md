@@ -179,7 +179,8 @@ Rules for the script model:
 - **Shot phrases:** wide → "wide establishing shot"; medium → "medium shot";
   close → "close-up portrait"; detail → "close-up detail shot"; aerial → "aerial view".
 - **Composition phrase for square providers:** "wide horizontal composition, main
-  subject in the center band, empty space above and below". Needed because we crop to 16:9.
+  subject in the center band, empty space above and below". Needed because we crop to 16:9
+  (9:16: centered subject with room at the sides).
 - **Positive phrasing only.** Flux Schnell ignores negative prompts: write
   "clear blue sky", not "no birds".
 - **Never ask for text in the image.** Titles/subtitles are drawn by the app.
@@ -193,11 +194,15 @@ Rules for the script model:
 ## 4. Post-processing (`images/postprocess.rs`, `image` crate)
 
 1. Save the provider's original as `scenes/<id>/image_raw.jpg` (or .png).
-2. If square: **center-crop to 16:9** (e.g. 1024×1024 → 1024×576), keeping the vertical
-   center (composition phrase puts the subject there).
-3. Upscale with **Lanczos3** to the pan size: 2150×1210 for 1080p, 1434×806 for 720p
-   → `image_1080.png` / `image_720.png`.
-4. Create a 384×216 `thumb.jpg` for the UI grid (fast loading on weak laptops).
+2. If square: **center-crop to the project's aspect** — 16:9 (1024×1024 → 1024×576) or
+   9:16 (1024×1024 → 576×1024) — keeping the vertical (16:9) / horizontal (9:16) center
+   (the composition phrase puts the subject there; vertical projects get a "wide center,
+   empty space left and right" phrase, added with the vertical layout work).
+3. Upscale with **Lanczos3** to the pan size (1.12× the frame, even-rounded): 2150×1210 at
+   16:9 1080p, 1434×806 at 720p, 1210×2150 at 9:16 → always saved as `image_1080.png` /
+   `image_720.png` (the file name does not carry the aspect).
+4. Create a `thumb.jpg` = the crop's 1/10 (384×216 at 16:9, 216×384 at 9:16) for the UI grid
+   (fast loading on weak laptops).
 
 ## 5. Budget & scheduling
 
@@ -239,5 +244,6 @@ The Khmer/English title is drawn by the app with the canvas method (see `04-khme
 ## 10. Tests
 
 - `prompt.rs`: bible inlining, shot phrases, 2,048-char truncation order.
-- `postprocess.rs`: square → 16:9 crop dimensions, upscale sizes.
+- `postprocess.rs`: square → project-aspect crop dimensions (`crop_for` plus the frame
+  ratio), pan size (`pan_size(frame)` = 1.12× even-rounded), thumb size.
 - Cloudflare client: mocked HTTP for success, auth error, quota error, 5xx retry.

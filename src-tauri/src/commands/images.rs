@@ -412,6 +412,7 @@ pub async fn project_set_scenes_per_image(
 pub struct ImageCatalog {
     pub gemini_models: Vec<&'static str>,
     pub flux_license_url: &'static str,
+    /// Pan size of the 16:9 export (the tab shows it; vertical pan sizes derive per project).
     pub pan_1080: (u32, u32),
 }
 
@@ -420,6 +421,6 @@ pub fn images_catalog() -> ImageCatalog {
     ImageCatalog {
         gemini_models: crate::images::gemini::MODELS.to_vec(),
         flux_license_url: "https://bfl.ai/legal/terms-of-service",
-        pan_1080: postprocess::pan_size("1080p"),
+        pan_1080: postprocess::pan_size((1920, 1080)),
     }
 }

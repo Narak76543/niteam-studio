@@ -423,6 +423,7 @@ mod tests {
             path: "rice.pdf".into(),
             language: crate::pipeline::project::Language::En,
             target_minutes: 2,
+            aspect: crate::pipeline::project::Aspect::default(),
             style_preset: "stickman".into(),
             audience: crate::pipeline::project::Audience::General,
             focus: String::new(),

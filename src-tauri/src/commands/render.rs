@@ -157,7 +157,7 @@ async fn detect_encoder(state: &AppState) -> CmdResult<Encoder> {
     let ffmpeg = Ffmpeg::locate().map_err(|e| e.to_string())?;
     let encoder = {
         let _guard = state.ffmpeg_lock.lock().await;
-        encoders::detect(&ffmpeg, state.paths.root(), &CancellationToken::new())
+        encoders::detect(&ffmpeg, state.paths.root(), &CancellationToken::new(), (1920, 1080))
             .await
             .map_err(|e| e.to_string())?
     };

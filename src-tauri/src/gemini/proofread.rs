@@ -1,6 +1,6 @@
 //! Grammar / phrasing / spelling check of the narration with the Gemini text model
 //! (Script page → "Check grammar"). Uses the same structured-JSON request as the script
-//! (`script::request_json`: model chain, retries, one re-ask on invalid JSON).
+//! (`script::request_json`: model chain, retries, focused repair, then validation escalation).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -74,8 +74,9 @@ pub fn prompt(language: Language, topic: &str, keep_terms: &[String], scenes: &[
     let (lang, spoken_rule, note_lang) = match language {
         Language::Km => (
             "Khmer",
-            "`spoken_text` must say exactly what `narration` says, written for the Khmer text-to-speech voice: \
-numbers, years, percentages, units and abbreviations written out in Khmer words, no digits.",
+            "`spoken_text` must say exactly what `narration` says, written for the Khmer text-to-speech voice (the app reads the digits itself): \
+every number, year and percentage written with digits 0-9 (e.g. ឆ្នាំ 1863, 1,500 នាក់, 30%) — NEVER spelled out in Khmer number words; \
+units and abbreviations written in Khmer words.",
             "Khmer",
         ),
         Language::En => (
@@ -119,6 +120,10 @@ mod tests {
         assert!(p.contains("\"scene_id\": \"s001\""));
         assert!(p.contains("must appear EXACTLY as written"));
         assert!(p.contains("SMALLEST change"));
+        // Khmer numbers/years stay as digits; the app voices them (docs/04-khmer.md §4).
+        assert!(p.contains("written with digits"));
+        assert!(p.contains("NEVER spelled out"));
+        assert!(!p.contains("written out in Khmer words, no digits"));
     }
 
     #[test]

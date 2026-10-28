@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use super::editing::{NewProjectInput, new_project};
-use super::project::{Language, Outline, OutlineChapter};
+use super::project::{Aspect, Language, Outline, OutlineChapter};
 use super::script_job::ScriptJob;
 use super::store::ProjectStore;
 use crate::gemini::GeminiClient;
@@ -72,6 +72,7 @@ async fn write_project(paths: &AppPaths, store: &ProjectStore, preset: &str) -> 
             topic: "ប្រវត្តិសាស្ត្រខ្មែរ ពីមនុស្សបុរេប្រវត្តិ ដល់ពិធីបុណ្យនៅសម័យអង្គរ".into(),
             language: Language::Km,
             target_minutes: 1,
+            aspect: Aspect::Wide,
             style_preset: preset.into(),
         },
         &settings.models.tts,
@@ -182,7 +183,7 @@ async fn style_trial() {
     writeln!(report, "\nscene1 1280x720: {:.1} s (incl. model load), {}x{}", t.elapsed().as_secs_f64(), big.width, big.height).unwrap();
     std::fs::write(out.join("res_1280x720.png"), &big.bytes).unwrap();
     for (name, raw) in [("res_1024x576_pan1080.png", &small), ("res_1280x720_pan1080.png", &big.bytes)] {
-        std::fs::write(out.join(name), postprocess::process(raw, "1080p").unwrap().pan_png).unwrap();
+        std::fs::write(out.join(name), postprocess::process(raw, (1920, 1080)).unwrap().pan_png).unwrap();
     }
     std::fs::write(out.join("report.md"), &report).unwrap();
     println!("{report}");

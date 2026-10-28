@@ -8,7 +8,6 @@ use super::project::{AssetStatus, Language, Project, Scene};
 
 const ZERO_WIDTH_SPACE: char = '\u{200B}';
 const SEP: &str = "\u{1F}";
-
 /// NFC-normalizes text and trims surrounding whitespace.
 pub fn normalize(text: &str) -> String {
     text.nfc().collect::<String>().trim().to_owned()
@@ -70,7 +69,8 @@ pub fn mark_all_images_stale(project: &mut Project) {
 /// 3: regular weight, 44 px at 1080p (was 600 / 56 px).
 pub const SUBS_VERSION: &str = "3";
 
-/// Inputs of a scene's subtitle PNGs: narration, the voice they are timed to, resolution.
+/// Inputs of a scene's subtitle PNGs: narration, the voice they are timed to, resolution
+/// and aspect (the band sizes derive from both).
 /// `None` while the scene has no finished voice.
 pub fn subs_hash(project: &Project, scene: &Scene) -> Option<String> {
     let voice_hash = scene.voice.text_hash.as_deref()?;
@@ -86,6 +86,7 @@ pub fn subs_hash(project: &Project, scene: &Scene) -> Option<String> {
         voice_hash,
         &duration.to_string(),
         &project.render.resolution,
+        project.aspect.as_str(),
         language,
         project.render.subtitle_highlight.as_deref().unwrap_or("none"),
     ]))

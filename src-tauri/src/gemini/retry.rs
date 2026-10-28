@@ -35,6 +35,8 @@ pub enum RetryReason {
     Network,
     /// The previous model of the text chain failed; switching to `model`.
     NextModel,
+    /// The model answered, but the JSON failed validation; asking it (or the next model) to fix it.
+    InvalidReply,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]

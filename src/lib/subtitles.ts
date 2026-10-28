@@ -6,9 +6,16 @@
 // English), preferring a phrase/sentence boundary near the end of the line. Lines are never
 // broken inside a word or a grapheme cluster, and punctuation never starts a line.
 
-import type { Language } from "./types";
+import type { Aspect, Language } from "./types";
 
 export const MAX_GRAPHEMES: Record<Language, number> = { km: 38, en: 42 };
+/** Narrow 9:16 frame: shorter lines so the cue fits between the safe margins. */
+export const MAX_GRAPHEMES_VERTICAL: Record<Language, number> = { km: 24, en: 26 };
+
+/** Line length for the project's aspect (04 §2). */
+export function maxGraphemes(lang: Language, aspect: Aspect): number {
+  return aspect === "9:16" ? MAX_GRAPHEMES_VERTICAL[lang] : MAX_GRAPHEMES[lang];
+}
 /** Max lines on screen at once (one subtitle image). */
 export const LINES_PER_CUE = 2;
 /** Look for a phrase boundary in the last 30 % of a full line. */

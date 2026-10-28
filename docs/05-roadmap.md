@@ -6,7 +6,7 @@ After the human confirms, they (or you, if asked) move the **CURRENT** marker.
 
 ---
 
-## Phase 1 — Scaffold, settings, script  ✅ (tested by the owner)
+## Phase 1 - Scaffold, settings, script (CURRENT - reopened 2026-10-27 for script repair)
 
 Goal: create a project and get an editable Khmer/English script from Gemini.
 
@@ -17,6 +17,8 @@ Goal: create a project and get an editable Khmer/English script from Gemini.
 - [x] `gemini/client.rs` + `retry.rs` (backoff rules from `03-pipeline.md`)
 - [x] Projects list + New Project wizard (topic, language, minutes, style preset)
 - [x] Script generation: outline call + per-chapter scene calls, JSON validated
+- [ ] Invalid script replies receive focused repair feedback, then one escalation to the next
+      configured model if validation still fails
 - [x] Script editor: edit narration / spoken_text / image_prompt, add/delete/reorder, Approve
 - [x] `project.json` atomic save; reopen app → project still there
 - [x] i18n km/en with bundled Khmer font in the UI
@@ -179,6 +181,28 @@ Free sources only: Pexels (optional), Pixabay, Openverse, Wikimedia Commons (CLA
 - [ ] Test video "How the internet reaches Cambodia (undersea cables)"
 - [ ] Owner test
 
+## Vertical video 9:16  (owner request 2026-10-25; in progress)
+
+Spec: Aspect section in `docs/03-pipeline.md` Step 6; frame source `render/clip.rs`.
+Order (owner-approved step-0 plan): a: aspect refactor → b: local 576×1024 probe (08) →
+c: vertical layout & script mode → d: real-world test video in both aspects.
+
+- [x] Step (a): `project.aspect` ("16:9" default via serde), `project_set_aspect`
+      (force-stale image/subs/clip, refused while rendering, Done → Review/Generating);
+      `Frame::for_project` — 9:16 renders at 1080×1920 (720p stays 16:9-only); aspect-aware
+      pan/crop/thumb ("frame ratio" versions of the 16:9 helpers; pan-name kept for cache
+      compatibility); aspect into subs/draw/clip hashes; preview, band drawing, wizard
+      picker and change-aspect control in the UI; docs updated. 298 Rust + 51 vitest tests
+      green; real-FFmpeg 16:9 regression render of an existing project confirmed unchanged
+      (1920×1080, same band position, cached clips reused).
+- [ ] Step (b): local Z-Image generation probe at 576×1024 on the RTX 4050 (time, VRAM,
+      OOM, quality after upscale to the 1210×2150 pan size); the code picks the path from
+      the recorded result (fallback: 9:16 crop of the 16:9 image) — 08
+- [ ] Step (c): vertical layout (actor band, safe margins, search crops, diagram +
+      code-template rendering, 2–4 s scene timing, vertical script mode with a hook ≤ 3 s)
+- [ ] Step (d): test video "How the internet reaches Cambodia (undersea cables)" in both
+      9:16 and 16:9 (d only after a)
+
 ## Later / ideas (not scheduled)
 
 - Word-level subtitle timing
@@ -190,6 +214,9 @@ Free sources only: Pexels (optional), Pixabay, Openverse, Wikimedia Commons (CLA
 ---
 
 ## Changelog
+
+- 2026-10-27 - Reopened Phase 1 for script generation reliability: invalid replies now get
+  focused repair feedback; a second invalid answer escalates to the next configured text model.
 
 _Add one line per finished phase: date — phase — notes._
 
@@ -348,3 +375,31 @@ _Add one line per finished phase: date — phase — notes._
 - 2026-10-17 - Script quality: carry narration context across scene batches and have proofreading flag repeated sentences and explanations for later scenes.
 - 2026-10-17 - Soft 2D image relevance: preserve scene subjects under the image prompt size limit, require concrete technology visuals for AI/code scenes, and vary compositions using recent scene prompts.
 - 2026-10-18 - Script & Speech improvements: fixed chapter batching continuation index bug to prevent duplicated scenes; added deduplication guard fallback; updated names rules to keep English people/spacecraft/mission/tech names and designations in Latin script across both narration and spoken_text for clean VoxCPM / TTS pronunciation; preserved English designations in khmer_numbers.
+- 2026-10-21 - Script writer duplicate scenes: compare every returned scene against all scenes already in the project (NFC, collapsed spaces, case-folded), keep only the new ones and re-ask for the missing count (up to two retries); a repeated scene is never appended, so the voiceover can no longer speak the same line again in another chapter.
+- 2026-10-21 - Script review: added **Copy full script** on the Script page (draft only) — the whole script as plain text, scene by scene with chapter headings, narration, spoken text and fact notes, including unsaved edits of the open scene, ready to paste into ChatGPT/Gemini before approval.
+- 2026-10-21 - Script review, part 2: added **Paste corrections** — paste the corrected script back, matched by scene number (tolerates Markdown bold/headings and wrapped lines); it validates that every scene is present once with Narration and Spoken, previews found/changed scenes, and applies only the changed ones through the normal scene edit path.
+- 2026-10-21 - Paste corrections hardening: accept Khmer scene/label names, Khmer digits and `៖`, plus alternate spoken labels; normalize every field to one trimmed line; show a formatted preview of what will be saved; serialize scene autosaves and wait for any in-flight write so a stale draft can never overwrite the pasted script.
+- 2026-10-22 - **v0.2.0 installer** (shareable build): version bumped to 0.2.0 in `package.json`, `Cargo.toml`, `tauri.conf.json` and `Cargo.lock`; Settings → **About** shows the running version; the Horror Audio page (added 2026-10-21, never finished) was removed; clippy fixed for Rust 1.99 (`explicit_counter_loop` in `images/prompt.rs`, `collapsible_if` in `images/prompt.rs` and `pipeline/khmer_numbers.rs`). NSIS installer rebuilt for sharing with a friend.
+- 2026-10-23 - **Khmer years spoken wrong — script rule fix**: the script model used to spell years out
+  in Khmer number words and reliably hallucinated them (real projects: ចៅសិប, សែសាប់, ប្រាំបាំ,
+  duplicated vowels, dropped hundred-groups ប្រាំរយ for ប្រាំបីរយ/ប្រាំបួនរយ, an English-calque និង
+  inside the year, leftover digits ដប់ប្រាំ៦). Script and proofreader prompts now require every
+  number, year and percentage in `narration` and `spoken_text` as plain **digits** (ឆ្នាំ 1969, 30%),
+  units and abbreviations still in Khmer words — the tested `khmer_numbers::replace_digits` voices
+  them deterministically. New projects only; existing scripts need regeneration or a proofread pass.
+- 2026-10-23 - **v0.3.0 installer** (shareable build): version bumped to 0.3.0 in `package.json`,
+  `Cargo.toml`, `tauri.conf.json` and `Cargo.lock`. First installer to include the Khmer
+  years/numbers script rule fix above (new projects) on top of the v0.2.0 script-review work.
+  NSIS only, per-user install, unchanged bundle settings; lint, typecheck and clippy clean.
+
+- 2026-10-25 - **Vertical video 9:16, step (a)**: every project now carries `aspect`
+  ("16:9" default, "9:16" for TikTok/Reels/Shorts). `Frame::for_project` is the single
+  source of frame/band/margin; vertical renders at 1080×1920 with a 1080×240 subtitle band;
+  pan sizes (`pan_size(frame)` = 1.12× even-rounded), crops and thumbs take the frame ratio;
+  `subs_hash`/`draw_hash`/`clip_hash` include the aspect; `project_set_aspect` force-stales
+  image/subs/clip (voices kept), refuses while rendering and applies the normal Done →
+  Review/Generating rules. UI: aspect picker in the wizard, badge in project cards and the
+  Scenes header with a confirm switch, preview letterboxed vertically, 720p export kept
+  16:9-only. Verified with 298 Rust tests + clippy, lint/typecheck/51 vitest tests, and a
+  real-FFmpeg 16:9 regression render of an existing project (unchanged output, band at the
+  same spot, cached clips reused).

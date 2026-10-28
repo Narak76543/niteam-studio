@@ -1447,9 +1447,25 @@ input[type="range"] {
 }
 .dialog--wide {
   width: min(640px, calc(100vw - 2 * var(--s-6)));
+  max-height: calc(100vh - 2 * var(--s-6));
+  overflow-y: auto;
 }
 .dialog--wide .textarea {
   min-height: 140px;
+}
+.dialog--wide .script-paste__input {
+  min-height: 260px;
+}
+.script-paste__list {
+  margin: 0;
+  padding-left: var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+.script-paste__preview summary {
+  cursor: pointer;
+  margin-bottom: var(--s-2);
 }
 .segmented button:disabled {
   cursor: default;
@@ -1578,6 +1594,10 @@ input[type="range"] {
   flex-direction: column;
   gap: var(--s-2);
 }
+.player--vertical {
+  /* Portrait: the width cap must use 9/16, or the 16/9 stage height overflows the box. */
+  width: min(100cqw, 620px, calc((100cqh - 48px) * 9 / 16));
+}
 .player__stage {
   position: relative;
   aspect-ratio: 16 / 9;
@@ -1585,6 +1605,9 @@ input[type="range"] {
   border-radius: var(--r-sm);
   overflow: hidden;
   box-shadow: 0 0 0 1px var(--border);
+}
+.player__stage--vertical {
+  aspect-ratio: 9 / 16;
 }
 .player__canvas {
   width: 100%;

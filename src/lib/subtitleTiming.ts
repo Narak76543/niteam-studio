@@ -5,8 +5,9 @@
 // grapheme count. Khmer timings from Edge are phrase-level (space-separated chunks), so
 // positions inside a phrase are interpolated by grapheme count.
 //
-// Lines come from `narration`, timings from `spoken_text` (numbers spelled out), so the two
-// texts can differ. Positions are therefore matched as *fractions* of each text's length.
+// Lines come from `narration`, timings from `spoken_text` (units and abbreviations in
+// Khmer words), so the two texts can differ. Positions are therefore matched as *fractions*
+// of each text's length.
 
 import type { WordTiming } from "./types";
 

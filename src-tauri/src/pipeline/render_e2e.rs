@@ -91,7 +91,7 @@ async fn render_e2e() {
     }
 
     let ffmpeg = Ffmpeg::at(ffmpeg_path.into());
-    let encoder = encoders::detect(&ffmpeg, &dir, &CancellationToken::new()).await.unwrap();
+    let encoder = encoders::detect(&ffmpeg, &dir, &CancellationToken::new(), (1920, 1080)).await.unwrap();
     println!("encoder: {}", encoder.name());
 
     let job = RenderJob {

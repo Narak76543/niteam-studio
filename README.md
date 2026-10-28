@@ -14,7 +14,7 @@ and background music.
 
 ## Install
 
-Download `Nitean-Studio_0.1.0_x64-setup.exe` from the
+Download `Nitean Studio_0.2.0_x64-setup.exe` from the
 [Releases](https://github.com/Narak76543/niteam-studio/releases) page and run it.
 It installs for the current user, so administrator rights are not needed.
 

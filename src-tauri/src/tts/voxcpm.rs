@@ -300,12 +300,19 @@ mod tests {
     }
 
     /// Real engine, real GPU: `VOXCPM_MODEL` (gguf), `VOXCPM_REF` (16 kHz reference clip),
-    /// `VOXCPM_OUT` (folder for the result). Run with `--ignored --nocapture`.
+    /// `VOXCPM_OUT` (folder for the result), optional `VOXCPM_REPEAT`. Run with
+    /// `--ignored --nocapture`.
     #[tokio::test]
     #[ignore = "needs the VoxCPM2 model and a GPU"]
     async fn real_engine_speaks_a_khmer_scene() {
         let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("set {k}"));
         let out = PathBuf::from(var("VOXCPM_OUT"));
+        std::fs::create_dir_all(&out).unwrap();
+        let repetitions = std::env::var("VOXCPM_REPEAT")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(1)
+            .clamp(1, 32);
         let spec = ServerSpec {
             exe: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/audiocpp/audiocpp_server.exe"),
             model: PathBuf::from(var("VOXCPM_MODEL")),
@@ -319,13 +326,15 @@ mod tests {
         let speaker = Arc::new(ServerSpeaker { server: server.clone(), spec, gpu_lock: Arc::new(Mutex::new(())) });
         let voice = ResolvedVoice { reference: PathBuf::from(var("VOXCPM_REF")), transcript: String::new(), style: "calm, warm".into(), cfg: 2.0, steps: 10 };
         let tts = VoxCpmTts::new(speaker, voice, Language::Km, 1016);
+        let text = KM.repeat(repetitions);
+        let expected = expected_ms(&text, Language::Km, 0);
         let started = std::time::Instant::now();
-        let (pcm, words) = tts.synth(KM, &CancellationToken::new()).await.unwrap();
+        let (pcm, words) = tts.synth(&text, &CancellationToken::new()).await.unwrap();
         let secs = started.elapsed().as_secs_f64();
         std::fs::write(out.join("e2e_khmer.wav"), wav::to_wav(&pcm)).unwrap();
-        println!("{} ms audio in {secs:.1} s; timings {words:?}", wav::ms(&pcm));
+        println!("{} ms audio (expected {expected} ms) in {secs:.1} s; {} sentence chunks", wav::ms(&pcm), words.len());
         server.stop().await;
-        assert_eq!(words.len(), 2);
-        assert!(!suspicious_length(wav::ms(&pcm), expected_ms(KM, Language::Km, 0)));
+        assert_eq!(words.len(), repetitions * 2);
+        assert!(!suspicious_length(wav::ms(&pcm), expected));
     }
 }

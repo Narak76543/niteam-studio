@@ -93,8 +93,10 @@ harmless; sidecar file names must use the matching target triple.
   - `projects\<project-id>\`
     - `project.json` — single source of truth (see data model)
     - `scenes\<scene-id>\voice.mp3` (Edge) or `voice.wav` (Gemini), `words.json` (Edge
-      phrase/word timings), `image_raw.jpg|png` (provider original), `image_1080.png` or
-      `image_720.png` (16:9, pan size), `thumb.jpg` (384×216), `subs\000.png …`, `clip.mkv`
+      phrase/word timings), `image_raw.jpg|png` (provider original),       `image_1080.png` or
+      `image_720.png` (pan size = 1.12× the frame, even-rounded: 2150×1210 at 16:9 1080p,
+      1434×806 at 720p, 1210×2150 at 9:16; file is always named `image_1080.png`),
+      `thumb.jpg` (the image crop's 1/10: 384×216 at 16:9, 216×384 at 9:16), `subs\000.png …`, `clip.mkv`
     - `concat.txt`, `output\final.mp4` (or `<Settings output folder>\<title>.mp4`),
       `output\thumbnail.png`
     - `logs\pipeline.log` (no secrets)
@@ -119,6 +121,9 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
   "topic": "…",
   "language": "km",                   // "km" | "en"
   "target_minutes": 12,
+  "aspect": "16:9",                   // "16:9" | "9:16" (missing in old projects → serde default "16:9")
+                                      // 16:9: frame 1920×1080 (720p render: 1280×720) · 9:16: frame 1080×1920
+                                      // switching aspect marks image/subs/clip assets stale again; voices stay
   "style": {
     "preset": "storybook_watercolor",
     "style_prompt": "warm watercolor storybook illustration, soft light, …"
@@ -253,6 +258,7 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 | `image_prompts_rewrite / _cancel / _running(project_id)` | "Improve image prompts": rewrite every scene's image prompt with the current rules (03 Step 4a); event `prompt-rewrite-progress` |
 | `project_set_keep_terms(project_id, terms)` | names that stay exactly as written |
 | `project_set_style(project_id, preset)` | switch style preset + rewrite the Visual Bible |
+| `project_set_aspect(project_id, aspect)` | switch "16:9" ↔ "9:16"; force-stales image/subs/clip, resets Done→Review/Generating, refuses while rendering |
 | `voices_status`, `voices_model_install / _verify / _delete`, `voice_design_samples`, `voice_design_sample_audio`, `voice_profile_create_design / _import / _update / _duplicate / _delete / _preview / _reference_audio / _set_default`, `project_set_voice_profile` | local voices (VoxCPM2) and Voice Profiles — see `09-voice-profiles.md` §7 |
 | `encoders_detect()` | first working H.264 encoder; cached in `settings.render.encoder` |
 | `source_pdf_info(path)`, `project_create_from_document(input)` | "From a document": file check (pages, size, range needed) / create the project and copy the PDF (10) |

@@ -17,6 +17,26 @@ pub enum Language {
     En,
 }
 
+/// Output aspect ratio: `project.aspect`. Set at project creation; vertical projects
+/// export at 1080×1920 (TikTok / Reels / Shorts), horizontal ones at 1920×1080.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum Aspect {
+    #[default]
+    #[serde(rename = "16:9")]
+    Wide,
+    #[serde(rename = "9:16")]
+    Vertical,
+}
+
+impl Aspect {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Wide => "16:9",
+            Self::Vertical => "9:16",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectStatus {
@@ -48,6 +68,10 @@ pub struct Project {
     pub topic: String,
     pub language: Language,
     pub target_minutes: u32,
+    /// Frame aspect: `"16:9"` (default) or `"9:16"`. Changing it marks images,
+    /// subtitles and clips outdated (`editing::set_aspect`).
+    #[serde(default)]
+    pub aspect: Aspect,
     pub style: Style,
     pub voice: VoiceSettings,
     pub status: ProjectStatus,
@@ -626,6 +650,7 @@ pub struct ProjectSummary {
     pub topic: String,
     pub language: Language,
     pub target_minutes: u32,
+    pub aspect: Aspect,
     pub style_preset: String,
     pub status: ProjectStatus,
     pub scene_count: usize,
@@ -644,6 +669,7 @@ impl From<&Project> for ProjectSummary {
             topic: p.topic.clone(),
             language: p.language,
             target_minutes: p.target_minutes,
+            aspect: p.aspect,
             style_preset: p.style.preset.clone(),
             status: p.status,
             scene_count: p.scenes.len(),
@@ -780,6 +806,7 @@ pub(crate) mod tests {
             topic: "t".into(),
             language: Language::Km,
             target_minutes: 3,
+            aspect: Aspect::Wide,
             style: Style {
                 preset: "storybook_watercolor".into(),
                 style_prompt: "watercolor".into(),

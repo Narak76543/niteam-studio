@@ -139,8 +139,9 @@ Implements `ImageProvider` from `07-image-generation.md`:
   from the profile, VAE tiling on for profiles that need it. Unlike Cloudflare Flux (which
   rejects a seed, 07 §1a), stable-diffusion.cpp honours it, so local images are reproducible:
   the same prompt + seed gives the same picture.
-- Output PNG → post-processing from 07 §4 (generic 16:9 crop: 1024×576 is already 16:9, so
-  nothing is cut), then Lanczos upscale.
+- Output PNG → post-processing from 07 §4 (crop to the project's aspect: 16:9 leaves the
+  1024×576 Z-Image picture as is; 9:16 cuts a 576×1024 column from it, see the vertical
+  probe below), then Lanczos upscale.
 - Errors:
   - out of memory → `ImageError::Other("GPU ran out of memory. Try a smaller model profile or close other apps.")`
     and automatically retry once with VAE tiling + smaller size (640×384).
@@ -249,6 +250,10 @@ plan. All files Apache-2.0, pinned to a Hugging Face revision, sha256 re-checked
   image**, peak VRAM 4.7 GB — about 2× the time for 1.56× the pixels, and the same seed gives a
   different picture. Upscaled to the 1080p pan image (2150×1210, Lanczos3) the 1024×576 image is
   only slightly softer; flat cartoon outlines stay clean. The profile stays at 1024×576.
+  **Vertical (9:16) probes are planned next** (576×1024 generation on the RTX 4050: time,
+  VRAM, OOM and quality after upscaling to the 1210×2150 pan size; the code will pick the
+  generation path from the recorded result, not a hard rule, with the 9:16 crop of the
+  16:9 image as fallback).
 - **Negative prompt:** Z-Image runs at cfg 1.0, where `sd-server` ignores the negative prompt
   (the provider sends an empty one). "No text" / "no line art" rules go in the positive prompt
   (`StylePreset::prompt_rules`, 07 §1c); the Qwen3 encoder follows them (no lettering in 34

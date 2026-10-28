@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use super::project::{Audience, Language, SourceStage};
+use super::project::{Aspect, Audience, Language, SourceStage};
 use super::script_job::ScriptJob;
 use super::source_edit::{NewDocumentInput, ReviewEdit, confirm, new_document_project, apply_review};
 use super::source_job::SourceJob;
@@ -46,6 +46,7 @@ async fn source_trial() {
             path: path.into(),
             language,
             target_minutes: 1,
+            aspect: Aspect::Wide,
             style_preset: "soft_2d_explainer".into(),
             audience: Audience::General,
             focus: String::new(),

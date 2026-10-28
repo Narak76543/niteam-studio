@@ -73,6 +73,7 @@ export function ExportDialog({ project, settings, totalMs, resume, onClose, onFi
         projectId,
         project.language,
         project.render.resolution,
+        project.aspect,
         project.render.subtitle_highlight,
         (done, total) => setPhase({ kind: "subs", done, total }),
         () => cancelSubs.current,
@@ -133,7 +134,7 @@ export function ExportDialog({ project, settings, totalMs, resume, onClose, onFi
           <dt>{t("render.title")}</dt>
           <dd lang={project.language}>{project.title}</dd>
           <dt>{t("render.resolution")}</dt>
-          <dd>1920 × 1080 · 30 fps · H.264 / AAC</dd>
+          <dd>{project.aspect === "9:16" ? "1080 × 1920" : project.render.resolution === "720p" ? "1280 × 720" : "1920 × 1080"} · 30 fps · H.264 / AAC</dd>
           <dt>{t("render.length")}</dt>
           <dd>{formatTime(totalMs)}</dd>
           <dt>{t("render.encoder")}</dt>

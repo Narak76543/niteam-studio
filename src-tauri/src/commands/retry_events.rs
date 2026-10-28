@@ -39,6 +39,10 @@ pub fn retry_hooks(
                     notice.error,
                     notice.model
                 ),
+                RetryReason::InvalidReply => format!(
+                    "{} returned an invalid reply ({}); repair step {}/{}",
+                    notice.model, notice.error, notice.attempt, notice.max_attempts
+                ),
                 _ => format!(
                     "{} attempt {}/{} failed: {}; retrying in {} ms",
                     notice.model,

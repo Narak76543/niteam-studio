@@ -23,6 +23,7 @@ use crate::images::generate_with_retry;
 use crate::images::plan::{ScenePlan, plan_all};
 use crate::images::postprocess::{self, Processed};
 use crate::images::provider::{Aspect, ImageError, ImageProvider, ImageRequest, ProviderId};
+use crate::render::clip::Frame;
 use crate::storage::log::LogFile;
 use crate::storage::{AppPaths, StorageError, atomic};
 
@@ -71,6 +72,8 @@ enum Outcome {
 struct Ctx {
     project_id: String,
     resolution: String,
+    /// Output frame from the project's aspect (pan/thumb sizes derive from it).
+    frame: (u32, u32),
     store: Arc<ProjectStore>,
     paths: AppPaths,
     providers: Providers,
@@ -115,7 +118,7 @@ impl ImageJob {
             });
         };
         let prepared = self.prepare(project_id, only.as_deref()).await;
-        let (resolution, mut tasks) = match prepared {
+        let (resolution, frame, mut tasks) = match prepared {
             Ok(v) => v,
             Err(e) => {
                 self.log
@@ -164,6 +167,7 @@ impl ImageJob {
         let ctx = Arc::new(Ctx {
             project_id: project_id.to_owned(),
             resolution,
+            frame,
             store: self.store,
             paths: self.paths,
             providers: self.providers,
@@ -238,7 +242,7 @@ impl ImageJob {
         &self,
         project_id: &str,
         only: Option<&[String]>,
-    ) -> Result<(String, Vec<Task>), ProjectError> {
+    ) -> Result<(String, (u32, u32), Vec<Task>), ProjectError> {
         let paths = self.paths.clone();
         let settings = self.settings.clone();
         let (project, tasks) = self
@@ -267,7 +271,8 @@ impl ImageJob {
                 Ok(plan_tasks(p, &paths, only))
             })
             .await?;
-        Ok((project.render.resolution.clone(), tasks))
+        let frame = Frame::for_project_settings(&project);
+        Ok((project.render.resolution.clone(), (frame.width, frame.height), tasks))
     }
 }
 
@@ -494,10 +499,10 @@ impl Ctx {
         raw: Vec<u8>,
         mime: &str,
     ) -> Result<(), String> {
-        let resolution = self.resolution.clone();
         let raw_for_cpu = raw.clone();
+        let frame = self.frame;
         let processed: Processed =
-            tokio::task::spawn_blocking(move || postprocess::process(&raw_for_cpu, &resolution))
+            tokio::task::spawn_blocking(move || postprocess::process(&raw_for_cpu, frame))
                 .await
                 .map_err(|e| e.to_string())?
                 .map_err(|e| e.to_string())?;

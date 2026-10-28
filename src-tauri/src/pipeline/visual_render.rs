@@ -9,7 +9,7 @@ use image::imageops::FilterType;
 
 use super::hashing::sha;
 use super::project::{AssetStatus, Project, Scene, VisualKind};
-use crate::images::postprocess::crop_16x9_at;
+use crate::images::postprocess::crop_for_at;
 use crate::render::clip::{Frame, Input, Motion, Pan};
 use crate::stock::Media;
 use crate::stock::assets::AssetRegistry;
@@ -48,7 +48,7 @@ fn even(v: f32) -> u32 {
 }
 
 fn photo_prep(scene_id: &str, src: &str, (w, h): (u32, u32), focus: [f32; 2], frame: Frame, zoom: f32, resolution: &str) -> PhotoPrep {
-    let crop = crop_16x9_at(w, h, focus);
+    let crop = crop_for_at(w, h, focus, (frame.width, frame.height));
     let size = (even(frame.width as f32 * zoom), even(frame.height as f32 * zoom));
     let key = sha(&["photo", src, &format!("{crop:?}"), &format!("{size:?}")]);
     PhotoPrep { src: src.to_owned(), crop, size, out: format!("scenes/{scene_id}/photo_{resolution}_{}.jpg", &key[..12]) }
@@ -59,7 +59,7 @@ pub fn plan(p: &Project, s: &Scene, index: usize, dir: &Path, registry: &AssetRe
     if s.needs_ai_image() {
         return ScenePlan::AiImage;
     }
-    let frame = Frame::for_resolution(&p.render.resolution);
+    let frame = Frame::for_project_settings(p);
     let res = p.render.resolution.as_str();
     let v = &s.visual;
     let focus = v.focus.unwrap_or([0.5, 0.5]);
@@ -83,7 +83,7 @@ pub fn plan(p: &Project, s: &Scene, index: usize, dir: &Path, registry: &AssetRe
                 return ScenePlan::Missing("photo or clip");
             };
             if r.media == Media::Video {
-                let hash = sha(&["video", VISUAL_CLIP_VERSION, &r.file, &r.sha256, &format!("{focus:?}")]);
+                let hash = sha(&["video", VISUAL_CLIP_VERSION, &r.file, &r.sha256, &format!("{focus:?}"), &format!("{}x{}", frame.width, frame.height)]);
                 return ScenePlan::Ready { input: Input::Video { path: r.file.clone(), focus }, prep: None, hash };
             }
             let zoom = max_zoom(r.width, r.height, frame.width);
@@ -107,7 +107,7 @@ pub fn preview(p: &Project, s: &Scene, index: usize, dir: &Path, registry: &Asse
             let r = s.visual.asset.as_deref().and_then(|id| registry.get(id))?;
             let poster = r.poster.clone()?;
             let (w, h) = image::image_dimensions(dir.join(&poster)).ok()?;
-            let frame = Frame::for_resolution(&p.render.resolution);
+    let frame = Frame::for_project_settings(p);
             let prep = photo_prep(&s.id, &poster, (w, h), focus, frame, 1.0, &p.render.resolution);
             Some((prep.out.clone(), Some(prep), Motion::Still))
         }

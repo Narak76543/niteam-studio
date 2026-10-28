@@ -37,6 +37,7 @@ import type {
   VisualBible,
   KeyTestOutcome,
   Language,
+  Aspect,
   SceneProgress,
   VoiceCatalog,
   VoiceDefaults,
@@ -66,6 +67,8 @@ export const api = {
   projectList: () => invoke<ProjectSummary[]>("project_list"),
   projectCreate: (input: NewProjectInput) => invoke<Project>("project_create", { input }),
   projectGet: (projectId: string) => invoke<Project>("project_get", { projectId }),
+  projectSetAspect: (projectId: string, aspect: Aspect) =>
+    invoke<Project>("project_set_aspect", { projectId, aspect }),
   projectDelete: (projectId: string) => invoke<null>("project_delete", { projectId }),
 
   // script

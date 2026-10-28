@@ -4,20 +4,13 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { IconButton } from "../Button";
 import { useI18n } from "../../i18n/context";
 import { PreviewAssets } from "../../lib/previewAssets";
+import { stageFor } from "../../lib/previewStage";
 import { bandFor, ensureFont, paintCue } from "../../lib/subtitleCanvas";
 import { stateAt, type SubtitleState } from "../../lib/subtitleStates";
 import { formatTime, sceneIndexAt, totalMs } from "../../lib/timeline";
-import type { TimelineScene } from "../../lib/types";
+import type { Aspect, TimelineScene } from "../../lib/types";
 
-/** Preview canvas size; the export is 1920×1080. */
-const W = 1280;
-const H = 720;
-const SCALE = W / 1920;
-/** Gap under the subtitle band (24 px at 1080p, `render::clip::Frame`). */
-const SUBS_MARGIN = 24 * SCALE;
-/** Crop share of the pan-size image (1920 of 2150 px, 1080 of 1210 px). */
-const CROP_W = 1920 / 2150;
-const CROP_H = 1080 / 1210;
+/** Preview long edge; the export is 1920×1080 (16:9) or 1080×1920 (9:16). */
 const EMIT_MS = 66;
 const ICON = { size: 18, strokeWidth: 1.5 } as const;
 
@@ -35,6 +28,7 @@ interface Props {
   states: SubtitleState[][];
   highlight: string | null;
   resolution: string;
+  aspect: Aspect;
   audioMime: string;
   apiRef: RefObject<PlayerApi | null>;
   onTime: (ms: number) => void;
@@ -57,19 +51,22 @@ function cropOrigin(pan: TimelineScene["pan"], iw: number, ih: number, cw: numbe
 }
 
 /** CapCut-style preview: image pan + voice + subtitles with the word tracker, drawn live. */
-export function PreviewPlayer({ projectId, scenes, states, highlight, resolution, audioMime, apiRef, onTime }: Props) {
+export function PreviewPlayer({ projectId, scenes, states, highlight, resolution, aspect, audioMime, apiRef, onTime }: Props) {
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const assetsRef = useRef<PreviewAssets | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const live = useRef({ scenes, states, highlight, resolution, onTime });
+  const live = useRef({ scenes, states, highlight, resolution, aspect, onTime });
   const clock = useRef({ t: 0, playing: false, lastNow: 0, synced: -1, dirty: true, buffering: false });
   const [playing, setPlaying] = useState(false);
   const [buffering, setBuffering] = useState(false);
   const [time, setTime] = useState(0);
+  const stage = stageFor(aspect);
+  const W = stage.w;
+  const H = stage.h;
 
   useEffect(() => {
-    live.current = { scenes, states, highlight, resolution, onTime };
+    live.current = { scenes, states, highlight, resolution, aspect, onTime };
     clock.current.dirty = true;
   });
 
@@ -80,7 +77,7 @@ export function PreviewPlayer({ projectId, scenes, states, highlight, resolution
     const audio = new Audio();
     assetsRef.current = assets;
     audioRef.current = audio;
-    void ensureFont("ក", bandFor("1080p", SCALE))
+    void ensureFont("ក", bandFor("1080p", aspect, stage.scale))
       .catch(() => undefined)
       .then(() => {
         clock.current.dirty = true;
@@ -90,7 +87,8 @@ export function PreviewPlayer({ projectId, scenes, states, highlight, resolution
       audio.removeAttribute("src");
       assets.dispose();
     };
-  }, [projectId, audioMime]);
+    }, [projectId, audioMime, aspect, stage.scale]);
+
 
   // Imperative controls for the page (timeline seek, keyboard).
   useEffect(() => {
@@ -134,7 +132,8 @@ export function PreviewPlayer({ projectId, scenes, states, highlight, resolution
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       const c = clock.current;
-      const { scenes: list, states: subs, highlight: hl, resolution: res } = live.current;
+      const { scenes: list, states: subs, highlight: hl, resolution: res, aspect: asp } = live.current;
+      const st = stageFor(asp);
       const assets = assetsRef.current;
       const audio = audioRef.current;
       const canvas = canvasRef.current;
@@ -209,8 +208,8 @@ export function PreviewPlayer({ projectId, scenes, states, highlight, resolution
           const sh = img.height / z;
           ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, W, H);
         } else {
-          const cw = img.width * CROP_W;
-          const ch = img.height * CROP_H;
+          const cw = img.width * st.cropW;
+          const ch = img.height * st.cropH;
           const [sx, sy] = cropOrigin(cur.pan, img.width, img.height, cw, ch, p);
           ctx.drawImage(img, sx ?? 0, sy ?? 0, cw, ch, 0, 0, W, H);
         }
@@ -221,10 +220,10 @@ export function PreviewPlayer({ projectId, scenes, states, highlight, resolution
         ctx.textBaseline = "middle";
         ctx.fillText(cur.image_ready ? "…" : t("editor.noImage", { n: cur.order }), W / 2, H / 2);
       }
-      const st = stateAt(subs[list.indexOf(cur)] ?? [], local);
-      if (st) {
-        const band = bandFor(res, SCALE);
-        paintCue(ctx, st.lines, st.active, { highlight: hl }, band, H - band.height - SUBS_MARGIN);
+      const st2 = stateAt(subs[list.indexOf(cur)] ?? [], local);
+      if (st2) {
+        const band = bandFor(res, asp, st.scale);
+        paintCue(ctx, st2.lines, st2.active, { highlight: hl }, band, H - band.height - 24 * st.scale);
       }
       if (now - lastEmit > EMIT_MS || !c.playing) {
         lastEmit = now;
@@ -234,12 +233,12 @@ export function PreviewPlayer({ projectId, scenes, states, highlight, resolution
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [t]);
+  }, [t, W, H]);
 
   const total = totalMs(scenes);
   return (
-    <div className="player">
-      <div className="player__stage">
+    <div className={stage.vertical ? "player player--vertical" : "player"}>
+      <div className={`player__stage${stage.vertical ? " player__stage--vertical" : ""}`}>
         <canvas ref={canvasRef} width={W} height={H} className="player__canvas" aria-label={t("editor.preview")} />
         {buffering && (
           <div className="player__buffer" aria-live="polite">
@@ -264,7 +263,7 @@ export function PreviewPlayer({ projectId, scenes, states, highlight, resolution
           </button>
           <IconButton label={t("editor.nextScene")} icon={<ChevronLast {...ICON} />} onClick={() => apiRef.current?.stepScene(1)} />
         </div>
-        <span className="player__time t-small t-muted">1080p · 30 fps</span>
+        <span className="player__time t-small t-muted">{aspect === "9:16" ? "1080×1920" : resolution === "720p" ? "720p" : "1080p"} · 30 fps</span>
       </div>
     </div>
   );

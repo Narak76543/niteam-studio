@@ -36,9 +36,9 @@ pub struct DrawTask {
 pub fn draw_hash(p: &Project, s: &Scene) -> Option<String> {
     let res = p.render.resolution.as_str();
     match (s.visual.kind, &s.visual.diagram, &s.visual.code) {
-        (VisualKind::Diagram, Some(d), _) => Some(sha(&["diagram", DRAW_VERSION, &d.mermaid, res])),
+        (VisualKind::Diagram, Some(d), _) => Some(sha(&["diagram", DRAW_VERSION, &d.mermaid, res, p.aspect.as_str()])),
         (VisualKind::Code, _, Some(c)) => {
-            Some(sha(&["code", DRAW_VERSION, &c.language, &c.text, &c.terminal.to_string(), &c.type_out.to_string(), res]))
+            Some(sha(&["code", DRAW_VERSION, &c.language, &c.text, &c.terminal.to_string(), &c.type_out.to_string(), res, p.aspect.as_str()]))
         }
         _ => None,
     }
@@ -46,7 +46,7 @@ pub fn draw_hash(p: &Project, s: &Scene) -> Option<String> {
 
 /// Scenes whose picture is missing or outdated (failed ones too, so a fixed text is redrawn).
 pub fn plan(p: &Project, dir: &Path) -> Vec<DrawTask> {
-    let frame = Frame::for_resolution(&p.render.resolution);
+    let frame = Frame::for_project_settings(p);
     p.scenes
         .iter()
         .filter_map(|s| {
@@ -100,7 +100,7 @@ pub fn save(p: &Project, dir: &Path, scene_id: &str, hash: &str, png: &[u8], fra
     if draw_hash(p, scene).as_deref() != Some(hash) {
         return Err(DrawError::Outdated);
     }
-    let frame = Frame::for_resolution(&p.render.resolution);
+    let frame = Frame::for_project_settings(p);
     let (w, h) = postprocess::dimensions(png).ok_or_else(|| DrawError::Image("not a PNG".into()))?;
     if (w, h) != (frame.width, frame.height) {
         return Err(DrawError::WrongSize(w, h));
@@ -111,7 +111,8 @@ pub fn save(p: &Project, dir: &Path, scene_id: &str, hash: &str, png: &[u8], fra
             return Err(DrawError::WrongSize(size.0, size.1));
         }
     }
-    let thumb = postprocess::thumb_at(png, [0.5, 0.5]).map_err(|e| DrawError::Image(e.to_string()))?;
+    let thumb = postprocess::thumb_at(png, [0.5, 0.5], (frame.width, frame.height))
+        .map_err(|e| DrawError::Image(e.to_string()))?;
     let pic = format!("scenes/{scene_id}/visual.png");
     let thumb_rel = format!("scenes/{scene_id}/visual_thumb.jpg");
     atomic::write_bytes(&dir.join(&pic), png)?;

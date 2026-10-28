@@ -7,11 +7,15 @@
 //! Clips are Matroska with H.264 + PCM audio: identical parameters for every clip, and no AAC
 //! priming gaps, so the concat step can join them seamlessly (audio is encoded once, there).
 
+use crate::pipeline::project::{Aspect, Project};
+
 /// Silence after each scene's voice so scenes don't run into each other.
 pub const TAIL_PAD_MS: u64 = 250;
 pub const FPS: u32 = 30;
 
-/// Output frame and subtitle band for a resolution.
+/// Output frame and subtitle band for a resolution + aspect. The one source of frame,
+/// subtitle-band and margin sizes (post-process pan sizes derive from it, 03 Step 6a /
+/// the new 03 "Aspect" section).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Frame {
     pub width: u32,
@@ -23,12 +27,19 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn for_resolution(resolution: &str) -> Self {
-        if resolution == "720p" {
-            Self { width: 1280, height: 720, subs_height: 160, subs_margin: 16 }
-        } else {
-            Self { width: 1920, height: 1080, subs_height: 240, subs_margin: 24 }
+    /// `Aspect::Vertical` (9:16) is only resolved at 1080p (export stays 1080×1920;
+    /// 720p remains a 16:9-only option, 2a decision 3).
+    pub fn for_project(aspect: Aspect, resolution: &str) -> Self {
+        match (aspect, resolution) {
+            (Aspect::Vertical, _) => Self { width: 1080, height: 1920, subs_height: 240, subs_margin: 24 },
+            (_, "720p") => Self { width: 1280, height: 720, subs_height: 160, subs_margin: 16 },
+            _ => Self { width: 1920, height: 1080, subs_height: 240, subs_margin: 24 },
         }
+    }
+
+    /// The project's frame from its stored settings.
+    pub fn for_project_settings(p: &Project) -> Self {
+        Self::for_project(p.aspect, &p.render.resolution)
     }
 
     pub fn subs_y(self) -> u32 {
@@ -216,7 +227,7 @@ mod tests {
             audio: "scenes/s001/voice.mp3".into(),
             voice_ms: 6150,
             subs_track: subs.then(|| "scenes/s001/subs/track.ffconcat".to_owned()),
-            frame: Frame::for_resolution("1080p"),
+            frame: Frame::for_project(Aspect::Wide, "1080p"),
             encoder_args: vec!["-c:v".into(), "libx264".into()],
             output: "scenes/s001/clip.tmp.mkv".into(),
         }
@@ -350,7 +361,7 @@ mod tests {
                 audio: "voice.wav".into(),
                 voice_ms: 2_700,
                 subs_track: None,
-                frame: Frame::for_resolution("1080p"),
+                frame: Frame::for_project(Aspect::Wide, "1080p"),
                 encoder_args: vec!["-c:v".into(), "libx264".into(), "-preset".into(), "veryfast".into()],
                 output: format!("{name}.mkv"),
             };
@@ -365,9 +376,9 @@ mod tests {
 
     #[test]
     fn subtitle_band_fits_the_frame() {
-        let f = Frame::for_resolution("1080p");
+        let f = Frame::for_project(Aspect::Wide, "1080p");
         assert_eq!(f.subs_y(), 816);
-        let f = Frame::for_resolution("720p");
+        let f = Frame::for_project(Aspect::Wide, "720p");
         assert_eq!((f.width, f.height, f.subs_y()), (1280, 720, 544));
     }
 }

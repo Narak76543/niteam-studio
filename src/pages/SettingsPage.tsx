@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp, ExternalLink, FolderOpen, KeyRound, Plus, X } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "../components/Badge";
@@ -49,6 +50,13 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props
   const [confirmClear, setConfirmClear] = useState(false);
   const [models, setModels] = useState<ModelSettings>(settings.models);
   const [retry, setRetry] = useState<{ notice: GeminiRetry; at: number } | null>(null);
+  const [appVersion, setAppVersion] = useState<string>("");
+
+  useEffect(() => {
+    void getVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion(""));
+  }, []);
 
   useEffect(() => {
     const unlisten = onGeminiRetry((r) => {
@@ -388,6 +396,19 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props
                 </Button>
               </div>
             </form>
+          </div>
+
+          {/* About */}
+          <div className="settings-row">
+            <div className="settings-row__intro">
+              <h2 className="t-h3">{t("settings.about.title")}</h2>
+              <p className="t-small">{t("settings.about.body")}</p>
+            </div>
+            <div className="settings-row__control">
+              <span className="t-small t-muted">
+                {t("settings.about.version", { version: appVersion || "—" })}
+              </span>
+            </div>
           </div>
         </div>
       </div>

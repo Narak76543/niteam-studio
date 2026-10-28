@@ -94,12 +94,15 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
 
   const lang = project?.language ?? "km";
   const highlight = project?.render.subtitle_highlight ?? null;
+  const aspect = project?.aspect ?? "16:9";
   const states = useMemo(
     () =>
       scenes.map((sc) =>
-        sc.voice_ready ? subtitleStates({ narration: sc.narration, duration_ms: sc.duration_ms, words: sc.words }, lang, highlight !== null) : [],
+        sc.voice_ready
+          ? subtitleStates({ narration: sc.narration, duration_ms: sc.duration_ms, words: sc.words }, lang, highlight !== null, aspect)
+          : [],
       ),
-    [scenes, lang, highlight],
+    [scenes, lang, highlight, aspect],
   );
   const total = totalMs(scenes);
   const onFinished = useCallback(() => void reload(), [reload]);
@@ -174,6 +177,7 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
             states={states}
             highlight={highlight}
             resolution={project.render.resolution}
+            aspect={project.aspect}
             audioMime={project.voice.engine === "edge" ? "audio/mpeg" : "audio/wav"}
             apiRef={player}
             onTime={setTime}

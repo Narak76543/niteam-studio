@@ -1,6 +1,10 @@
 // Mirrors the Rust serde types (src-tauri/src/**). Field names are snake_case on the wire.
 
 export type Language = "km" | "en";
+
+/** Output frame aspect; vertical projects export at 1080×1920. */
+export type Aspect = "16:9" | "9:16";
+export const ASPECTS: readonly Aspect[] = ["16:9", "9:16"];
 export type Theme = "light" | "dark";
 
 export type ProjectStatus =
@@ -360,7 +364,7 @@ export interface KeyTestOutcome {
   error: string | null;
 }
 
-export type RetryReason = "busy" | "rate_limited" | "network" | "next_model";
+export type RetryReason = "busy" | "rate_limited" | "network" | "next_model" | "invalid_reply";
 
 /** Payload of the `gemini-retry` event. */
 export interface GeminiRetry {
@@ -652,6 +656,8 @@ export interface Project {
   topic: string;
   language: Language;
   target_minutes: number;
+  /** Frame aspect: "16:9" (default) or "9:16" vertical (1080×1920 export). */
+  aspect: Aspect;
   style: Style;
   voice: VoiceSettings;
   status: ProjectStatus;
@@ -740,6 +746,7 @@ export interface NewDocumentInput {
   path: string;
   language: Language;
   target_minutes: number;
+  aspect: Aspect;
   style_preset: string;
   audience: Audience;
   focus: string;
@@ -770,6 +777,7 @@ export interface ProjectSummary {
   topic: string;
   language: Language;
   target_minutes: number;
+  aspect: Aspect;
   style_preset: string;
   status: ProjectStatus;
   scene_count: number;
@@ -783,6 +791,7 @@ export interface NewProjectInput {
   topic: string;
   language: Language;
   target_minutes: number;
+  aspect: Aspect;
   style_preset: string;
 }
 

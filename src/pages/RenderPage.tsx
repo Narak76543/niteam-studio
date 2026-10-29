@@ -8,6 +8,7 @@ import { PreviewPlayer, type PlayerApi } from "../components/editor/PreviewPlaye
 import { SubtitleStylePanel } from "../components/editor/SubtitleStylePanel";
 import { Timeline } from "../components/editor/Timeline";
 import { Notice } from "../components/Notice";
+import { PageSkeleton } from "../components/PageSkeleton";
 import { useToast } from "../components/toast";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage } from "../lib/api";
@@ -122,13 +123,7 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
       </div>
     );
   }
-  if (!project) {
-    return (
-      <div className="page">
-        <p className="t-small">{t("common.loading")}</p>
-      </div>
-    );
-  }
+  if (!project) return <PageSkeleton layout="editor" />;
 
   const voicesDone = scenes.filter((s) => s.voice_ready).length;
   const imagesDone = scenes.filter((s) => s.image_ready).length;

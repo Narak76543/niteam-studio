@@ -11,8 +11,11 @@ export function Stepper({ steps, current }: { steps: string[]; current: number }
             aria-current={i === current ? "step" : undefined}
           >
             <span className="stepper__bar" />
-            <span className="t-micro">
-              {i + 1}. {label}
+            <span className="stepper__label t-micro">
+              <span className="stepper__num" aria-hidden="true">
+                {i + 1}
+              </span>
+              {label}
             </span>
           </li>
         );

@@ -30,6 +30,20 @@ interface Props {
   searchToken: number;
 }
 
+/** Status (only when it needs attention) and aspect drawn over a project cover. */
+function CardOverlay({ project }: { project: ProjectSummary }) {
+  return (
+    <>
+      {project.status !== "done" && (
+        <span className="thumb__badge">
+          <ProjectStatusBadge status={project.status} />
+        </span>
+      )}
+      <span className="thumb__aspect t-micro">{project.aspect}</span>
+    </>
+  );
+}
+
 export function ProjectsPage({ projects, hasKey, navigate, onChanged, searchToken }: Props) {
   const { t, lang } = useI18n();
   const toast = useToast();
@@ -124,6 +138,7 @@ export function ProjectsPage({ projects, hasKey, navigate, onChanged, searchToke
         <section className="section">
           <div className="section__header">
             <h2 className="t-h2">{t("projects.recent")}</h2>
+            <span className="section__count t-small">{projects.length}</span>
           </div>
           {filtered.length === 0 ? (
             <p className="t-small">{t("projects.noMatch", { q: query })}</p>
@@ -131,49 +146,44 @@ export function ProjectsPage({ projects, hasKey, navigate, onChanged, searchToke
             <div className="grid">
               {filtered.map((p) => (
                 <article key={p.id} className="feature-card project-card">
-                  <div className="feature-card__inner">
-                    <button
-                      className="project-card__open"
-                      onClick={() =>
-                        navigate({ name: p.status === "script_draft" ? "script" : "scenes", projectId: p.id })
-                      }
-                    >
-                      {p.cover_scene ? (
-                        <SceneThumb projectId={p.id} sceneId={p.cover_scene} version={p.cover_version} alt="">
-                          <span className="thumb__badge">
-                            <ProjectStatusBadge status={p.status} />
-                          </span>
-                        </SceneThumb>
-                      ) : (
-                        <div className="thumb">
-                          <Film size={24} strokeWidth={1.5} aria-hidden="true" />
-                          <span className="thumb__badge">
-                            <ProjectStatusBadge status={p.status} />
-                          </span>
-                        </div>
-                      )}
+                  <button
+                    className="project-card__open"
+                    onClick={() =>
+                      navigate({ name: p.status === "script_draft" ? "script" : "scenes", projectId: p.id })
+                    }
+                  >
+                    {p.cover_scene ? (
+                      <SceneThumb projectId={p.id} sceneId={p.cover_scene} version={p.cover_version} alt="">
+                        <CardOverlay project={p} />
+                      </SceneThumb>
+                    ) : (
+                      <div className="thumb">
+                        <Film size={24} strokeWidth={1.5} aria-hidden="true" />
+                        <CardOverlay project={p} />
+                      </div>
+                    )}
+                    <span className="project-card__body">
                       <h3 className="t-h3 project-card__title" lang={p.language}>
                         {p.title}
                       </h3>
-                      <p className="t-small">
+                      <span className="project-card__meta t-small">
                         {t("script.length", {
                           minutes: p.target_minutes,
                           scenes: p.scene_count,
                           lang: t(`lang.${p.language}`),
-                        })}{" "}
-                        · <span className="badge">{p.aspect}</span>
-                      </p>
-                    </button>
-                    <div className="project-card__footer">
-                      <span className="t-small">
+                        })}
+                      </span>
+                      <span className="project-card__footer t-micro">
                         {t("projects.updated", { date: formatDate(p.updated_at, lang) })}
                       </span>
-                      <IconButton
-                        label={t("projects.delete")}
-                        icon={<Trash2 size={16} strokeWidth={1.5} />}
-                        onClick={() => setToDelete(p)}
-                      />
-                    </div>
+                    </span>
+                  </button>
+                  <div className="project-card__delete">
+                    <IconButton
+                      label={t("projects.delete")}
+                      icon={<Trash2 size={15} strokeWidth={1.75} />}
+                      onClick={() => setToDelete(p)}
+                    />
                   </div>
                 </article>
               ))}

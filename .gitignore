@@ -33,3 +33,9 @@ scratchpad/
 scratch/
 test-output/
 *.mp4
+
+# Release output (scripts/release.ps1)
+release/
+
+# Per-release notes (docs/RELEASING.md step 3)
+notes.md

@@ -1,13 +1,17 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { useCallback, useEffect, useState } from "react";
 
+import appIcon from "./assets/brand/app-icon.png";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/ToastProvider";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { detectLanguage } from "./i18n/context";
 import { I18nProvider } from "./i18n/I18nProvider";
 import { api, errorMessage } from "./lib/api";
 import type { Route } from "./lib/route";
 import { settingsPatch } from "./lib/settingsPatch";
 import { useTheme } from "./lib/theme";
+import { useUpdater } from "./lib/updater";
 import type { Language, ProjectSummary, Settings } from "./lib/types";
 import { NewProjectPage } from "./pages/NewProjectPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
@@ -17,6 +21,18 @@ import { ScriptPage } from "./pages/ScriptPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 
+/** Shown while settings load at start-up (usually a fraction of a second). */
+function BootSplash() {
+  return (
+    <div className="boot" role="status" aria-busy="true">
+      <img className="boot__logo" src={appIcon} alt="" />
+      <span className="boot__bar" aria-hidden="true">
+        <span />
+      </span>
+    </div>
+  );
+}
+
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -24,6 +40,14 @@ export default function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [hasKey, setHasKey] = useState(false);
   const [searchToken, setSearchToken] = useState(0);
+  const [appVersion, setAppVersion] = useState("");
+  const updater = useUpdater();
+
+  useEffect(() => {
+    void getVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion(""));
+  }, []);
 
   const refreshProjects = useCallback(async () => {
     try {
@@ -114,7 +138,7 @@ export default function App() {
       </I18nProvider>
     );
   }
-  if (!settings) return null;
+  if (!settings) return <BootSplash />;
 
   return (
     <I18nProvider lang={lang}>
@@ -130,6 +154,7 @@ export default function App() {
             }}
             onToggleLanguage={toggleLanguage}
             compact={route.name === "render"}
+            updater={updater}
           />
           <main className="shell">
             {route.name === "projects" && (
@@ -159,9 +184,16 @@ export default function App() {
               <RenderPage key={route.projectId} projectId={route.projectId} navigate={navigate} />
             )}
             {route.name === "settings" && (
-              <SettingsPage settings={settings} onSave={saveSettings} onKeyChanged={refreshKey} onReload={reloadSettings} />
+              <SettingsPage
+                settings={settings}
+                onSave={saveSettings}
+                onKeyChanged={refreshKey}
+                onReload={reloadSettings}
+                updater={updater}
+              />
             )}
           </main>
+          {updater.dialogOpen && updater.update && <UpdateDialog updater={updater} currentVersion={appVersion} />}
         </div>
       </ToastProvider>
     </I18nProvider>

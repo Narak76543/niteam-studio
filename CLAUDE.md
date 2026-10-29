@@ -21,6 +21,8 @@ AI-generated illustrations with slow pan motion, burned-in subtitles and backgro
    as fallback), Source summary review, free-tier quota pause, page refs, credit line
 10. `docs/11-real-world-visuals.md` — "Real-world Tech Explainer": stock photos/videos
    (Pexels, Pixabay, Openverse, Commons), licences, ranking, cache, diagrams, code scenes
+12. `docs/12-updates.md` — in-app updates (Tauri updater, GitHub Releases `latest.json`,
+   signing key, `scripts/release.ps1`)
 
 Only work on the phase marked **CURRENT** in `docs/05-roadmap.md`. When it is done,
 stop and ask the human to test. Do not start the next phase on your own.
@@ -89,6 +91,7 @@ powershell -ExecutionPolicy Bypass -File scripts/fetch-sdcpp.ps1    # once: loca
 powershell -ExecutionPolicy Bypass -File scripts/fetch-audiocpp.ps1  # once: local voice engine
 npm run tauri dev      # run app in dev
 npm run tauri build    # Windows installer
+npm run release [-- patch|minor|major|X.Y.Z] [-NotesFile notes.md]  # full release: checks, bump, signed build, tag, GitHub upload (docs/RELEASING.md)
 cargo test --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 npm run lint && npm run typecheck

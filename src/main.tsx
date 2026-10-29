@@ -5,6 +5,7 @@ import "@fontsource-variable/jetbrains-mono";
 import "./styles/fonts.css";
 import "./styles/tokens.css";
 import "./styles/base.css";
+import "./styles/motion.css";
 import App from "./App";
 
 const root = document.getElementById("root");

@@ -6,6 +6,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 
 import type {
   DrawTask,
@@ -298,6 +300,19 @@ export function onRenderProgress(cb: (p: RenderProgress) => void): Promise<Unlis
 export function onGeminiRetry(cb: (r: GeminiRetry) => void): Promise<UnlistenFn> {
   return listen<GeminiRetry>("gemini-retry", (e) => cb(e.payload));
 }
+
+/** Asks the GitHub Releases endpoint (tauri.conf.json → plugins.updater) for a newer signed build. */
+export function updateCheck(): Promise<Update | null> {
+  return check({ timeout: 15_000 });
+}
+
+/** Downloads, verifies and runs the installer; on Windows the app exits during install. */
+export async function updateInstall(update: Update, onEvent: (e: DownloadEvent) => void): Promise<void> {
+  await update.downloadAndInstall(onEvent);
+  await relaunch();
+}
+
+export type { Update };
 
 /** Tauri rejects with the command's error string; normalize anything else. */
 export function errorMessage(err: unknown): string {

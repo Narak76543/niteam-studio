@@ -660,7 +660,7 @@ pub async fn request_json_with<T: DeserializeOwned + Validate>(
     let mut contents = vec![first];
     let (raw, model) = generate_text(client, key, chain, system, &contents, &schema, hooks).await?;
     match parse_reply::<T>(&raw) {
-        Ok(value) => return Ok((value, model)),
+        Ok(value) => Ok((value, model)),
         Err(error) => {
             notify_invalid(hooks, &model, 2, &error);
             contents.push(Content::model(raw));
@@ -668,7 +668,7 @@ pub async fn request_json_with<T: DeserializeOwned + Validate>(
             let (repaired, repair_model) =
                 generate_text(client, key, chain, system, &contents, &schema, hooks).await?;
             match parse_reply::<T>(&repaired) {
-                Ok(value) => return Ok((value, repair_model)),
+                Ok(value) => Ok((value, repair_model)),
                 Err(repair_error) => {
                     // Thai/Lao slips are random per scene: a fresh request on the same fast
                     // model usually passes, and it avoids waiting on a slower model.

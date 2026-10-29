@@ -1,0 +1,289 @@
+/* Motion — docs/06-ui-design.md §5 "Motion". Opacity/transform only (weak laptops: no blur,
+   no layout animation), entrances ≤ 240 ms, loops only while something is loading.
+   Everything here switches off under prefers-reduced-motion (Windows "Animation effects" off). */
+
+:root {
+  --dur-enter: 220ms;
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --stagger: 28ms;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+@keyframes boot-bar {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+/* ---------- entrances ---------- */
+
+/* Every page fades up when you navigate to it (pages remount per route). */
+.page {
+  animation: rise-in var(--dur-enter) var(--ease-out) both;
+}
+
+/* Cards arrive in a quick cascade; only the first 12 wait, the rest come in together. */
+.grid > *,
+.scene-grid > *,
+.shortcuts > * {
+  animation: rise-in var(--dur-enter) var(--ease-out) both;
+}
+.grid > :nth-child(2), .scene-grid > :nth-child(2), .shortcuts > :nth-child(2) { animation-delay: calc(var(--stagger) * 1); }
+.grid > :nth-child(3), .scene-grid > :nth-child(3), .shortcuts > :nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
+.grid > :nth-child(4), .scene-grid > :nth-child(4), .shortcuts > :nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
+.grid > :nth-child(5), .scene-grid > :nth-child(5), .shortcuts > :nth-child(5) { animation-delay: calc(var(--stagger) * 4); }
+.grid > :nth-child(6), .scene-grid > :nth-child(6), .shortcuts > :nth-child(6) { animation-delay: calc(var(--stagger) * 5); }
+.grid > :nth-child(7), .scene-grid > :nth-child(7), .shortcuts > :nth-child(7) { animation-delay: calc(var(--stagger) * 6); }
+.grid > :nth-child(8), .scene-grid > :nth-child(8), .shortcuts > :nth-child(8) { animation-delay: calc(var(--stagger) * 7); }
+.grid > :nth-child(9), .scene-grid > :nth-child(9) { animation-delay: calc(var(--stagger) * 8); }
+.grid > :nth-child(10), .scene-grid > :nth-child(10) { animation-delay: calc(var(--stagger) * 9); }
+.grid > :nth-child(11), .scene-grid > :nth-child(11) { animation-delay: calc(var(--stagger) * 10); }
+.grid > :nth-child(n + 12), .scene-grid > :nth-child(n + 12) { animation-delay: calc(var(--stagger) * 11); }
+
+/* Images fade in when their file arrives instead of popping. */
+.thumb__img {
+  animation: fade-in 240ms var(--ease) both;
+}
+
+/* Things that appear because something changed: status notices, badges over images, the update card. */
+.notice,
+.thumb__badge,
+.thumb__corner {
+  animation: rise-in var(--dur-enter) var(--ease-out) both;
+}
+.update-card {
+  animation: pop-in var(--dur-enter) var(--ease-out) both;
+}
+.toast {
+  animation: slide-in-right var(--dur-enter) var(--ease-out) both;
+}
+.backdrop {
+  animation: fade-in 160ms var(--ease) both;
+}
+
+/* Wizard: each step slides in from the right. */
+.wizard__step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  animation: step-in var(--dur-enter) var(--ease-out) both;
+}
+.stepper__bar {
+  transition: background-color 240ms var(--ease);
+}
+.stepper__num {
+  transition: background-color 240ms var(--ease), border-color 240ms var(--ease), color 240ms var(--ease);
+}
+
+/* ---------- feedback ---------- */
+
+.btn:not(:disabled):active {
+  transform: scale(0.97);
+}
+.btn {
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease), transform 90ms var(--ease);
+}
+.nav-item > svg {
+  transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.nav-item:not([aria-current="page"]):hover > svg {
+  transform: translateX(1px);
+}
+/* Coral dot on the compact "update available" icon gently pulses. */
+.nav-item__dot {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* ---------- loading ---------- */
+
+.skeleton {
+  display: block;
+  border-radius: var(--r-xs);
+  background: var(--bg-inset);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.skeleton--line { height: 12px; width: 100%; }
+.skeleton--title { height: 26px; width: min(420px, 60%); border-radius: var(--r-sm); }
+.skeleton--media { aspect-ratio: 16 / 9; border-radius: 0; }
+.skeleton--row { height: 44px; border-radius: var(--r-sm); }
+.skeleton--block { height: 120px; border-radius: var(--r-md); }
+.skeleton--video { aspect-ratio: 16 / 9; border-radius: var(--r-md); }
+.skeleton--timeline { height: 140px; border-radius: var(--r-md); }
+
+.skeleton-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: var(--s-6);
+  padding-bottom: var(--s-5);
+  border-bottom: 1px solid var(--border);
+}
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding-bottom: var(--s-3);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg-shell);
+}
+.skeleton-card > .skeleton--line {
+  margin: 0 var(--s-3);
+  width: auto;
+}
+.skeleton-split {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) 1fr;
+  gap: var(--s-6);
+}
+.skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.skeleton-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.skeleton-editor__main {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: var(--s-6);
+}
+/* Stagger the pulse so the placeholder shimmers across instead of blinking as one block. */
+.scene-grid > .skeleton-card:nth-child(2n) .skeleton,
+.skeleton-stack > .skeleton:nth-child(2n) {
+  animation-delay: 160ms;
+}
+.scene-grid > .skeleton-card:nth-child(3n) .skeleton,
+.skeleton-stack > .skeleton:nth-child(3n) {
+  animation-delay: 320ms;
+}
+
+/* Start-up splash: app icon breathing over a thin coral bar. */
+.boot {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-5);
+  background: var(--bg-app);
+  animation: fade-in 200ms var(--ease) both;
+}
+.boot__logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  animation: breathe 1.8s ease-in-out infinite;
+}
+.boot__bar {
+  position: relative;
+  width: 120px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--bg-inset);
+}
+.boot__bar > span {
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: boot-bar 1.1s var(--ease) infinite;
+}
+
+/* ---------- reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .page,
+  .grid > *,
+  .scene-grid > *,
+  .shortcuts > *,
+  .thumb__img,
+  .notice,
+  .thumb__badge,
+  .thumb__corner,
+  .update-card,
+  .toast,
+  .backdrop,
+  .wizard__step,
+  .dialog,
+  .boot,
+  .boot__logo,
+  .nav-item__dot {
+    animation: none;
+  }
+  .skeleton {
+    animation-duration: 2.8s;
+  }
+  .btn:not(:disabled):active,
+  .nav-item:not([aria-current="page"]):hover > svg,
+  .project-card:hover .thumb__img {
+    transform: none;
+  }
+}

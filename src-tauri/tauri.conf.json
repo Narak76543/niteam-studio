@@ -26,6 +26,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "publisher": "Nitean Studio",
     "shortDescription": "Narrated explainer videos in Khmer or English",
     "category": "Video",
@@ -52,6 +53,15 @@
       "resources/audiocpp/": "audiocpp/",
       "binaries/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt",
       "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE2ODA3OTc3N0U2OTdFQTgKUldTb2ZtbCtkM21BRmovQjkvRms5OERNQXJhUzZ3UnBDQUptRCtMTGMxL25WOGZjSmVLdy9xVjcK",
+      "endpoints": [
+        "https://github.com/Narak76543/niteam-studio/releases/latest/download/latest.json"
+      ],
+      "windows": { "installMode": "passive" }
     }
   }
 }

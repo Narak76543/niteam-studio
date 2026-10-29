@@ -24,6 +24,7 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorPanel } from "../components/ErrorPanel";
 import { KeepTermsEditor } from "../components/KeepTermsEditor";
 import { Notice } from "../components/Notice";
+import { PageSkeleton } from "../components/PageSkeleton";
 import { PageHeader } from "../components/PageHeader";
 import { SceneThumb } from "../components/SceneThumb";
 import { ScriptPasteDialog } from "../components/ScriptPasteDialog";
@@ -385,13 +386,7 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
       </div>
     );
   }
-  if (!project) {
-    return (
-      <div className="page">
-        <p className="t-small">{t("common.loading")}</p>
-      </div>
-    );
-  }
+  if (!project) return <PageSkeleton layout="split" />;
 
   // "From document": reading and point review come before the script.
   if (project.source && project.source.stage !== "confirmed") {

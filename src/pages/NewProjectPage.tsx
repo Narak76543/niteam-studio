@@ -156,188 +156,191 @@ export function NewProjectPage({ initialPreset, hasKey, navigate }: Props) {
             else setStep(step + 1);
           }}
         >
-          {step === 0 && (
-            <div className="segmented" role="group" aria-label={t("wizard.mode.label")}>
-              {(["topic", "document"] as const).map((m) => (
-                <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
-                  {t(m === "topic" ? "wizard.mode.topic" : "wizard.mode.document")}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {step === 0 && mode === "document" && (
-            <>
-              <div className="field">
-                <span className="field__label">{t("wizard.doc.label")}</span>
-                <div className="row">
-                  <Button icon={<FileUp size={16} strokeWidth={1.5} />} onClick={() => void pickPdf()}>
-                    {pdf ? t("wizard.doc.change") : t("wizard.doc.choose")}
-                  </Button>
-                  {pdf && (
-                    <span className="t-small">
-                      {t("wizard.doc.info", { name: pdf.file_name, pages: pdf.page_count, mb: sizeMb(pdf.size_bytes) })}
-                    </span>
-                  )}
-                </div>
-                {pdfError && <Notice tone="danger">{pdfError}</Notice>}
-                <span className="t-small t-muted">{t("wizard.doc.limits")}</span>
+          <div key={step} className="wizard__step">
+            {step === 0 && (
+              <div className="segmented" role="group" aria-label={t("wizard.mode.label")}>
+                {(["topic", "document"] as const).map((m) => (
+                  <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
+                    {t(m === "topic" ? "wizard.mode.topic" : "wizard.mode.document")}
+                  </button>
+                ))}
               </div>
-              {pdf?.needs_range && (
+            )}
+
+            {step === 0 && mode === "document" && (
+              <>
                 <div className="field">
-                  <span className="field__label">{t("wizard.doc.range", { max: pdf.max_pages })}</span>
+                  <span className="field__label">{t("wizard.doc.label")}</span>
                   <div className="row">
-                    <input
-                      className="input input--number"
-                      type="number"
-                      min={1}
-                      max={pdf.page_count}
-                      aria-label={t("wizard.doc.from")}
-                      value={pageFrom}
-                      onChange={(e) => setPageFrom(Number(e.target.value))}
-                    />
-                    <span>–</span>
-                    <input
-                      className="input input--number"
-                      type="number"
-                      min={1}
-                      max={pdf.page_count}
-                      aria-label={t("wizard.doc.to")}
-                      value={pageTo}
-                      onChange={(e) => setPageTo(Number(e.target.value))}
-                    />
-                    <span className="t-small t-muted">{t("wizard.doc.of", { n: pdf.page_count })}</span>
-                  </div>
-                  {!rangeOk && <Notice tone="warn">{t("wizard.doc.rangeHint", { max: pdf.max_pages })}</Notice>}
-                </div>
-              )}
-              <div className="field">
-                <span className="field__label">{t("wizard.doc.audience")}</span>
-                <div className="segmented" role="group" aria-label={t("wizard.doc.audience")}>
-                  {AUDIENCES.map((a) => (
-                    <button key={a} type="button" aria-pressed={audience === a} onClick={() => setAudience(a)}>
-                      {t(`wizard.audience.${a}`)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <label className="field">
-                <span className="field__label">{t("wizard.doc.focus")}</span>
-                <input
-                  className="input"
-                  maxLength={300}
-                  placeholder={t("wizard.doc.focusPlaceholder")}
-                  value={focus}
-                  onChange={(e) => setFocus(e.target.value)}
-                />
-              </label>
-              <Notice tone="warn">{t("wizard.doc.freeTier")}</Notice>
-            </>
-          )}
-
-          {step === 0 && mode === "topic" && (
-            <>
-              <label className="field">
-                <span className="field__label">{t("wizard.topic.label")}</span>
-                <textarea
-                  className="textarea"
-                  value={topic}
-                  maxLength={500}
-                  autoFocus
-                  placeholder={t("wizard.topic.placeholder")}
-                  onChange={(e) => setTopic(e.target.value)}
-                />
-              </label>
-              <div className="field">
-                <span className="t-small">{t("wizard.topic.examples")}</span>
-                <div className="chips">
-                  {EXAMPLES.map((k) => (
-                    <Button key={k} variant="pill" onClick={() => setTopic(t(k))}>
-                      {t(k)}
+                    <Button icon={<FileUp size={16} strokeWidth={1.5} />} onClick={() => void pickPdf()}>
+                      {pdf ? t("wizard.doc.change") : t("wizard.doc.choose")}
                     </Button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {step === 1 && (
-            <>
-              <div className="field">
-                <span className="field__label">{t("wizard.aspect.label")}</span>
-                <div className="segmented" role="group" aria-label={t("wizard.aspect.label")}>
-                  {ASPECTS.map((a) => (
-                    <button
-                      key={a}
-                      type="button"
-                      aria-pressed={aspect === a}
-                      onClick={() => setAspect(a)}
-                    >
-                      {t(`wizard.aspect.${a === "9:16" ? "tall" : "wide"}`)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="field">
-                <span className="field__label">
-                  {mode === "document" ? t("wizard.doc.language") : t("wizard.language.label")}
-                </span>
-                <div className="segmented" role="group" aria-label={t("wizard.language.label")}>
-                  {LANGUAGES.map((l) => (
-                    <button
-                      key={l}
-                      type="button"
-                      aria-pressed={language === l}
-                      lang={l}
-                      onClick={() => setLanguage(l)}
-                    >
-                      {t(`lang.${l}`)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <label className="field">
-                <span className="field__label">{t("wizard.length.label")}</span>
-                <span className="t-h2">{t("wizard.length.value", { n: minutes })}</span>
-                <input
-                  type="range"
-                  min={MIN_MINUTES}
-                  max={MAX_MINUTES}
-                  step={1}
-                  value={minutes}
-                  onChange={(e) => setMinutes(Number(e.target.value))}
-                />
-                <span className="t-small">
-                  {t("wizard.length.scenes", { n: estimateScenes(minutes) })}
-                </span>
-              </label>
-            </>
-          )}
-
-          {step === 2 && (
-            <>
-              <div className="field">
-                <span className="field__label">{t("wizard.style.label")}</span>
-                <div className="option-grid">
-                  {PRESET_IDS.map((id) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className="option"
-                      aria-pressed={preset === id}
-                      onClick={() => setPreset(id)}
-                    >
-                      <span className="shortcut__art">
-                        <PresetIcon id={id} />
+                    {pdf && (
+                      <span className="t-small">
+                        {t("wizard.doc.info", { name: pdf.file_name, pages: pdf.page_count, mb: sizeMb(pdf.size_bytes) })}
                       </span>
-                      <span className="t-small">{t(presetKey(id))}</span>
-                    </button>
-                  ))}
+                    )}
+                  </div>
+                  {pdfError && <Notice tone="danger">{pdfError}</Notice>}
+                  <span className="t-small t-muted">{t("wizard.doc.limits")}</span>
                 </div>
-              </div>
-              {!hasKey && <Notice tone="warn">{t("wizard.noKey")}</Notice>}
-            </>
-          )}
+                {pdf?.needs_range && (
+                  <div className="field">
+                    <span className="field__label">{t("wizard.doc.range", { max: pdf.max_pages })}</span>
+                    <div className="row">
+                      <input
+                        className="input input--number"
+                        type="number"
+                        min={1}
+                        max={pdf.page_count}
+                        aria-label={t("wizard.doc.from")}
+                        value={pageFrom}
+                        onChange={(e) => setPageFrom(Number(e.target.value))}
+                      />
+                      <span>–</span>
+                      <input
+                        className="input input--number"
+                        type="number"
+                        min={1}
+                        max={pdf.page_count}
+                        aria-label={t("wizard.doc.to")}
+                        value={pageTo}
+                        onChange={(e) => setPageTo(Number(e.target.value))}
+                      />
+                      <span className="t-small t-muted">{t("wizard.doc.of", { n: pdf.page_count })}</span>
+                    </div>
+                    {!rangeOk && <Notice tone="warn">{t("wizard.doc.rangeHint", { max: pdf.max_pages })}</Notice>}
+                  </div>
+                )}
+                <div className="field">
+                  <span className="field__label">{t("wizard.doc.audience")}</span>
+                  <div className="segmented" role="group" aria-label={t("wizard.doc.audience")}>
+                    {AUDIENCES.map((a) => (
+                      <button key={a} type="button" aria-pressed={audience === a} onClick={() => setAudience(a)}>
+                        {t(`wizard.audience.${a}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label className="field">
+                  <span className="field__label">{t("wizard.doc.focus")}</span>
+                  <input
+                    className="input"
+                    maxLength={300}
+                    placeholder={t("wizard.doc.focusPlaceholder")}
+                    value={focus}
+                    onChange={(e) => setFocus(e.target.value)}
+                  />
+                </label>
+                <Notice tone="warn">{t("wizard.doc.freeTier")}</Notice>
+              </>
+            )}
+
+            {step === 0 && mode === "topic" && (
+              <>
+                <label className="field">
+                  <span className="field__label">{t("wizard.topic.label")}</span>
+                  <textarea
+                    className="textarea"
+                    value={topic}
+                    maxLength={500}
+                    autoFocus
+                    placeholder={t("wizard.topic.placeholder")}
+                    onChange={(e) => setTopic(e.target.value)}
+                  />
+                </label>
+                <div className="field">
+                  <span className="t-small">{t("wizard.topic.examples")}</span>
+                  <div className="chips">
+                    {EXAMPLES.map((k) => (
+                      <Button key={k} variant="pill" onClick={() => setTopic(t(k))}>
+                        {t(k)}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {step === 1 && (
+              <>
+                <div className="field">
+                  <span className="field__label">{t("wizard.aspect.label")}</span>
+                  <div className="segmented" role="group" aria-label={t("wizard.aspect.label")}>
+                    {ASPECTS.map((a) => (
+                      <button
+                        key={a}
+                        type="button"
+                        aria-pressed={aspect === a}
+                        onClick={() => setAspect(a)}
+                      >
+                        {t(`wizard.aspect.${a === "9:16" ? "tall" : "wide"}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="field">
+                  <span className="field__label">
+                    {mode === "document" ? t("wizard.doc.language") : t("wizard.language.label")}
+                  </span>
+                  <div className="segmented" role="group" aria-label={t("wizard.language.label")}>
+                    {LANGUAGES.map((l) => (
+                      <button
+                        key={l}
+                        type="button"
+                        aria-pressed={language === l}
+                        lang={l}
+                        onClick={() => setLanguage(l)}
+                      >
+                        {t(`lang.${l}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label className="field">
+                  <span className="field__label">{t("wizard.length.label")}</span>
+                  <span className="t-h2">{t("wizard.length.value", { n: minutes })}</span>
+                  <input
+                    type="range"
+                    min={MIN_MINUTES}
+                    max={MAX_MINUTES}
+                    step={1}
+                    value={minutes}
+                    onChange={(e) => setMinutes(Number(e.target.value))}
+                  />
+                  <span className="t-small">
+                    {t("wizard.length.scenes", { n: estimateScenes(minutes) })}
+                  </span>
+                </label>
+              </>
+            )}
+
+            {step === 2 && (
+              <>
+                <div className="field">
+                  <span className="field__label">{t("wizard.style.label")}</span>
+                  <div className="option-grid">
+                    {PRESET_IDS.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className="option"
+                        aria-pressed={preset === id}
+                        onClick={() => setPreset(id)}
+                      >
+                        <span className="shortcut__art">
+                          <PresetIcon id={id} />
+                        </span>
+                        <span className="t-small">{t(presetKey(id))}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {!hasKey && <Notice tone="warn">{t("wizard.noKey")}</Notice>}
+              </>
+            )}
+
+          </div>
 
           <div className="wizard__footer">
             <Button disabled={step === 0 || busy} onClick={() => setStep(step - 1)}>

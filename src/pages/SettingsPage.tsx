@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ExternalLink, FolderOpen, KeyRound, Plus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, ExternalLink, FolderOpen, KeyRound, LoaderCircle, Plus, RefreshCw, X } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useRef, useState } from "react";
 
@@ -18,6 +18,7 @@ import { VideoSettingsSection } from "../components/VideoSettingsSection";
 import { VoiceProfilesSection } from "../components/VoiceProfilesSection";
 import { VoiceSettingsSection } from "../components/VoiceSettingsSection";
 import { useI18n } from "../i18n/context";
+import type { Updater } from "../lib/updater";
 import { api, errorMessage, onGeminiRetry } from "../lib/api";
 import type { GeminiRetry, Language, ModelSettings, Settings, Theme } from "../lib/types";
 
@@ -38,9 +39,49 @@ interface Props {
   onKeyChanged: () => Promise<void>;
   /** Re-read settings.json (Rust changed it, e.g. after installing a local model). */
   onReload: () => Promise<void>;
+  updater: Updater;
 }
 
-export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props) {
+/** About → "Check for updates" and what the last check found (docs/12-updates.md). */
+function UpdateStatus({ updater }: { updater: Updater }) {
+  const { t } = useI18n();
+  const { state } = updater;
+  const checking = state.kind === "checking";
+  return (
+    <>
+      <div className="row">
+        <Button
+          icon={
+            checking ? (
+              <LoaderCircle size={16} strokeWidth={1.75} className="spin" />
+            ) : (
+              <RefreshCw size={16} strokeWidth={1.75} />
+            )
+          }
+          disabled={checking || state.kind === "downloading" || state.kind === "installing"}
+          onClick={() => void updater.check()}
+        >
+          {checking ? t("update.checking") : t("update.check")}
+        </Button>
+        {state.kind === "upToDate" && <Badge tone="ok" dot>{t("update.upToDate")}</Badge>}
+      </div>
+      {state.kind === "checkFailed" && <Notice tone="warn">{t("update.error")}</Notice>}
+      {updater.update && (
+        <Notice
+          actions={
+            <Button variant="primary" icon={<Download size={16} strokeWidth={1.75} />} onClick={updater.openDialog}>
+              {t("update.view")}
+            </Button>
+          }
+        >
+          {t("update.title", { version: updater.update.version })}
+        </Notice>
+      )}
+    </>
+  );
+}
+
+export function SettingsPage({ settings, onSave, onKeyChanged, onReload, updater }: Props) {
   const sectionsRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
   const toast = useToast();
@@ -408,6 +449,7 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload }: Props
               <span className="t-small t-muted">
                 {t("settings.about.version", { version: appVersion || "—" })}
               </span>
+              <UpdateStatus updater={updater} />
             </div>
           </div>
         </div>

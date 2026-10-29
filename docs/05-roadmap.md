@@ -403,3 +403,30 @@ _Add one line per finished phase: date — phase — notes._
   16:9-only. Verified with 298 Rust tests + clippy, lint/typecheck/51 vitest tests, and a
   real-FFmpeg 16:9 regression render of an existing project (unchanged output, band at the
   same spot, cached clips reused).
+
+- 2026-10-29 - **UI redesign: "polished studio"** (owner request, outside the CURRENT phase).
+  New tokens in `tokens.css` (cool neutral greys, charcoal + coral brand from the app icon,
+  `--shadow-xs/sm/md`, `--accent-ring`, `--scrim`, `--bg-inset`); flush sidebar with the real
+  app icon, field-style search and a footer language toggle; compact 26 px / 700 page titles
+  over a hairline; buttons/inputs/segmented controls/badges restyled; project and scene cards
+  with full-bleed covers, scrim overlays, hover elevation, delete on hover and no badge for
+  finished projects; numbered wizard stepper, coral chapter chips, accent-marked selected rows
+  (Script list, Settings sections); removed the last `backdrop-filter`. Spec updated in
+  `06-ui-design.md`. Lint, typecheck and 53 vitest tests pass; checked in the running app
+  (Projects, New project, Scenes, Script, editor, Settings; light + dark).
+
+- 2026-10-29 - **In-app updates** (owner request, outside the CURRENT phase; spec
+  `docs/12-updates.md`). Official Tauri updater + process plugins; GitHub Releases
+  `latest/download/latest.json` endpoint, signed NSIS installer (`createUpdaterArtifacts`),
+  passive install. Silent check 4 s after start, sidebar "Update available" card (dot icon in
+  the compact sidebar), update dialog with release notes, running-jobs warning and download
+  progress, Settings → About "Check for updates" with up-to-date / failed states (km + en).
+  Signing key generated outside the repo (`%USERPROFILE%\.tauri\`); `scripts/release.ps1`
+  builds, signs and writes `latest.json`. First version that can self-update: the next
+  published release (0.4.0); 0.1.0–0.3.x users install it by hand once.
+
+- 2026-10-29 - **UI motion** (owner request): `src/styles/motion.css` — page rise-in on
+  navigation, staggered card entrances, thumbnail fade-in, notice/badge/toast/update-card
+  entrances, wizard step slide, button press, `PageSkeleton` for Scenes/Script/editor loading
+  (replaces "Loading…"), `BootSplash` at start-up (was a blank window); opacity/transform only,
+  off under prefers-reduced-motion. Spec in `06-ui-design.md` §5 Motion.

@@ -9,6 +9,7 @@ import { ErrorPanel } from "../components/ErrorPanel";
 import { ImagePromptDialog } from "../components/ImagePromptDialog";
 import { ImagesPanel } from "../components/ImagesPanel";
 import { Notice } from "../components/Notice";
+import { PageSkeleton } from "../components/PageSkeleton";
 import { PageHeader } from "../components/PageHeader";
 import { ProgressBar } from "../components/ProgressBar";
 import { ProjectVoicePicker } from "../components/ProjectVoicePicker";
@@ -457,13 +458,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       </div>
     );
   }
-  if (!project) {
-    return (
-      <div className="page">
-        <p className="t-small">{t("common.loading")}</p>
-      </div>
-    );
-  }
+  if (!project) return <PageSkeleton layout="grid" />;
 
   const lang = project.language;
   const voice = project.voice;

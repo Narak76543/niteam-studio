@@ -63,7 +63,11 @@ pub fn run() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // In-app updates from GitHub Releases (latest.json, signed; see docs/12-updates.md).
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             let state = init_state(app)?;
             app.manage(state);
             Ok(())

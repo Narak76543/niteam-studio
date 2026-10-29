@@ -6,8 +6,13 @@ import type { AssetStatus, ProjectStatus } from "../lib/types";
 
 export type Tone = "neutral" | "ok" | "info" | "warn" | "danger";
 
-export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
-  return <span className={tone === "neutral" ? "badge" : `badge badge--${tone}`}>{children}</span>;
+export function Badge({ tone = "neutral", dot, children }: { tone?: Tone; dot?: boolean; children: ReactNode }) {
+  return (
+    <span className={tone === "neutral" ? "badge" : `badge badge--${tone}`}>
+      {dot && <span className="badge__dot" aria-hidden="true" />}
+      {children}
+    </span>
+  );
 }
 
 const PROJECT_TONE: Record<ProjectStatus, Tone> = {
@@ -21,7 +26,11 @@ const PROJECT_TONE: Record<ProjectStatus, Tone> = {
 
 export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   const { t } = useI18n();
-  return <Badge tone={PROJECT_TONE[status]}>{t(`status.${status}`)}</Badge>;
+  return (
+    <Badge tone={PROJECT_TONE[status]} dot>
+      {t(`status.${status}`)}
+    </Badge>
+  );
 }
 
 const ASSET_TONE: Record<AssetStatus, Tone> = {

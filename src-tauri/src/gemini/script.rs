@@ -327,29 +327,67 @@ fn language_rules_base(language: Language) -> &'static str {
     match language {
         Language::Km => {
             "LANGUAGE: Khmer.\n\
-- Write `narration` in natural, spoken Khmer, the way a Cambodian storyteller talks — not a literal translation from English. Prefer common everyday words over formal or literary vocabulary.\n\
+- Write `narration` in natural, CONVERSATIONAL spoken Khmer — the way a charismatic Cambodian storyteller talks to a friend, NOT a literal translation from English. Use vivid, everyday words. Short punchy sentences for impact. Vary the rhythm: fast facts, then a slow dramatic reveal. NO formal or academic language.\n\
 - End sentences with ។ . Do not insert zero-width spaces.\n\
+- RHETORICAL QUESTIONS in `narration`: when the scene asks a curiosity or rhetorical question, end the sentence with ។? or ? so the TTS voice naturally rises on that line. These questions must speak directly to the listener (e.g. «តើអ្នកចាប់អារម្មណ៍ទេថា...?», «ចុះហេតុអ្វីបានជា...?»).\n\
+- PACING in `spoken_text`: use commas `,` for natural breath pauses, and `...` (three dots) for a dramatic pause before a key reveal. Punchy short sentences only. Example: «កាលពីពេលនោះ... គ្មាននរណាម្នាក់ដឹងទេថា... អ្វីៗនឹងប្រែប្រួលជារៀងរហូត។»\n\
 - Write EVERY number with DIGITS (0-9), in BOTH `narration` and `spoken_text`: years `ឆ្នាំ 1969`, quantities `1,500 នាក់`, decimals `3.5`, percentages `30%`. NEVER spell a number or a year out in Khmer number words (write `ឆ្នាំ 1863`, never `ឆ្នាំមួយពាន់ប្រាំបីរយ…`): spelled-out Khmer numbers usually come out wrong, while the app reads the digits in correct Khmer itself.\n\
 - `spoken_text` is the same content written exactly as it must be SPOKEN: write units in Khmer words (km → គីឡូម៉ែត្រ) and translate English abbreviations (BC → មុនគ្រិស្តសករាជ, AD → គ្រិស្តសករាជ). Foreign names of people, places, missions, and technical terms stay in Latin letters in BOTH fields (see names rule below).\n\
 - `title` and chapter titles in Khmer. `fact_note` in Khmer."
         }
         Language::En => {
             "LANGUAGE: English.\n\
-- Write `narration` in clear, warm, spoken English.\n\
+- Write `narration` in clear, warm, CONVERSATIONAL spoken English — the way a passionate, brilliant friend explains something amazing. Short punchy sentences. Vivid everyday language. Vary the rhythm: fast facts, then a slow reveal. NO formal or academic language.\n\
+- RHETORICAL QUESTIONS in `narration`: when the scene asks a curiosity or rhetorical question, end it with ? so the TTS voice naturally rises (e.g. \"But why did this change everything?\", \"Could you imagine living through that?\").\n\
+- PACING in `spoken_text`: use commas `,` for natural breath pauses, and `...` (three dots) for a dramatic pause before a key reveal. Punchy short sentences only. Example: \"And then... everything changed.\"\n\
 - `spoken_text` is the same content written exactly as it must be SPOKEN: numbers, years, units and abbreviations written out as words (1863 → eighteen sixty-three; 5 km → five kilometers; 30% → thirty percent; BC → B.C.). No digits may remain in `spoken_text`."
         }
     }
 }
 
-const SYSTEM_PROMPT: &str = "You are the head writer of a faceless YouTube explainer channel in the \
-'why / history / science' style. You write narration for one storyteller voice over a sequence of \
-illustrations (one illustration per scene, each scene about 6–8 seconds of speech). The tone is \
-storytelling: curious, vivid, warm, never dry. Ground every scene in concrete historical, scientific \
-or technical facts: specific years, dates, named individuals, locations, mechanisms, and cause-and-effect \
-progress. NEVER write repetitive filler or re-tell already covered events. When a claim is uncertain, \
-disputed or a simplification, say so in that scene's `fact_note` (otherwise leave it empty). \
+const SYSTEM_PROMPT: &str = "You are the head writer of a top-performing faceless YouTube explainer channel \
+in the 'why / history / science / technology' style — the kind where viewers leave comments like \
+\"I watched this 3 times\" or \"I couldn't stop watching\". \
+You write narration for one storyteller voice over a sequence of illustrations (one per scene, 6-8 seconds each).\n\
+\n\
+YOUR WRITING METHOD — follow every rule in every video:\n\
+\n\
+1. NARRATIVE TENSION — every topic has two sides, a conflict, or a hidden twist. Find it and make it the spine \
+of the video. Frame the story as: old belief vs surprising reality, underdog vs giant, question nobody asks vs \
+shocking answer, or a step-by-step revelation that keeps building. NEVER write a flat list of facts.\n\
+\n\
+2. THE HOOK (scenes 1-2) — open with a visceral contrast or a jaw-dropping question the viewer CANNOT ignore. \
+Pattern: [familiar assumption everyone holds] + [sharp contradiction or mystery that breaks it]. \
+NEVER open with a definition, background, or \"In this video we will...\"\n\
+\n\
+3. CONVERSATIONAL TONE — write the way a brilliant, passionate friend talks, not the way a textbook reads. \
+Use vivid, everyday language. Short punchy sentences that hit hard. Vary the rhythm: fast facts, then a slow \
+revelation. No formal or academic language.\n\
+\n\
+4. RHETORICAL QUESTIONS — use at least 1-2 per chapter to pull the listener back in. Place them right before \
+a key reveal: \"But here is what nobody tells you...\", \"So why did this change everything?\", \
+\"Could you imagine...?\". End rhetorical questions with a '?' so the TTS voice rises naturally.\n\
+\n\
+5. CONNECTIVE BRIDGES — every scene must flow into the next with a forward pull. End scenes with a \
+half-answered question, a surprising consequence, or a cliffhanger phrase. \
+NEVER end a scene with a bland summary sentence like \"This was an important moment.\"\n\
+\n\
+6. SPOKEN_TEXT PACING — in `spoken_text`, use commas `,` and ellipsis `...` strategically to create \
+natural breath pauses for the TTS engine. Break long sentences into short punchy ones. \
+Dramatic pause before a reveal: \"And then... everything changed.\" Questions must end with `?`.\n\
+\n\
+7. EMOTIONAL ARC PER CHAPTER — mix emotions intentionally: awe → curiosity → tension → surprise → satisfaction. \
+Every chapter must make the viewer FEEL something, not just learn facts.\n\
+\n\
+8. CONCRETE FACTS ONLY — anchor every claim with a specific year, name, number, location, or mechanism. \
+\"In 1974\" not \"a long time ago\". \"200,000 workers\" not \"many people\". \
+No vague filler phrases.\n\
+\n\
+9. CHAPTER CLIFFHANGERS — each chapter's last scene must end on a tension hook that makes the viewer \
+unable to stop. The final chapter resolves all tension with a resonant, satisfying conclusion.\n\
+\n\
+When a claim is uncertain, disputed or a simplification, say so in that scene's `fact_note` (otherwise leave it empty). \
 Reply with JSON only, matching the given schema.";
-
 /// The source document block plus the rule for the outline ("" for topic projects).
 fn outline_source(brief: &ScriptBrief) -> String {
     brief.source.map_or(String::new(), |s| {
@@ -362,20 +400,20 @@ is covered and nothing outside the document is presented as its content.\n"
 
 pub fn outline_prompt(brief: &ScriptBrief, chapter_count: usize, scene_count: usize) -> String {
     format!(
-        "Plan a {minutes}-minute narrated explainer video.\n\
+        "Plan a {minutes}-minute high-retention narrated explainer video in the B-Studio storytelling style.\n\
 TOPIC: {topic}\n\
 VISUAL STYLE (for your information only): {style}\n\
 {rules}\n{source}\n\
 Return:\n\
-- `title`: a catchy video title.\n\
-- `hook`: the surprising question or fact that opens the video in the first 10 seconds.\n\
-- `chapters`: exactly {chapter_count} chapters in strict chronological and logical progression. \
-Each chapter must cover a distinct phase or aspect of the story without overlapping: \
-never rush ahead to events that belong to later chapters, and never duplicate coverage. \
-Each chapter needs a short `title` and a clear, fact-specific one-line `summary` outlining the key events, \
-years, people, and turning points for that chapter. \
+- `title`: a compelling, curiosity-inducing video title that frames a fascinating debate, mystery or comparison.\n\
+- `hook`: the dramatic opening (first 10 seconds): contrast a common belief vs a shocking reality, or ask a question the viewer cannot resist.\n\
+- `chapters`: exactly {chapter_count} chapters structured as a dramatic narrative arc with escalating tension:\n\
+  * Chapter 1 introduces the hook and the core debate/mystery.\n\
+  * Middle chapters explore conflicting angles, turning points, unseen mechanisms, and shocking discoveries.\n\
+  * Each chapter must cover a distinct phase without overlapping: never rush ahead, never repeat facts.\n\
+  * Each chapter needs a short `title` and a fact-specific one-line `summary` outlining the key revelation, turning point, and tension hook for that chapter.\n\
 The video will have about {scene_count} scenes in total, spread evenly across the chapters. \
-The last chapter wraps up the story with a satisfying conclusion.",
+The final chapter resolves the central tension with a resonant, memorable conclusion.",
         minutes = brief.target_minutes,
         topic = brief.topic,
         style = brief.style_label,
@@ -576,10 +614,14 @@ TOPIC: {topic}\n\
 HOOK: {hook}\n\
 FULL OUTLINE:\n{outline}\n\
 {previous}{position}\n\n\
-STORYTELLING & FACTUAL SPECIFICITY:\n\
-1. PROGRESSION: Each scene must deliver NEW facts or narrative beats that advance the story forward. Never loop back or repeat the same event, idea, or phrasing across different scenes.\n\
-2. CONCRETE FACTS: Anchor the narration with specific historical dates, years, named individuals, locations, missions, measurements, and cause-and-effect explanations. Avoid vague or repetitive filler.\n\
-3. STORY FLOW: Flow naturally from the previous scene, maintaining curiosity and excitement without jumping disjointedly.\n\n\
+STORYTELLING CRAFT — B-STUDIO METHOD (apply every rule to every scene):\n\
+1. NARRATIVE TENSION: Every chapter has a conflict, contrast, or hidden twist. Frame each scene as part of that tension arc — old belief vs new reality, underdog vs giant, mystery vs reveal. NEVER write a flat sequence of facts.\n\
+2. CONVERSATIONAL PUNCH: Write each `narration` the way a charismatic storyteller SPEAKS, not writes. Short sentences hit hard. Vary the rhythm: fast-paced facts, then a slow dramatic reveal. Use vivid, everyday words. Ban academic or formal language.\n\
+3. RHETORICAL QUESTIONS (at least 1-2 per chapter): Place a curiosity question just before a key reveal to pull the listener in. End with `?` so the TTS voice rises naturally. Patterns: the question this chapter's big reveal answers, or 'Could you imagine...?', 'But here is what nobody tells you...'.\n\
+4. CONNECTIVE BRIDGES: End every scene with a forward pull — a half-answered question, a surprising consequence, or a cliffhanger phrase that makes the viewer UNABLE to stop. NEVER end a scene with a bland summary like 'This was an important moment.'.\n\
+5. EMOTIONAL ARC: Mix emotions intentionally scene by scene within each chapter: awe → curiosity → tension → surprise → satisfaction. Every scene must make the viewer FEEL something, not just learn a fact.\n\
+6. CONCRETE FACTS: Anchor every claim with a specific year, name, number, location, or mechanism. '200,000 workers' not 'many people'. 'In 1974' not 'a long time ago'. Zero vague filler phrases.\n\
+7. SCENE PROGRESSION: Each scene delivers ONE new fact or narrative beat. Never repeat the same event, phrasing, or idea already covered.\n\n\
 {bible}\n\
 {rules}\n{source}\n\
 Write exactly {scenes} scenes. For each scene:\n\

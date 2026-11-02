@@ -57,7 +57,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE2ODA3OTc3N0U2OTdFQTgKUldTb2ZtbCtkM21BRmovQjkvRms5OERNQXJhUzZ3UnBDQUptRCtMTGMxL25WOGZjSmVLdy9xVjcK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY3RjgwRDdBMENGQTFCM0YKUldRL0cvb01lZzM0OXczRUR5c3piaTl3SmhBcnNzTWxydGVIeVZnTWdQckhNdXdtVmlhalJtMTYK",
       "endpoints": [
         "https://github.com/Narak76543/niteam-studio/releases/latest/download/latest.json"
       ],

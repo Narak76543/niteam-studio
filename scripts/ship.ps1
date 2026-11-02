@@ -19,6 +19,7 @@ $ErrorActionPreference = "Stop"
 $Repo = "Narak76543/niteam-studio"
 $Root = Split-Path -Parent $PSScriptRoot
 $KeyPath = Join-Path $env:USERPROFILE ".tauri\nitean-studio.key"
+$env:PATH = "$([Environment]::GetEnvironmentVariable('Path', 'User'));$([Environment]::GetEnvironmentVariable('Path', 'Machine'));$env:PATH"
 Set-Location $Root
 
 function Step([string]$Text) { Write-Host ""; Write-Host "==> $Text" -ForegroundColor Cyan }

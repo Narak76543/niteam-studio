@@ -51,6 +51,19 @@ export function VoiceSettingsSection({ settings, onSave }: Props) {
     setPreviewing(language);
     try {
       const bytes = await api.voicePreview(language, current);
+      if (voice.engine === "gemini") {
+        try {
+          const blob = new Blob([new Uint8Array(bytes)], { type: "audio/wav" });
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `gemini_${voice.gemini_voice.toLowerCase()}_sample.wav`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } catch {
+          // ignore
+        }
+      }
       await playAudio(`preview-${language}`, bytes, voice.engine === "edge" ? "audio/mpeg" : "audio/wav");
     } catch (e) {
       toast.show(errorMessage(e), "danger");

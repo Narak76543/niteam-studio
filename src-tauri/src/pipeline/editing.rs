@@ -18,7 +18,7 @@ pub const MIN_MINUTES: u32 = 1;
 pub const MAX_MINUTES: u32 = 20;
 const MAX_TOPIC_CHARS: usize = 500;
 const MAX_FIELD_CHARS: usize = 4_000;
-pub const DEFAULT_VOICE_DIRECTION: &str = "calm, warm storyteller, medium pace";
+pub const DEFAULT_VOICE_DIRECTION: &str = "engaging, dynamic storyteller, conversational tone with dramatic pauses and curiosity in voice";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct NewProjectInput {

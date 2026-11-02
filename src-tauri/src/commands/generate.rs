@@ -209,6 +209,7 @@ pub async fn voice_preview(
     check.voice = voice.clone();
     check.validate().map_err(to_cmd)?;
     let (engine, resolved) = build_engine(&state, &check, &voice, language, None).await?;
+    let voice_slug = resolved.voice_name.to_lowercase();
     let request = TtsRequest {
         text: match language {
             Language::Km => PREVIEW_KM,
@@ -225,6 +226,11 @@ pub async fn voice_preview(
         .synthesize(&request, &RetryHooks::default())
         .await
         .map_err(|e| e.to_string())?;
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        let downloads = std::path::Path::new(&profile).join("Downloads");
+        let name = format!("gemini_{}_sample.wav", voice_slug);
+        let _ = std::fs::write(downloads.join(name), &output.audio);
+    }
     Ok(Response::new(output.audio))
 }
 

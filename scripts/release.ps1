@@ -17,6 +17,7 @@ $ErrorActionPreference = "Stop"
 
 $Repo = "Narak76543/niteam-studio"
 $Root = Split-Path -Parent $PSScriptRoot
+$env:PATH = "$([Environment]::GetEnvironmentVariable('Path', 'User'));$([Environment]::GetEnvironmentVariable('Path', 'Machine'));$env:PATH"
 $Conf = Get-Content (Join-Path $Root "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json
 $Version = $Conf.version
 

@@ -128,6 +128,8 @@ export function NewVoiceDialog({ onCreated, onCancel }: Props) {
           </label>
         </div>
 
+        {language === "km" && <span className="t-small t-muted">{t("voices.khmerProsodyTip")}</span>}
+
         {source === "design" ? (
           <>
             <div className="row">

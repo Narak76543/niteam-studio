@@ -38,7 +38,7 @@ impl Validate for ProofReply {
             for (field, text) in [("narration", &f.narration), ("spoken_text", &f.spoken_text)] {
                 if let Some(c) = foreign_script(text) {
                     return Err(format!(
-                        "fix for {} {field} contains a Thai/Lao character '{c}'; use Khmer script only",
+                        "fix for {} {field} contains a foreign-script character '{c}'; use Khmer script only",
                         f.scene_id
                     ));
                 }

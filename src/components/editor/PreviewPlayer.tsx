@@ -223,7 +223,7 @@ export function PreviewPlayer({ projectId, scenes, states, highlight, resolution
       const st2 = stateAt(subs[list.indexOf(cur)] ?? [], local);
       if (st2) {
         const band = bandFor(res, asp, st.scale);
-        paintCue(ctx, st2.lines, st2.active, { highlight: hl }, band, H - band.height - 24 * st.scale);
+        paintCue(ctx, st2, { highlight: hl }, band, H - band.height - 24 * st.scale);
       }
       if (now - lastEmit > EMIT_MS || !c.playing) {
         lastEmit = now;

@@ -67,7 +67,8 @@ pub fn mark_all_images_stale(project: &mut Project) {
 /// (`src/lib/subtitles.ts`) changes, so existing subtitle PNGs are redrawn.
 /// 2: Kantumruy Pro + spoken-word highlight states.
 /// 3: regular weight, 44 px at 1080p (was 600 / 56 px).
-pub const SUBS_VERSION: &str = "3";
+/// 4: the word box glides to the next word (in-between frames).
+pub const SUBS_VERSION: &str = "4";
 
 /// Inputs of a scene's subtitle PNGs: narration, the voice they are timed to, resolution
 /// and aspect (the band sizes derive from both).

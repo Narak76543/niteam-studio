@@ -19,12 +19,13 @@ describe("subtitleStates", () => {
     }
   });
 
-  it("with the tracker: one state per word, consecutive, the active word walks through the cue", () => {
+  it("with the tracker: one resting state per word, consecutive, the active word walks through the cue", () => {
     const st = subtitleStates({ narration: LONG, duration_ms: 9000, words: null }, "km", true);
     const words = st[0]?.lines.flat().length ?? 0;
     expect(words).toBeGreaterThan(2);
-    expect(st.slice(0, words).map((s) => s.active)).toEqual([...Array(words).keys()]);
-    expect(st[words]?.active).toBe(0); // next cue starts again at its first word
+    const resting = st.filter((s) => s.slide === null);
+    expect(resting.slice(0, words).map((s) => s.active)).toEqual([...Array(words).keys()]);
+    expect(resting[words]?.active).toBe(0); // next cue starts again at its first word
     expect(st[0]?.start_ms).toBe(0);
     expect(st.at(-1)?.end_ms).toBe(9000);
     for (let i = 1; i < st.length; i++) expect(st[i]?.start_ms).toBe(st[i - 1]?.end_ms);
@@ -41,6 +42,43 @@ describe("subtitleStates", () => {
     expect(firstOfPhrase2).toBeGreaterThan(0);
     expect(st[firstOfPhrase2]?.start_ms).toBeGreaterThanOrEqual(1500);
     expect(st[firstOfPhrase2]?.start_ms).toBeLessThanOrEqual(1900);
+  });
+
+  it("the box glides to the next word on the same line in two in-between frames", () => {
+    const st = subtitleStates({ narration: LONG, duration_ms: 9000, words: null }, "km", true);
+    const glides = st.filter((s) => s.slide !== null);
+    expect(glides.length).toBeGreaterThan(0);
+    for (const [i, s] of st.entries()) {
+      if (!s.slide) continue;
+      const lineOf = s.lines.flatMap((l, li) => l.map(() => li));
+      expect(s.slide.from).toBe((s.active ?? 0) - 1);
+      expect(lineOf[s.slide.from]).toBe(lineOf[s.active ?? 0]);
+      expect(s.slide.t).toBeGreaterThan(0);
+      expect(s.slide.t).toBeLessThan(1);
+      expect(s.end_ms - s.start_ms).toBeGreaterThanOrEqual(33);
+      expect(s.end_ms - s.start_ms).toBeLessThanOrEqual(34);
+      // Each glide moves forward and ends in the word's own resting state.
+      const next = st[i + 1];
+      expect(next?.active).toBe(s.active);
+      if (next?.slide) expect(next.slide.t).toBeGreaterThan(s.slide.t);
+      else expect(next?.slide).toBeNull();
+    }
+  });
+
+  it("no glide onto the first word of a line or a cue, nor without the tracker", () => {
+    const st = subtitleStates({ narration: LONG, duration_ms: 9000, words: null }, "km", true);
+    for (const s of st) {
+      if (s.active === 0) expect(s.slide).toBeNull();
+    }
+    const plain = subtitleStates({ narration: LONG, duration_ms: 9000, words: null }, "km", false);
+    expect(plain.every((s) => s.slide === null)).toBe(true);
+  });
+
+  it("very short words jump instead of gliding", () => {
+    // 40 words in 2 s: ~50 ms each, too short for a 100 ms glide.
+    const narration = Array.from({ length: 40 }, () => "ab").join(" ");
+    const st = subtitleStates({ narration, duration_ms: 2000, words: null }, "en", true);
+    expect(st.every((s) => s.slide === null)).toBe(true);
   });
 
   it("stateAt finds the state on screen, the last one holds until the end", () => {

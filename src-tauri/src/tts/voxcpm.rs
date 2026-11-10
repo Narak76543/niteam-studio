@@ -1,6 +1,7 @@
 //! VoxCPM2 (local) voice engine (`docs/09-voice-profiles.md`), behind the same `TtsEngine`
 //! trait as Edge and Gemini TTS. Per scene:
-//! 1. split the spoken text into sentence-sized pieces (`chunker`),
+//! 1. split the spoken text into sentence-sized pieces (`chunker`); Khmer pieces get Latin
+//!    punctuation as prosody cues on the way to the server only (`khmer_prosody`),
 //! 2. synthesize each piece by cloning the profile's reference clip (same seed → same voice),
 //!    retrying with a new seed when the length is far off the text's expected length, and
 //!    halving the piece when the GPU runs out of memory,
@@ -18,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::audio::{expected_ms, suspicious_length};
 use super::chunker;
+use super::khmer_prosody;
 use super::voxcpm_server::{ServerSpec, SpeakRequest, VoxError, VoxServer};
 use super::wav::{self, Pcm};
 use super::{AudioFormat, TtsEngine, TtsError, TtsFuture, TtsOutput, TtsRequest, WordTiming};
@@ -104,10 +106,20 @@ impl VoxCpmTts {
         Self { speaker, voice, language, seed }
     }
 
-    fn request(&self, text: &str, attempt: u64) -> SpeakRequest {
+    /// What the model reads for one piece: Khmer gets its prosody punctuation here, so the
+    /// piece text kept for timings and subtitles stays exactly as written.
+    fn spoken(&self, text: &str, ends_sentence: bool) -> String {
+        match self.language {
+            Language::Km => khmer_prosody::for_voxcpm(text, ends_sentence),
+            Language::En => text.to_owned(),
+        }
+    }
+
+    fn request(&self, text: &str, ends_sentence: bool, attempt: u64) -> SpeakRequest {
         let style = self.voice.style.trim();
+        let text = self.spoken(text, ends_sentence);
         SpeakRequest {
-            text: if style.is_empty() { text.to_owned() } else { format!("({style}){text}") },
+            text: if style.is_empty() { text } else { format!("({style}){text}") },
             seed: self.seed + attempt,
             steps: self.voice.steps,
             guidance: self.voice.cfg,
@@ -116,19 +128,20 @@ impl VoxCpmTts {
         }
     }
 
-    /// One piece → trimmed audio (possibly several, if it had to be split).
-    fn piece<'a>(&'a self, text: &'a str, depth: u32, cancel: &'a CancellationToken) -> PiecesFuture<'a> {
+    /// One piece → trimmed audio (possibly several, if it had to be split). Only the second
+    /// half of a split piece can end the sentence.
+    fn piece<'a>(&'a self, text: &'a str, ends_sentence: bool, depth: u32, cancel: &'a CancellationToken) -> PiecesFuture<'a> {
         Box::pin(async move {
             let expected = expected_ms(text, self.language, 0);
             let mut last = None;
             for attempt in 0..MAX_ATTEMPTS {
-                match self.speaker.speak(&self.request(text, attempt), cancel).await {
+                match self.speaker.speak(&self.request(text, ends_sentence, attempt), cancel).await {
                     Err(VoxError::OutOfMemory(m)) => {
                         let Some((a, b)) = chunker::halves(text).filter(|_| depth < MAX_SPLIT_DEPTH) else {
                             return Err(VoxError::OutOfMemory(m));
                         };
-                        let mut out = self.piece(&a, depth + 1, cancel).await?;
-                        out.extend(self.piece(&b, depth + 1, cancel).await?);
+                        let mut out = self.piece(&a, false, depth + 1, cancel).await?;
+                        out.extend(self.piece(&b, ends_sentence, depth + 1, cancel).await?);
                         return Ok(out);
                     }
                     Err(e) => return Err(e),
@@ -163,7 +176,7 @@ impl VoxCpmTts {
             if cancel.is_cancelled() {
                 return Err(TtsError::Cancelled);
             }
-            for (piece_text, mut p) in self.piece(chunk, 0, cancel).await.map_err(to_tts)? {
+            for (piece_text, mut p) in self.piece(&chunk.text, chunk.ends_sentence, 0, cancel).await.map_err(to_tts)? {
                 wav::fade_edges(&mut p, FADE_MS);
                 if out.rate == 0 {
                     out.rate = p.rate;
@@ -257,6 +270,16 @@ mod tests {
         assert!(words[1].start_ms >= words[0].end_ms + GAP_MS - 1);
         assert_eq!(words[1].end_ms, wav::ms(&pcm));
         assert!(words[0].text.ends_with('?'));
+        assert!(words[1].text.ends_with('។'), "timings keep the text as written");
+        assert_eq!(calls[1].text, "(calm)ដើម្បីបានថ្មភក់រាប់លានដុំមកសាងសង់, ដំណើរការដ៏ធំសម្បើមមួយត្រូវចាប់ផ្តើមឡើងនៅឯភ្នំគូលែន.");
+    }
+
+    #[tokio::test]
+    async fn english_text_is_sent_unchanged() {
+        let fake = Arc::new(Fake::new(10_000, 0));
+        let tts = VoxCpmTts::new(fake.clone(), voice(), Language::En, 1);
+        tts.synth("Hello there everyone, this is a test.", &CancellationToken::new()).await.unwrap();
+        assert_eq!(fake.calls.lock().unwrap()[0].text, "(calm)Hello there everyone, this is a test.");
     }
 
     #[tokio::test]
@@ -275,6 +298,14 @@ mod tests {
         let tts = VoxCpmTts::new(fake.clone(), voice(), Language::Km, 1);
         let (_, words) = tts.synth("ដើម្បីបានថ្មភក់រាប់លានដុំមកសាងសង់ ដំណើរការដ៏ធំសម្បើមមួយត្រូវចាប់ផ្តើម។", &CancellationToken::new()).await.unwrap();
         assert!(words.len() >= 2, "split into halves: {words:?}");
+        let calls = fake.calls.lock().unwrap();
+        let sent: Vec<&str> = calls
+            .iter()
+            .filter_map(|c| c.text.rsplit(')').next())
+            .filter(|body| body.chars().count() <= 40)
+            .collect();
+        assert!(sent.first().is_some_and(|t| t.ends_with(',')), "first half keeps a continuing tone: {sent:?}");
+        assert!(sent.last().is_some_and(|t| t.ends_with('.')), "last half ends the sentence: {sent:?}");
         assert_eq!(words.iter().map(|w| w.text.replace(' ', "")).collect::<String>(), "ដើម្បីបានថ្មភក់រាប់លានដុំមកសាងសង់ដំណើរការដ៏ធំសម្បើមមួយត្រូវចាប់ផ្តើម។");
     }
 

@@ -425,6 +425,7 @@ mod tests {
             target_minutes: 2,
             aspect: crate::pipeline::project::Aspect::default(),
             style_preset: "stickman".into(),
+            tone: Default::default(),
             audience: crate::pipeline::project::Audience::General,
             focus: String::new(),
             page_from: None,

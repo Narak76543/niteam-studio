@@ -270,6 +270,7 @@ impl Default for ModelSettings {
         Self {
             text_chain: vec![
                 "gemini-3.5-flash-lite".into(),
+                "gemini-3.6-flash".into(),
                 "gemini-3.1-flash-lite".into(),
                 "gemini-3.8-flash".into(),
             ],

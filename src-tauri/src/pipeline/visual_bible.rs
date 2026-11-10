@@ -98,11 +98,16 @@ fn style_rules(style_prompt: &str) -> &'static str {
     }
 }
 
-const STICK_FIGURE_RULES: &str = "STICK-FIGURE STYLE: every person is a simple stick figure (round head, dot eyes, line body). \
+const STICK_FIGURE_RULES: &str = "STICK-FIGURE STYLE: every person is the SAME friendly stick man (white round head with big oval \
+eyes, eyebrows and a small smile, rounded white body, thick black outlines); that design is part of the art \
+style, so never describe it again. \
 Describe characters ONLY by one or two simple, bold identifying props or colour accents that a stick figure \
-can carry (e.g. `stick figure with a red-and-white checked krama scarf and a straw hat`, `stick figure \
-with a small blue laptop`). Never describe skin, faces, hair texture, body build or realistic clothing \
-detail. Describe places as simple line drawings with a few key shapes and at most two flat colour accents \
+can carry, chosen from THIS story's role, job or era (e.g. `stick figure holding a wooden ladle`, `stick figure \
+with a small blue laptop`, `stick figure in a miner's helmet`). Those examples only show the format: never copy \
+them or their colours. Most characters need NO accessory at all; give an accessory only when the role needs it, \
+never a scarf or a checked pattern unless the story is about one, and never the same accessory or colour on \
+every character. The main stick man stays plain black-and-white; colour belongs to props and places. Never \
+describe skin, faces, hair texture, body build or realistic clothing detail. Describe places as simple line drawings with a few key shapes and at most two flat colour accents \
 (e.g. `simple line drawing of a temple with three towers, light orange accent`). Keep `style` a \
 stick-figure doodle style.\n";
 

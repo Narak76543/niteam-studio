@@ -258,6 +258,96 @@
   animation: boot-bar 1.1s var(--ease) infinite;
 }
 
+/* ---------- generation (running jobs) ----------
+   Small looping illustrations, only while a job runs: lines written by a pen (script),
+   sound-wave bars (voices), a shimmer sweep (images). Transform/opacity only. */
+
+@keyframes write-line {
+  0% { transform: scaleX(0); opacity: 1; }
+  30%, 80% { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+@keyframes pen-write {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(-3px, -1px) rotate(-8deg); }
+  50% { transform: translate(-6px, 0) rotate(0deg); }
+  75% { transform: translate(-3px, 1px) rotate(6deg); }
+}
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+@keyframes sweep {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(220%); }
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.7) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.1) rotate(20deg); }
+}
+@keyframes done-pop {
+  0% { opacity: 0; transform: scale(0.4); }
+  14% { opacity: 1; transform: scale(1.15); }
+  24% { transform: none; }
+  80% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: scale(0.9); }
+}
+
+.gen-card {
+  animation: rise-in var(--dur-enter) var(--ease-out) both;
+}
+.gen-art--script > i {
+  animation: write-line 2.4s var(--ease-out) infinite both;
+}
+.gen-art--script > i:nth-child(2) { animation-delay: 0.35s; }
+.gen-art--script > i:nth-child(3) { animation-delay: 0.7s; }
+.gen-art__pen {
+  animation: pen-write 0.9s ease-in-out infinite;
+}
+.gen-art--voice > i {
+  animation: wave 0.9s ease-in-out infinite;
+}
+.gen-art--voice > i:nth-child(2) { animation-delay: -0.6s; }
+.gen-art--voice > i:nth-child(3) { animation-delay: -0.3s; }
+.gen-art--voice > i:nth-child(4) { animation-delay: -0.75s; }
+.gen-art--voice > i:nth-child(5) { animation-delay: -0.45s; }
+.gen-art__sweep {
+  animation: sweep 1.6s ease-in-out infinite;
+}
+.thumb__sweep {
+  animation: sweep 1.8s ease-in-out infinite;
+}
+.gen-art__spark {
+  animation: twinkle 1.4s ease-in-out infinite;
+}
+/* Active stage dot: a soft ring that breathes out. */
+.gen-steps__item--active .gen-steps__dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  animation: ring-out 1.4s var(--ease-out) infinite;
+}
+@keyframes ring-out {
+  from { opacity: 0.7; transform: scale(0.6); }
+  to { opacity: 0; transform: scale(1.3); }
+}
+.thumb--working > svg {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.thumb__done {
+  animation: done-pop 1.6s var(--ease-out) both;
+}
+/* New scenes slide into the script list as the chapters are written. */
+.scene-row,
+.scene-list__chapter {
+  animation: rise-in var(--dur-enter) var(--ease-out) both;
+}
+.flow__line {
+  transition: background-color 240ms var(--ease);
+}
+
 /* ---------- reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
   .page,
@@ -275,8 +365,28 @@
   .dialog,
   .boot,
   .boot__logo,
-  .nav-item__dot {
+  .nav-item__dot,
+  .gen-card,
+  .gen-art--script > i,
+  .gen-art__pen,
+  .gen-art--voice > i,
+  .gen-art__spark,
+  .gen-steps__item--active .gen-steps__dot::after,
+  .thumb--working > svg,
+  .scene-row,
+  .scene-list__chapter {
     animation: none;
+  }
+  /* Static stand-ins: written lines, a still wave, no shimmer; the check just shows. */
+  .gen-art--voice > i:nth-child(odd) {
+    transform: scaleY(0.7);
+  }
+  .gen-art__sweep,
+  .thumb__sweep {
+    display: none;
+  }
+  .thumb__done {
+    animation: fade-in 160ms linear both;
   }
   .skeleton {
     animation-duration: 2.8s;

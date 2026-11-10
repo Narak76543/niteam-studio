@@ -72,6 +72,9 @@ pub struct Project {
     /// subtitles and clips outdated (`editing::set_aspect`).
     #[serde(default)]
     pub aspect: Aspect,
+    /// Script tone chosen in the New project wizard (`dramatic` for older projects).
+    #[serde(default)]
+    pub tone: ScriptTone,
     pub style: Style,
     pub voice: VoiceSettings,
     pub status: ProjectStatus,
@@ -136,6 +139,10 @@ pub struct Outline {
     pub title: String,
     pub hook: String,
     pub chapters: Vec<OutlineChapter>,
+    /// Fact bank from the plan step (English, `F1…` order): the only figures, dates and
+    /// names the chapter writer may state. Empty for scripts planned before this step.
+    #[serde(default)]
+    pub facts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -144,6 +151,9 @@ pub struct OutlineChapter {
     pub summary: String,
     pub scene_count: u32,
     pub done: bool,
+    /// Beat sheet from the plan step (English): one job per scene, in order.
+    #[serde(default)]
+    pub beats: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -460,6 +470,19 @@ pub struct SourceDoc {
     pub credit: String,
 }
 
+/// How the script is written (`gemini::script::tone_rules`). Projects made before the
+/// choice existed keep the dramatic storytelling they were written with.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ScriptTone {
+    /// Comedy cartoon explainer: a funny character lives the story.
+    Funny,
+    #[default]
+    Dramatic,
+    /// Calm, clear documentary narrator.
+    Calm,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Audience {
@@ -658,6 +681,8 @@ pub struct ProjectSummary {
     /// First scene with a thumbnail (Projects page card), and a key that changes with it.
     pub cover_scene: Option<String>,
     pub cover_version: Option<String>,
+    /// `paused_quota` only: when the free image allowance resets (RFC 3339 UTC).
+    pub pause_resets_at: Option<String>,
 }
 
 impl From<&Project> for ProjectSummary {
@@ -676,6 +701,11 @@ impl From<&Project> for ProjectSummary {
             updated_at: p.updated_at.clone(),
             cover_scene: cover.map(|s| s.id.clone()),
             cover_version: cover.map(|s| format!("{}#{}", s.image.thumb_path.as_deref().unwrap_or(""), s.image.prompt_hash.as_deref().unwrap_or(""))),
+            pause_resets_at: if p.status == ProjectStatus::PausedQuota {
+                p.image_pause.as_ref().map(|x| x.resets_at_utc.clone())
+            } else {
+                None
+            },
         }
     }
 }
@@ -811,6 +841,7 @@ pub(crate) mod tests {
                 preset: "storybook_watercolor".into(),
                 style_prompt: "watercolor".into(),
             },
+            tone: ScriptTone::default(),
             voice: VoiceSettings {
                 engine: EngineKind::Edge,
                 model: "m".into(),

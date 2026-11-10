@@ -12,9 +12,11 @@ interface Props {
   titleLang?: string;
   meta?: ReactNode;
   actions?: ReactNode;
+  /** Project step bar (Script → Scenes → Render) under the title. */
+  flow?: ReactNode;
 }
 
-export function PageHeader({ breadcrumb, title, titleLang, meta, actions }: Props) {
+export function PageHeader({ breadcrumb, title, titleLang, meta, actions, flow }: Props) {
   return (
     <header className="page-header">
       <div className="page-header__titles">
@@ -30,6 +32,7 @@ export function PageHeader({ breadcrumb, title, titleLang, meta, actions }: Prop
           {title}
         </h1>
         {meta}
+        {flow}
       </div>
       {actions && <div className="page-header__actions">{actions}</div>}
     </header>

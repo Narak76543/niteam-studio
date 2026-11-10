@@ -1,18 +1,42 @@
 // Subtitle *states* of one scene: which cue (≤ 2 lines) is on screen and which word is being
 // spoken, with start/end times. Used by the editor preview and by the export (one PNG per
 // state), so both show exactly the same thing.
+//
+// The word box glides to the next word on the same line (docs/04-khmer.md §3 "Sliding
+// highlight"): the first SLIDE_FRAMES − 1 video frames of a word are in-between states with
+// the box part-way from the previous word, then the word's own state holds until it ends.
 
 import { groupCues, splitLineWords, lineText, maxGraphemes, type Word } from "./subtitles";
 import { timeLines } from "./subtitleTiming";
 import type { Aspect, Language, WordTiming } from "./types";
+
+/** The box on its way from word `from` to the active word; `t` in (0, 1). */
+export interface Slide {
+  from: number;
+  t: number;
+}
 
 export interface SubtitleState {
   /** Lines of the cue on screen. */
   lines: Word[][];
   /** Spoken word (index over all words of the cue), null when the tracker is off. */
   active: number | null;
+  /** In-between frame of the box gliding to `active`; null when it is at rest. */
+  slide: Slide | null;
   start_ms: number;
   end_ms: number;
+}
+
+/** One video frame of the render (`render::clip::FPS` = 30). */
+const FRAME_MS = 1000 / 30;
+/** The glide takes this many frames (~100 ms); the last one is the word's own state. */
+export const SLIDE_FRAMES = 3;
+/** Shorter words jump: the glide needs its frames plus a moment at rest. */
+const MIN_SLIDE_WORD_MS = (SLIDE_FRAMES + 2) * FRAME_MS;
+
+/** Slow-in, slow-out (smoothstep): with only two in-between frames it reads as a glide. */
+function ease(x: number): number {
+  return x * x * (3 - 2 * x);
 }
 
 export interface SceneSubtitleInput {
@@ -44,12 +68,23 @@ export function subtitleStates(scene: SceneSubtitleInput, lang: Language, tracke
     const last = times[offset + count - 1];
     if (first && last) {
       if (tracker) {
+        const lineOf = cue.flatMap((l, li) => l.map(() => li));
         for (let k = 0; k < count; k++) {
           const t = times[offset + k];
-          if (t) states.push({ lines: cue, active: k, start_ms: t.start_ms, end_ms: t.end_ms });
+          if (!t) continue;
+          let start = t.start_ms;
+          const glide = k > 0 && lineOf[k] === lineOf[k - 1] && t.end_ms - t.start_ms >= MIN_SLIDE_WORD_MS;
+          if (glide) {
+            for (let j = 1; j < SLIDE_FRAMES; j++) {
+              const end = t.start_ms + Math.round(j * FRAME_MS);
+              states.push({ lines: cue, active: k, slide: { from: k - 1, t: ease(j / SLIDE_FRAMES) }, start_ms: start, end_ms: end });
+              start = end;
+            }
+          }
+          states.push({ lines: cue, active: k, slide: null, start_ms: start, end_ms: t.end_ms });
         }
       } else {
-        states.push({ lines: cue, active: null, start_ms: first.start_ms, end_ms: last.end_ms });
+        states.push({ lines: cue, active: null, slide: null, start_ms: first.start_ms, end_ms: last.end_ms });
       }
     }
     offset += count;

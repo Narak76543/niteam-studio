@@ -80,8 +80,10 @@ Settings: `image.provider`, `image.gemini_model`, `image.steps` (4–8, default 
 `pipeline/presets.rs`: **`stickman` (default since 2026-10-15, owner's choice)**,
 `storybook_watercolor`, `cinematic_realistic`, `flat_2d`, `soft_2d_explainer` (2026-10-17, see
 below). Stickman prompt: "simple hand-drawn
-stick figure doodle, bold clean black marker lines, flat pure white background filling the
-whole frame, stick figures with round heads and simple dot eyes, complete scene drawn in the same
+stick figure doodle, bold clean black marker lines of even thickness, flat pure white background
+filling the whole frame, one recurring main stick figure (white round head, big oval eyes with
+pupils, eyebrows, small smile, tuft of hair, rounded bean-shaped body, mitten hands — owner's
+reference image, 2026-11-05), complete scene drawn in the same
 doodle lines with a background setting and several topic props, flat colour accents, whiteboard
 explainer style" (2026-10-16: "lots of white space" / "minimal" removed — frames looked empty;
 owner asked for fuller, on-topic scenes). Existing projects keep their stored style text until

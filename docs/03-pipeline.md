@@ -24,16 +24,63 @@ Scene budget: ~6–8 s per scene →
 `scene_count ≈ target_minutes * 60 / 7` (20 min ≈ 170 scenes).
 
 For long videos generate in two stages:
-1. **Outline**: title, hook, 5–10 chapters with one-line summaries.
-2. **Scenes per chapter**: request up to five scenes per call; larger chapters are split into
-   sequential calls and joined before saving the chapter. (Keeps structured responses small and
+1. **Outline**: title, hook, 5–10 chapters with fact-specific summaries. Chapter 1 starts the
+   story; it is never a trailer of the whole video.
+2. **Plan** (beat sheet + fact bank, owner request 2026-11-03): one call returns, in English,
+   `facts` (verified facts, each with one fixed value — the only figures the writer may state) and
+   `chapters.chapter_N` (exactly `scene_count` beats each: one new piece of information per
+   scene, each fact used once, at most one `QUESTION:` beat in six). Saved into
+   `outline.facts` / `outline.chapters[].beats`. If the plan call fails it is logged and the
+   chapters are written from the outline alone; scripts started before this step skip it.
+   **Plan check** (`PlanReply::check_structure`, after the Napoleon script of 2026-11-03 told
+   its whole story by scene 40 and retold it four times): the fact bank is grouped by chapter in
+   story order (the prompt gives each chapter a fact budget from its scene count); every fact
+   is cited (`Fn`) in exactly ONE chapter; a fact's beats come in one run (1-3 beats in a row,
+   never revisited — the third Napoleon plan cycled F13…F16 twice and every chapter told its
+   facts twice); at least 60% of a chapter's beats cite a fact (no filler); every fact is used.
+   The bank holds about one fact per 2 scenes (`total/2`, 8-60). A plan that breaks a rule goes back to the model with the rule
+   as repair feedback. Facts listed slightly out of order are not rejected:
+   `PlanReply::in_chapter_order` sorts them by chapter and renumbers the beats' citations.
+   **Busy, network, quota or key errors during the plan stop the job** (the outline is saved,
+   Continue starts at the plan again); only a plan that keeps failing the checks is skipped
+   and the chapters are written from the outline alone (logged as a warning). If the
+   title states a half-truth ("beaten by the winter"), the bank must hold the fuller answer.
+   Each chapter request is told its own facts (`THIS CHAPTER'S FACTS: …`) and may not state
+   any other fact, not even as a preview or summary. Model-written "F3:" labels are stripped.
+   Chapter replies are rejected when narration contains a `snake_case` code word (a leaked
+   Visual Bible key); Latin names written in lower case ("napoleon") get the capitals they
+   have in the outline or earlier scenes (`NameCase`).
+   `script-progress` reports `stage: "plan"` while it runs (the Script page shows Outline →
+   Plan → Chapters).
+3. **Scenes per chapter**: request up to five scenes per call; larger chapters are split into
+   sequential calls and joined before saving the chapter. Each call gets the fact bank and the
+   beats for exactly its scenes ("scene k tells beat k"). (Keeps structured responses small and
    lets failed chapters resume without duplicating scenes.)
+   **Parallel chapters** (owner request 2026-11-03, speed): when the outline has a plan (fact
+   bank not empty), up to three unfinished chapters (`PARALLEL_CHAPTERS`) are written at the same
+   time; the client's text semaphore (`concurrency.text`, default 3) still caps live requests.
+   Each chapter in a wave sees the chapters saved before the wave as context, not its wave
+   siblings (the plan already gives every chapter its own facts). Each chapter is saved as soon
+   as it finishes, after dropping any scene that repeats one already saved by another chapter;
+   on an error the finished chapters stay saved and Continue writes the rest. Scripts without a
+   plan still write one chapter at a time.
 
 Scene JSON returned by the model:
 
 ```json
 { "narration": "…", "spoken_text": "…", "image_prompt": "…", "mood": "curious" }
 ```
+
+**Script tone** (`project.tone`, New project wizard → style step; owner request 2026-11-03):
+`script::tone_rules` adds a TONE section to the outline, plan and chapter prompts; the shared
+system prompt stays tone-neutral.
+- `funny` (wizard default): comedy cartoon explainer — a funny main character lives the story
+  (tries, fails, reacts, gets it right), situation humour and modern comparisons, one joke per
+  scene at most and never instead of the fact, kind humour only; title = an everyday curiosity
+  question; image prompts ask for big comic reactions; Khmer gets a playful-spoken-Khmer line.
+- `dramatic`: the earlier storytelling (tension, twists, reveals, cliffhangers). Projects made
+  before the choice existed deserialize as `dramatic`.
+- `calm`: clear documentary narrator, step-by-step answer, no jokes or hype.
 
 Prompt rules to include:
 - Storytelling tone, strong hook in scene 1–2, cliffhanger before each new chapter.
@@ -50,6 +97,9 @@ asks for the correct spelling in the project's language while preserving Latin n
 facts and unaffected content. If the repair still fails, the next model in the configured chain
 gets one attempt with the invalid output and repair instruction as context. A valid response ends
 the retry path immediately; the chapter is persisted only after it passes validation.
+**Soft rules** (`Validate::soft_check`) get the same one repair, but a repaired reply that breaks
+only a soft rule is kept instead of escalating (fallback models are slower and were often busy).
+Today the only soft rule is the question limit.
 
 **Implementation (Phase 1):**
 - Endpoint: `POST /v1beta/models/{text_model}:generateContent`, key in the `x-goog-api-key`
@@ -65,7 +115,8 @@ the retry path immediately; the chapter is persisted only after it passes valida
 - `project.json` is saved after the outline and after each complete chapter (`chapter.done = true`).
   Re-running `script_generate` skips the outline and finished chapters. A retried chapter
   replaces its own scenes, never duplicates them.
-- A chapter with more than five scenes is generated in sequential batches of at most five. Later
+- A chapter with more than five scenes is generated in sequential batches of at most five
+  (chapters themselves may run in parallel, see step 3). Later
   batches receive recent shot types, the current chapter's earlier narration, and compact narration
   context from completed chapters. The prompt asks the writer to continue with distinct information
   instead of restarting hooks, definitions or examples; the chapter is persisted only after all
@@ -74,7 +125,13 @@ the retry path immediately; the chapter is persisted only after it passes valida
   scenes already in the project, not just the current chapter. A batch that repeats existing scenes
   keeps only its new ones and is re-asked for the missing count (up to two retries) with an explicit
   "these already exist" warning; repeated scenes are never appended, so the voiceover cannot speak
-  the same line twice in another section.
+  the same line twice in another section. Reworded repeats count too: a narration sharing ≥ 60% of
+  its character trigrams with an earlier one is dropped (`near_duplicate`). `...` is removed from
+  `narration` (subtitles); it stays allowed in `spoken_text`.
+- Validation rejects any Thai, Lao, Arabic/Hebrew, Vietnamese, Indic or Myanmar letter in
+  narration, spoken text, the outline or the plan; the error goes back to the model as a focused
+  repair. A batch where more than `scenes/5 + 1` narrations ask the viewer a question (`?` or «តើ»)
+  is a soft failure: one repair, then kept.
 - Each chapter prompt gets the full outline and the previous chapter's last narration line for
   continuity; chapter 1 must open with the hook, middle chapters end on a cliffhanger, the last
   one concludes.
@@ -225,7 +282,9 @@ Every Gemini request (script, key test, and later TTS / images) goes through
   (+ up to 1 s jitter), honor `Retry-After` (seconds, capped at 120 s) if present.
   Waits double: 2 s, 4 s, 8 s, … (n attempts = n − 1 waits).
   - **Text calls:** 3 attempts per model (waits 2 s, 4 s), then the next model of the chain
-    (see below).
+    (see below). The **last** model of a chain has no fallback, so it gets 5 attempts (waits
+    2, 4, 8, 16 s) — this keeps one-model chains such as PDF reading alive through a short
+    "503 high demand" spell (2026-11-03).
   - **Other calls** (key test; later TTS / images): 5 attempts (waits 2, 4, 8, 16 s).
 - Before each wait a `gemini-retry` event is emitted (model, reason
   `busy | rate_limited | network | next_model`, next attempt n/max, delay, exact error) and a
@@ -245,8 +304,10 @@ Every Gemini request (script, key test, and later TTS / images) goes through
 ### Text model chain (fallback)
 
 - Setting `models.text_chain`: ordered list of text models, 1–6 entries, editable in Settings.
-  Default: `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite` → `gemini-3.8-flash`
-  (lighter models first: cheaper and usually less overloaded). Settings files from before
+  Default: `gemini-3.5-flash-lite` → `gemini-3.6-flash` → `gemini-3.1-flash-lite` →
+  `gemini-3.8-flash` (lighter models first: cheaper and usually less overloaded; 3.6 added
+  2026-11-05 as a stable second option when 3.5 Flash-Lite is busy). Existing settings files
+  keep their saved chain; add models in Settings → AI & keys. Settings files from before
   this change (`text` / `text_fallback`) load with this default.
 - Rule for every text call (outline or one chapter): try the current model with 3 attempts.
   If it still fails with a transient error (429 / 5xx / timeout / network) **or 404** (model
@@ -256,7 +317,10 @@ Every Gemini request (script, key test, and later TTS / images) goes through
 - If every model fails, the call fails with "All text models failed (tried a → b → c)" and
   the last model's exact error.
 - The model that answered is logged ("chapter 2/5 written by gemini-3.1-flash-lite"). Later
-  calls in the same job start from that model; the next job starts at the top of the list.
+  calls in the same job start from that model. A model that used up its tries is moved to the
+  back of the line for 5 minutes (shared by all jobs in the running app, `BUSY_COOLDOWN` in
+  `gemini/client.rs`), so the next job doesn't wait on it again; it is tried first again after
+  the cooldown, and still used last if every other model fails.
 - Calls are per outline / per chapter, so a failure only costs that chapter: finished chapters
   are saved and **Try again** resumes at the failed one.
 - Same key throughout — model fallback, never key rotation.
@@ -293,6 +357,14 @@ Done in React because only the browser shapes Khmer reliably. Details in `04-khm
    (the cue with that word highlighted, from the word's start to the next word's start);
    off, one state per cue. Word times come from `timeLines` over the words (Edge phrase
    timings interpolated by grapheme count). States are consecutive and cover the whole voice.
+   **Sliding highlight** (owner, 2026-11-03): when the next word is on the same line, its
+   first two video frames (33 ms each at 30 fps) are in-between states (`slide: {from, t}`,
+   smoothstep t ≈ 0.26 / 0.74) with the box part-way from the previous word, so the box glides
+   over ~100 ms instead of jumping. No glide onto the first word of a line or cue, or onto
+   words shorter than 5 frames (they jump). About 3 images per word: a 20-min video goes from
+   ~3,000 to ~8,000 PNGs (transparent bands, fast to encode; FFmpeg reads them through the same
+   single overlay, so clip time barely changes). In-between frames are sent with empty `text`
+   so `project.json` stays small.
    Each state is drawn on a transparent `<canvas>` by `paintCue` (`src/lib/subtitleCanvas.ts`):
    full frame width × 240 px (1080p and 9:16; 160 px at 720p), 56 px Kantumruy Pro 600, line height
    1.6, white fill, ~6 px dark outline + soft shadow, highlight box behind the spoken word,
@@ -302,11 +374,11 @@ Done in React because only the browser shapes Khmer reliably. Details in `04-khm
    (`subs.hash` ≠ `hashing::subs_hash` = narration + voice hash + duration + resolution +
    aspect + language + `SUBS_VERSION`). For each: draw → base64 PNGs → `subs_save(project_id,
    scene_id, hash, cues)`. Rust re-checks the hash (the scene may have changed meanwhile),
-   validates the PNGs and times (≤ 600 states, in time order), writes
+   validates the PNGs and times (≤ 2000 states, in time order), writes
    `scenes/<id>/subs/NNN.png` plus **`subs/track.ffconcat`** (`render/subs_track.rs`: each image
    with `duration` = next start − its start, last file repeated as the concat demuxer
    requires), and marks a done clip stale. The subtitle hash includes the highlight colour.
-   Bump `SUBS_VERSION` when the subtitle look or line breaking changes (now 3; a project
+   Bump `SUBS_VERSION` when the subtitle look or line breaking changes (now 4, sliding box; a project
    aspect change is covered by the hash above, no version bump needed).
 
 ## Step 6 — Render (FFmpeg)

@@ -29,7 +29,8 @@ import { PageHeader } from "../components/PageHeader";
 import { SceneThumb } from "../components/SceneThumb";
 import { ScriptPasteDialog } from "../components/ScriptPasteDialog";
 import { SourceReview } from "../components/SourceReview";
-import { ProgressBar } from "../components/ProgressBar";
+import { GenerationCard, type GenStep } from "../components/GenerationCard";
+import { ProjectFlow } from "../components/ProjectFlow";
 import { RetryStatus } from "../components/RetryStatus";
 import { SuggestionCard } from "../components/SuggestionCard";
 import { useToast } from "../components/toast";
@@ -152,7 +153,7 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
       if (p.project_id !== projectId) return;
       setProgress(p);
       setRetry(null);
-      if (p.stage === "outline" || p.stage === "chapter") {
+      if (p.stage === "outline" || p.stage === "plan" || p.stage === "chapter") {
         setRunning(true);
         setFinished(null);
       } else {
@@ -496,7 +497,18 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
   const progressLabel =
     progress?.stage === "chapter"
       ? t("script.progress.chapter", { n: progress.chapters_done + 1, total: progress.chapters_total })
-      : t("script.progress.outline");
+      : progress?.stage === "plan"
+        ? t("script.progress.plan")
+        : t("script.progress.outline");
+  // Outline → Plan → Chapters; a script part-written without a plan skips straight to chapters.
+  const stageIndex = progress?.stage === "chapter" ? 2 : progress?.stage === "plan" ? 1 : 0;
+  const scriptSteps: GenStep[] = [
+    t("script.stage.outline"),
+    t("script.stage.plan"),
+    progress?.stage === "chapter" && progress.chapters_total > 0
+      ? t("script.stage.chaptersOf", { done: progress.chapters_done, total: progress.chapters_total })
+      : t("script.stage.chapters"),
+  ].map((label, i) => ({ label, state: i < stageIndex ? "done" : i === stageIndex ? "active" : "todo" }));
 
   return (
     <div className="page page--split">
@@ -517,22 +529,24 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
           </div>
         }
         actions={headerActions}
+        flow={<ProjectFlow projectId={projectId} status={project.status} current="script" navigate={navigate} />}
       />
 
       <div className="status-strip">
         {running && (
-          <>
-            <span className="t-small">{progressLabel}</span>
-            <ProgressBar
-              label={progressLabel}
-              value={
-                progress?.stage === "chapter" && progress.chapters_total > 0
-                  ? progress.chapters_done / progress.chapters_total
-                  : undefined
-              }
-            />
+          <GenerationCard
+            kind="script"
+            title={t("script.writing")}
+            detail={progressLabel}
+            steps={scriptSteps}
+            value={
+              progress?.stage === "chapter" && progress.chapters_total > 0
+                ? progress.chapters_done / progress.chapters_total
+                : undefined
+            }
+          >
             {retry && <RetryStatus key={retry.at} retry={retry.notice} receivedAt={retry.at} />}
-          </>
+          </GenerationCard>
         )}
         {!running && finished?.stage === "failed" && (
           <ErrorPanel
@@ -542,14 +556,14 @@ export function ScriptPage({ projectId, navigate }: { projectId: string; navigat
           />
         )}
         {proofRunning && (
-          <>
-            <span className="t-small">{t("proof.progress", { done: proof?.checked ?? 0, total: proof?.total ?? 0 })}</span>
-            <ProgressBar
-              label={t("proof.check")}
-              value={proof && proof.total > 0 ? proof.checked / proof.total : undefined}
-            />
+          <GenerationCard
+            kind="script"
+            title={t("proof.check")}
+            detail={t("proof.progress", { done: proof?.checked ?? 0, total: proof?.total ?? 0 })}
+            value={proof && proof.total > 0 ? proof.checked / proof.total : undefined}
+          >
             {retry && <RetryStatus key={retry.at} retry={retry.notice} receivedAt={retry.at} />}
-          </>
+          </GenerationCard>
         )}
         {!proofRunning && proof?.stage === "failed" && (
           <ErrorPanel kind={proof.error_kind} details={proof.error} onRetry={() => void checkGrammar()} />

@@ -24,10 +24,15 @@ pub const PRESETS: &[StylePreset] = &[
         label: "Stickman",
         // Fuller scenes (owner, 2026-10-16): background, setting and props drawn in the same
         // line style instead of "lots of white space".
-        style_prompt: "simple hand-drawn stick figure doodle, bold clean black marker lines, flat pure white \
-                       background filling the whole frame, stick figures with round heads and simple dot eyes, \
-                       complete scene drawn in the same doodle lines with a background setting and several \
-                       topic props, flat colour accents, whiteboard explainer style",
+        // Main character design (owner's reference image, 2026-11-05): white round head, big oval
+        // eyes with pupils and eyebrows, small smile, tuft of hair, rounded bean-shaped body.
+        style_prompt: "simple hand-drawn stick figure doodle, bold clean black marker lines of even thickness, \
+                       flat pure white background filling the whole frame, one recurring main stick figure: \
+                       white round head with thick black outline, two big oval eyes with black pupils, curved \
+                       eyebrows, small smile and a tiny tuft of hair, plain white rounded bean-shaped body, \
+                       single-line arms with simple mitten hands, thick simple black legs; complete scene \
+                       drawn in the same doodle lines with a background setting and several topic props, \
+                       small flat colour accents on props only, whiteboard explainer style",
         prompt_rules: "",
         real_world: false,
     },
@@ -105,7 +110,8 @@ pub fn topic_visual_rules(texts: &[&str]) -> &'static str {
         "accurately depict the specific machinery, physical components, laboratory instruments and practical tools \
          named in this scene; focus on concrete physical objects without modern computer clutter or unrelated screens."
     } else {
-        "choose concrete visual details directly from this scene's narration; do not invent unrelated props or scenery."
+        "choose concrete visual details directly from this scene's narration and this video's topic (its own objects, \
+         places, people and era); do not invent unrelated props or scenery."
     }
 }
 

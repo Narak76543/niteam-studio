@@ -102,13 +102,16 @@ export function Sidebar({ route, navigate, recent, onSearch, onToggleLanguage, c
           <span className="sidebar__brand-name">{t("app.name")}</span>
         </div>
 
-        <NavItem
-          className="nav-item--search"
-          icon={<Search size={16} strokeWidth={1.75} />}
-          label={t("nav.search")}
-          onClick={onSearch}
-          kbd="Ctrl K"
-        />
+        {/* The Projects page has its own search box: no second one beside it. */}
+        {route.name !== "projects" && (
+          <NavItem
+            className="nav-item--search"
+            icon={<Search size={16} strokeWidth={1.75} />}
+            label={t("nav.search")}
+            onClick={onSearch}
+            kbd="Ctrl K"
+          />
+        )}
       </div>
 
       <div className="sidebar__group">

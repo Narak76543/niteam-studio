@@ -1,4 +1,4 @@
-import { ArrowLeft, Upload } from "lucide-react";
+import { ArrowLeft, Copy, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ProjectStatusBadge } from "../components/Badge";
@@ -9,11 +9,13 @@ import { SubtitleStylePanel } from "../components/editor/SubtitleStylePanel";
 import { Timeline } from "../components/editor/Timeline";
 import { Notice } from "../components/Notice";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ProjectFlow } from "../components/ProjectFlow";
 import { useToast } from "../components/toast";
 import { useI18n } from "../i18n/context";
 import { api, errorMessage } from "../lib/api";
 import type { Navigate } from "../lib/route";
 import { subtitleStates } from "../lib/subtitleStates";
+import { buildThumbnailPrompt } from "../lib/thumbnailPrompt";
 import { sceneIndexAt, totalMs } from "../lib/timeline";
 import type { Project, Settings, TimelineScene } from "../lib/types";
 
@@ -32,6 +34,10 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [time, setTime] = useState(0);
+  const timeRef = useRef(0);
+  useEffect(() => {
+    timeRef.current = time;
+  }, [time]);
   const [exportOpen, setExportOpen] = useState(false);
   const [resume, setResume] = useState(false);
   /** Real-world projects: credits of the stock photos / clips used (docs/11 §3). */
@@ -87,6 +93,12 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
         player.current?.stepScene(-1);
       } else if (e.key === "ArrowRight") {
         player.current?.stepScene(1);
+      } else if (e.key === "k" || e.key === "K") {
+        player.current?.toggle();
+      } else if (e.key === "j" || e.key === "J") {
+        player.current?.seek(Math.max(0, timeRef.current - 5000));
+      } else if (e.key === "l" || e.key === "L") {
+        player.current?.seek(timeRef.current + 5000);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -105,6 +117,7 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
       ),
     [scenes, lang, highlight, aspect],
   );
+  const thumbnailPrompt = useMemo(() => (project ? buildThumbnailPrompt(project) : ""), [project]);
   const total = totalMs(scenes);
   const onFinished = useCallback(() => void reload(), [reload]);
 
@@ -148,6 +161,16 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
           </span>
           <ProjectStatusBadge status={project.status} />
         </div>
+        <ProjectFlow
+          projectId={projectId}
+          status={project.status}
+          current="render"
+          scenesReady={ready}
+          navigate={(r) => {
+            player.current?.pause();
+            navigate(r);
+          }}
+        />
         <Button
           variant="primary"
           className="studio__export"
@@ -204,6 +227,32 @@ export function RenderPage({ projectId, navigate }: { projectId: string; navigat
               </p>
             </section>
           )}
+          <section className="panel-section" aria-label={t("thumb.title")}>
+            <h3 className="panel-section__title">{t("thumb.title")}</h3>
+            <p className="t-small">{t("thumb.body")}</p>
+            <textarea
+              className="textarea thumb-prompt"
+              readOnly
+              rows={6}
+              lang="en"
+              spellCheck={false}
+              value={thumbnailPrompt}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <Button
+              variant="pill"
+              icon={<Copy size={14} strokeWidth={1.75} />}
+              onClick={() => {
+                navigator.clipboard
+                  .writeText(thumbnailPrompt)
+                  .then(() => toast.show(t("thumb.copied"), "ok"))
+                  .catch((e: unknown) => toast.show(errorMessage(e), "danger"));
+              }}
+            >
+              {t("thumb.copy")}
+            </Button>
+            <span className="t-micro t-muted">{t("thumb.hint")}</span>
+          </section>
           {project.source?.credit && (
             <section className="panel-section" aria-label={t("source.credit")}>
               <h3 className="panel-section__title">{t("source.credit")}</h3>

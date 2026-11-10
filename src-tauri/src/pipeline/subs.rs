@@ -13,8 +13,9 @@ use crate::render::subs_track::{TRACK_FILE, TrackImage, ffconcat};
 use crate::storage::atomic;
 use crate::tts::WordTiming;
 
-/// Sanity limits for what the UI may send for one scene (one image per spoken word).
-const MAX_STATES: usize = 600;
+/// Sanity limits for what the UI may send for one scene (one image per spoken word, plus
+/// two in-between frames per word while the word box glides).
+const MAX_STATES: usize = 2000;
 const MAX_PNG_BYTES: usize = 3 * 1024 * 1024;
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 

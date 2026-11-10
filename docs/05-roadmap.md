@@ -430,3 +430,64 @@ _Add one line per finished phase: date — phase — notes._
   entrances, wizard step slide, button press, `PageSkeleton` for Scenes/Script/editor loading
   (replaces "Loading…"), `BootSplash` at start-up (was a blank window); opacity/transform only,
   off under prefers-reduced-motion. Spec in `06-ui-design.md` §5 Motion.
+
+- 2026-11-03 - **Professional script writer** (owner request: scripts repeated the same story and
+  asked the viewer questions in almost every scene). New **plan step** between outline and
+  chapters: one call writes a fact bank (`outline.facts`) and a beat sheet
+  (`outline.chapters[].beats`, one job per scene); each chapter request writes exactly its beats
+  and may only state numbers from the fact bank. Prompts rewritten: chapter 1 starts the story
+  (no trailer), questions at most 1 in 6 scenes, no invented statistics, short conclusion.
+  Code checks: too many viewer questions → repair, reworded repeats (≥ 60% trigram overlap)
+  dropped, `...` stripped from subtitles, Arabic/Hebrew/Vietnamese letters rejected like
+  Thai/Lao, "already covered" context spans up to 10 chapters. Spec in `03-pipeline.md` step 1.
+
+- 2026-11-03 - **Script tone** (owner request: the channel makes funny cartoon explainers).
+  New `project.tone` (`funny` | `dramatic` | `calm`) picked in the New project wizard (style
+  step, default Funny) for topic and document projects. `script::tone_rules` puts a TONE section
+  into the outline, plan and chapter prompts; the shared system prompt no longer forces dramatic
+  "shocking truth" writing. Funny = a comic main character lives the story, real facts, kind
+  humour, curiosity-question titles, comic reactions in image prompts. Old projects stay
+  `dramatic`. Spec in `03-pipeline.md` step 1.
+
+- 2026-11-03 - **UI refresh, generation animations, sliding subtitle highlight** (owner
+  request). `ProjectFlow` step bar (Script → Voices & pictures → Edit & export) on Script,
+  Scenes and the editor; running jobs shown as `GenerationCard`s with looping CSS
+  illustrations (pen writing lines, sound-wave bars, shimmer sweep), script stage row
+  Outline → Story plan → Chapters (new `script-progress` stage `plan`); scene covers shimmer
+  while drawn, show wave bars while voiced and a check pop when done; Projects cards get a step
+  meter, the empty state a how-it-works list. Transform/opacity only, off under reduced
+  motion. Subtitles: the word box glides to the next word on the same line over 3 frames
+  (two in-between PNGs per word, `slide` in `subtitleStates`), same states in preview and
+  export; `SUBS_VERSION` 4 (existing subtitles redraw once), ≤ 2000 states per scene.
+  Specs in `06-ui-design.md` §5, `04-khmer.md` §3, `03-pipeline.md` Step 5.
+
+- 2026-11-03 - **Plan step fix** (owner review of the Napoleon script: the story was told 3-4
+  times, chapters out of order, filler ending). The plan handed out its 40 facts one per scene,
+  so chapters 5-10 had no facts and retold the climax. Now the fact bank is grouped by chapter,
+  each fact belongs to one chapter, chapters move forward through the bank, ≥ 60% of beats cite
+  a fact, every fact is used (else repair); each chapter request may only tell its own facts;
+  half-truth titles must get the fuller answer. Regenerate a script to use it. Spec in
+  `03-pipeline.md` step 1.
+
+- 2026-11-03 - **Plan step, round 2** (owner review of the regenerated Napoleon script: the plan
+  check rejected Flash-Lite's plan 3x for fact order, then the backup models returned 503 and the
+  script was written without a plan, repeating itself again). Fact order is now fixed in code
+  (sort by chapter + renumber citations); busy/network/quota errors during the plan stop the
+  job instead of skipping the plan; narration with `snake_case` code words is repaired; lower-case
+  Latin names get their capitals back. Project step bar stays on one line (header actions wrap
+  below on narrow windows).
+
+- 2026-11-03 - **Plan step, round 3** (third Napoleon review: story now moves forward, but each
+  chapter cycled through its 4 facts twice, so scenes came in pairs). Plan check: a fact's beats
+  must be one run, never revisited; fact bank raised to ~1 per 2 scenes. Foreign-script check now
+  also rejects Indic (Devanagari … Sinhala, incl. Gurmukhi) and Myanmar letters, which slipped
+  into Khmer words.
+- 2026-11-03 - **Faster scripts.** Scripts with a plan write up to 3 chapters at the same time
+  (each saved as soon as it is done; Continue still resumes); older scripts stay one chapter at a
+  time. The question limit is now a soft rule: one repair on the same model, then the reply is
+  kept instead of moving to a busy fallback model.
+- 2026-11-10 - **Natural Khmer intonation (VoxCPM2).** Khmer text sent to the local voice engine
+  now carries Latin prosody cues (`។ ៕` → `.`, phrase spaces → `, `, mid-sentence pieces end in
+  `,`), only in the request (`tts/khmer_prosody.rs`); long Khmer sentences split evenly at phrase
+  spaces, else before connector words / syllable onsets, never inside a cluster; livelier Khmer
+  narrator presets + default style hint; New Voice tip about native-speaker recordings.

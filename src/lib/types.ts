@@ -477,12 +477,16 @@ export interface OutlineChapter {
   summary: string;
   scene_count: number;
   done: boolean;
+  /** Beat sheet from the plan step (English, one per scene); empty for older scripts. */
+  beats: string[];
 }
 
 export interface Outline {
   title: string;
   hook: string;
   chapters: OutlineChapter[];
+  /** Fact bank from the plan step (English); empty for older scripts. */
+  facts: string[];
 }
 
 export interface VoiceAsset {
@@ -658,6 +662,8 @@ export interface Project {
   target_minutes: number;
   /** Frame aspect: "16:9" (default) or "9:16" vertical (1080×1920 export). */
   aspect: Aspect;
+  /** Script tone ("dramatic" for projects made before the choice existed). */
+  tone: ScriptTone;
   style: Style;
   voice: VoiceSettings;
   status: ProjectStatus;
@@ -678,6 +684,8 @@ export interface Project {
 }
 
 export type Audience = "general" | "students" | "experts";
+/** How the script is written (docs/03-pipeline.md, "Script tone"). */
+export type ScriptTone = "funny" | "dramatic" | "calm";
 export type SourceStage = "reading" | "review" | "confirmed";
 
 export interface SourceSection {
@@ -748,6 +756,7 @@ export interface NewDocumentInput {
   target_minutes: number;
   aspect: Aspect;
   style_preset: string;
+  tone: ScriptTone;
   audience: Audience;
   focus: string;
   page_from: number | null;
@@ -785,6 +794,8 @@ export interface ProjectSummary {
   /** First scene with a thumbnail, and a key that changes with it. */
   cover_scene: string | null;
   cover_version: string | null;
+  /** paused_quota: when the free image allowance resets (RFC 3339 UTC). */
+  pause_resets_at: string | null;
 }
 
 export interface NewProjectInput {
@@ -793,6 +804,7 @@ export interface NewProjectInput {
   target_minutes: number;
   aspect: Aspect;
   style_preset: string;
+  tone: ScriptTone;
 }
 
 export interface SceneEdit {
@@ -805,7 +817,7 @@ export interface SceneEdit {
   visual?: { characters: string[]; place: string | null; shot: Shot };
 }
 
-export type ScriptStage = "outline" | "chapter" | "done" | "failed" | "cancelled";
+export type ScriptStage = "outline" | "plan" | "chapter" | "done" | "failed" | "cancelled";
 
 /** Payload of the `script-progress` event. */
 export interface ScriptProgress {

@@ -7,6 +7,7 @@ pub mod audio;
 pub mod chunker;
 pub mod edge;
 pub mod gemini;
+pub mod khmer_prosody;
 pub mod profiles;
 pub mod voices;
 pub mod voxcpm;

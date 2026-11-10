@@ -8,9 +8,10 @@ const OUTLINE: Outline = {
   title: "Angkor",
   hook: "A temple in the jungle",
   chapters: [
-    { title: "The beginning", summary: "", scene_count: 2, done: true },
-    { title: "The fall", summary: "", scene_count: 1, done: true },
+    { title: "The beginning", summary: "", scene_count: 2, done: true, beats: [] },
+    { title: "The fall", summary: "", scene_count: 1, done: true, beats: [] },
   ],
+  facts: [],
 };
 
 const scene = (order: number, chapter: number, narration: string, spoken = narration, fact: string | null = null) => ({

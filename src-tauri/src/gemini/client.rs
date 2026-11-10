@@ -5,9 +5,10 @@
 //!   HTTP attempt, not during backoff waits.
 //! - Text calls walk a model chain: 3 attempts per model, then the next model.
 
-use std::sync::Arc;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::de::DeserializeOwned;
 use tokio::sync::Semaphore;
@@ -24,6 +25,9 @@ use crate::storage::settings::ConcurrencySettings;
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 /// Raw error bodies kept for logs / "Details" are cut to this many characters.
 const MAX_ERROR_BODY_CHARS: usize = 2_000;
+/// A text model that used up its tries (busy / rate-limited / missing) is tried last for this
+/// long, so the next job doesn't wait on it again while Google is overloaded.
+const BUSY_COOLDOWN: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)] // Tts (Phase 2) and Image (Phase 3) are used by later pipeline steps.
@@ -86,6 +90,8 @@ pub struct GeminiClient {
     text_limit: Arc<Semaphore>,
     tts_limit: Arc<Semaphore>,
     image_limit: Arc<Semaphore>,
+    /// When each text model last failed over (see [`BUSY_COOLDOWN`]); shared by all clones.
+    busy: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 impl GeminiClient {
@@ -104,6 +110,7 @@ impl GeminiClient {
             text_limit: Arc::new(Semaphore::new(concurrency.text)),
             tts_limit: Arc::new(Semaphore::new(concurrency.tts)),
             image_limit: Arc::new(Semaphore::new(concurrency.image)),
+            busy: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -195,6 +202,7 @@ impl GeminiClient {
     }
 
     /// Text generation over the model chain: each model gets [`TEXT_CHAIN_ATTEMPTS`] tries
+    /// ([`MAX_ATTEMPTS`] for the last one)
     /// (429 / 5xx / timeouts are retried with backoff); if it still fails with a transient
     /// error or 404, the next model is tried. Returns the response and the model that answered.
     pub async fn generate_text(
@@ -207,14 +215,27 @@ impl GeminiClient {
         let start = chain.current.load(Ordering::Relaxed);
         let mut tried: Vec<String> = Vec::new();
         let mut last: Option<GeminiError> = None;
-        for (i, model) in chain.models.iter().enumerate().skip(start) {
+        // Models that just failed over go to the back of the line (they come back after the cooldown).
+        let order: Vec<usize> = {
+            let now = Instant::now();
+            let busy = self.busy.lock().unwrap_or_else(|p| p.into_inner());
+            let (idle, cooling): (Vec<usize>, Vec<usize>) = (start..chain.models.len()).partition(|&i| {
+                busy.get(&chain.models[i]).is_none_or(|at| now.duration_since(*at) >= BUSY_COOLDOWN)
+            });
+            idle.into_iter().chain(cooling).collect()
+        };
+        for (pos, &i) in order.iter().enumerate() {
+            let model = &chain.models[i];
+            // The last model has nothing to fall back to (a one-model chain such as PDF
+            // reading): wait out a busy spell like a single-model call instead of failing fast.
+            let attempts = if pos + 1 == order.len() { MAX_ATTEMPTS } else { TEXT_CHAIN_ATTEMPTS };
             if let Some(prev_err) = &last {
                 hooks.notify(&RetryNotice {
                     model: model.clone(),
                     previous_model: tried.last().cloned(),
                     reason: RetryReason::NextModel,
                     attempt: 1,
-                    max_attempts: TEXT_CHAIN_ATTEMPTS,
+                    max_attempts: attempts,
                     delay_ms: 0,
                     status: prev_err.status(),
                     error: prev_err.detail(),
@@ -227,16 +248,18 @@ impl GeminiClient {
                     EndpointKind::Text,
                     body,
                     hooks,
-                    TEXT_CHAIN_ATTEMPTS,
+                    attempts,
                     chain.attempt_timeout,
                 )
                 .await
             {
                 Ok(response) => {
                     chain.current.store(i, Ordering::Relaxed);
+                    self.busy.lock().unwrap_or_else(|p| p.into_inner()).remove(model);
                     return Ok((response, model.clone()));
                 }
                 Err(e) if e.try_next_model() => {
+                    self.busy.lock().unwrap_or_else(|p| p.into_inner()).insert(model.clone(), Instant::now());
                     tried.push(model.clone());
                     last = Some(e);
                 }
@@ -571,18 +594,52 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn a_model_that_just_failed_over_is_skipped_by_the_next_job() {
+        // Job 1: a is busy 3×, b answers. Job 2 (a fresh chain) goes straight to b.
+        let mut r = busy_n(3);
+        r.push(status(200, OK_BODY));
+        r.push(status(200, OK_BODY));
+        let (c, mock) = client(r);
+        let first = ModelChain::new(&["a", "b", "c"]);
+        let second = ModelChain::new(&["a", "b", "c"]);
+        let hooks = RetryHooks::default();
+        c.generate_text(&key(), &first, &body(), &hooks).await.unwrap();
+        let (_, used) = c.generate_text(&key(), &second, &body(), &hooks).await.unwrap();
+        assert_eq!(used, "b");
+        assert_eq!(models_called(&mock), vec!["a", "a", "a", "b", "b"]);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn chain_exhausted_reports_every_model_and_last_error() {
-        let (c, mock) = client(busy_n(9));
+        let (c, mock) = client(busy_n(11));
         let chain = ModelChain::new(&["a", "b", "c"]);
         let err = c
             .generate_text(&key(), &chain, &body(), &RetryHooks::default())
             .await
             .unwrap_err();
-        assert_eq!(mock.urls().len(), 9);
+        // 3 + 3 tries, then the last model (no fallback left) gets MAX_ATTEMPTS.
+        assert_eq!(mock.urls().len(), 11);
         assert_eq!(err.kind(), "busy");
         let detail = err.detail();
         assert!(detail.contains("a → b → c"), "{detail}");
         assert!(detail.contains("HTTP 503"), "{detail}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn one_model_chain_waits_out_a_busy_spell() {
+        // PDF reading uses one model: four 503s, then it answers on the fifth try.
+        let mut r: Vec<_> = (0..4)
+            .map(|_| status(503, r#"{"error":{"code":503,"message":"high demand"}}"#))
+            .collect();
+        r.push(status(200, r#"{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}"#));
+        let (c, mock) = client(r);
+        let chain = ModelChain::new(&["flash"]);
+        let (_, model) = c
+            .generate_text(&key(), &chain, &body(), &RetryHooks::default())
+            .await
+            .unwrap();
+        assert_eq!(model, "flash");
+        assert_eq!(mock.urls().len(), 5);
     }
 
     #[tokio::test(start_paused = true)]

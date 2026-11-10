@@ -2,7 +2,7 @@
 //! `project.json` is saved after the outline and after every chapter, so a crash or
 //! cancel resumes at the first chapter that isn't `done`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
@@ -17,7 +17,8 @@ use crate::gemini::client::ModelChain;
 use crate::gemini::retry::RetryHooks;
 use crate::gemini::document;
 use crate::gemini::script::{
-    self, BibleKeys, ChapterContext, ChapterReply, MOODS, OutlineReply, SceneReply, ScriptBrief,
+    self, BibleKeys, ChapterContext, ChapterReply, MOODS, OutlineReply, PlanReply, SceneReply,
+    ScriptBrief,
 };
 use crate::gemini::{GeminiClient, GeminiError};
 use crate::storage::ApiKey;
@@ -35,12 +36,16 @@ const MAX_SCENES_PER_REQUEST: usize = 5;
 /// Extra requests when a batch re-writes scenes that already exist in the project.
 const MAX_DUPLICATE_RETRIES: usize = 2;
 /// How many earlier chapters are summarised in "already covered" context.
-const MAX_COVERED_CHAPTERS: usize = 3;
+const MAX_COVERED_CHAPTERS: usize = 10;
+/// Chapters written at the same time when the script has a plan (one `tokio::join!` slot each).
+const PARALLEL_CHAPTERS: usize = 3;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScriptStage {
     Outline,
+    /// Beat sheet + fact bank (before the first chapter).
+    Plan,
     Chapter,
     Done,
     Failed,
@@ -125,6 +130,79 @@ impl ScriptJob<'_> {
         });
     }
 
+    /// Plan step: one request for the fact bank and every chapter's beats, saved into the
+    /// outline. A plan that keeps failing the checks is logged and skipped (chapters are then
+    /// written from the outline alone); any other error (busy, network, quota) stops the job.
+    async fn write_plan(
+        &self,
+        project: &Project,
+        style_label: &str,
+        source: Option<&str>,
+    ) -> Result<Option<Project>, ProjectError> {
+        let Some(outline) = project.outline.as_ref() else {
+            return Ok(None);
+        };
+        let brief = brief(project, style_label, source);
+        let chapters: Vec<(&str, &str, u32)> = outline
+            .chapters
+            .iter()
+            .map(|c| (c.title.as_str(), c.summary.as_str(), c.scene_count))
+            .collect();
+        let counts: Vec<u32> = chapters.iter().map(|c| c.2).collect();
+        let result: Result<(PlanReply, String), GeminiError> = script::request_json(
+            self.client,
+            self.key,
+            self.models,
+            script::plan_prompt(&brief, &outline.title, &outline.hook, &chapters),
+            script::plan_schema(&counts),
+            self.hooks,
+        )
+        .await;
+        let (reply, model) = match result {
+            Ok(ok) => ok,
+            // Busy, offline, quota, key…: stop rather than write a script without a plan (the
+            // Napoleon script, 2026-11-03, repeated its story when the plan hit a 503). The
+            // outline is saved, so Continue starts again at the plan.
+            Err(e) if !matches!(e, GeminiError::BadResponse(_)) => return Err(e.into()),
+            Err(e) => {
+                self.log.warn(&format!(
+                    "script plan failed, writing chapters without a beat sheet [{}]: {}",
+                    e.kind(),
+                    e.detail()
+                ));
+                return Ok(None);
+            }
+        };
+        // Facts sorted into chapter order, citations renumbered (the model often lists a few
+        // facts out of order; that is fixed here instead of rejecting the plan).
+        let (ordered_facts, ordered_beats) = reply.in_chapter_order();
+        let facts: Vec<String> = ordered_facts
+            .iter()
+            .map(|f| normalize(script::strip_fact_label(f)).trim().to_owned())
+            .collect();
+        self.log.info(&format!(
+            "script plan written by {model}: {} fact(s), {} beat(s)",
+            facts.len(),
+            counts.iter().sum::<u32>()
+        ));
+        let updated = self
+            .store
+            .update(&project.id, |p| {
+                if let Some(o) = p.outline.as_mut() {
+                    for (index, chapter) in o.chapters.iter_mut().enumerate() {
+                        let mut beats = clean_lines(ordered_beats.get(index).map_or(&[], Vec::as_slice));
+                        beats.truncate(chapter.scene_count as usize);
+                        chapter.beats = beats;
+                    }
+                    o.facts = facts;
+                }
+                Ok(())
+            })
+            .await?
+            .0;
+        Ok(Some(updated))
+    }
+
     async fn run_inner(
         &self,
         id: &str,
@@ -189,238 +267,357 @@ impl ScriptJob<'_> {
                 .0;
         }
 
-        let total = project.outline.as_ref().map_or(0, |o| o.chapters.len());
-        for index in 0..total {
-            let Some(outline) = project.outline.as_ref() else {
-                break;
-            };
-            let Some(chapter) = outline.chapters.get(index) else {
-                break;
-            };
-            if chapter.done {
-                continue;
+        // Beat sheet + fact bank before the first chapter, so every scene has its own job.
+        // Scripts already part-written without a plan keep going without one.
+        if needs_plan(&project) {
+            emit(progress(id, ScriptStage::Plan, 0, 0));
+            if let Some(project_with_plan) = self.write_plan(&project, style_label, source.as_deref()).await? {
+                project = project_with_plan;
             }
-            emit(progress(id, ScriptStage::Chapter, index, total));
-            let previous = project
-                .scenes
-                .iter()
-                .rev()
-                .find(|s| s.chapter < index as u32)
-                .map(|s| s.narration.clone());
-            let brief = brief(&project, style_label, source.as_deref());
-            let bible = project.visual_bible.as_ref().map_or_else(BibleKeys::default, |b| BibleKeys {
-                characters: b
-                    .characters
-                    .iter()
-                    .map(|(k, d)| (k.as_str(), d.as_str()))
-                    .collect(),
-                places: b
-                    .places
-                    .iter()
-                    .map(|(k, d)| (k.as_str(), d.as_str()))
-                    .collect(),
-            });
-            let chapters: Vec<_> = outline
+        }
+
+        let total = project.outline.as_ref().map_or(0, |o| o.chapters.len());
+        // With a plan every chapter owns its facts and beats, so up to PARALLEL_CHAPTERS
+        // chapters are written side by side (the client's text semaphore still caps requests).
+        // Older scripts without a plan lean on the previous chapter's text: one at a time.
+        let wave = if project.outline.as_ref().is_some_and(|o| !o.facts.is_empty()) {
+            PARALLEL_CHAPTERS
+        } else {
+            1
+        };
+        let mut attempted: HashSet<usize> = HashSet::new();
+        while let Some(outline) = project.outline.as_ref() {
+            let pending: Vec<usize> = outline
                 .chapters
                 .iter()
-                .map(|c| (c.title.as_str(), c.summary.as_str()))
+                .enumerate()
+                .filter(|(i, c)| !c.done && !attempted.contains(i))
+                .map(|(i, _)| i)
+                .take(wave)
                 .collect();
-            let chapter_scene_count = chapter.scene_count as usize;
-            let mut replies: Vec<SceneReply> = Vec::with_capacity(chapter_scene_count);
-            // Every narration already written, so later chapters cannot repeat a scene
-            // ("the same line in another section").
-            let mut seen: HashSet<String> = project
+            if pending.is_empty() {
+                break;
+            }
+            attempted.extend(pending.iter().copied());
+            emit(progress(id, ScriptStage::Chapter, chapter_counts(&project).0, total));
+            let (snapshot, source) = (&project, source.as_deref());
+            let mut tasks = pending.iter().map(|&index| async move {
+                let (replies, models) = self
+                    .write_chapter(snapshot, index, style_label, source)
+                    .await?;
+                self.save_chapter(id, index, total, replies, &models, emit).await
+            });
+            let (a, b, c) = tokio::join!(
+                run_some(tasks.next()),
+                run_some(tasks.next()),
+                run_some(tasks.next())
+            );
+            // Finished chapters are already saved; the first error stops the job (Continue
+            // picks up the chapters that are not done).
+            for result in [a, b, c].into_iter().flatten() {
+                result?;
+            }
+            project = self.store.get(id).await?;
+        }
+        Ok(())
+    }
+
+    /// Writes one chapter in batches of `MAX_SCENES_PER_REQUEST`, using `project` (the
+    /// chapters saved before this wave) as context. Returns the scenes and the models used.
+    async fn write_chapter(
+        &self,
+        project: &Project,
+        index: usize,
+        style_label: &str,
+        source: Option<&str>,
+    ) -> Result<(Vec<SceneReply>, Vec<String>), ProjectError> {
+        let Some(outline) = project.outline.as_ref() else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        let Some(chapter) = outline.chapters.get(index) else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        let previous = project
+            .scenes
+            .iter()
+            .rev()
+            .find(|s| s.chapter < index as u32)
+            .map(|s| s.narration.clone());
+        let brief = brief(project, style_label, source);
+        let bible = project.visual_bible.as_ref().map_or_else(BibleKeys::default, |b| BibleKeys {
+            characters: b
+                .characters
+                .iter()
+                .map(|(k, d)| (k.as_str(), d.as_str()))
+                .collect(),
+            places: b
+                .places
+                .iter()
+                .map(|(k, d)| (k.as_str(), d.as_str()))
+                .collect(),
+        });
+        let chapters: Vec<_> = outline
+            .chapters
+            .iter()
+            .map(|c| (c.title.as_str(), c.summary.as_str()))
+            .collect();
+        let chapter_scene_count = chapter.scene_count as usize;
+        let mut replies: Vec<SceneReply> = Vec::with_capacity(chapter_scene_count);
+        // Every narration already written, so later chapters cannot repeat a scene
+        // ("the same line in another section").
+        let mut seen: HashSet<String> = project
+            .scenes
+            .iter()
+            .map(|s| scene_key(&s.narration))
+            .collect();
+        let mut models = Vec::new();
+        // Names as the outline and earlier scenes spell them ("napoleon" → "Napoleon").
+        let mut names = NameCase::default();
+        names.learn(&outline.title);
+        names.learn(&outline.hook);
+        for c in &outline.chapters {
+            names.learn(&c.title);
+            names.learn(&c.summary);
+        }
+        for s in &project.scenes {
+            names.learn(&s.narration);
+        }
+        // The facts the plan gives this chapter; the writer must leave the others alone.
+        let chapter_facts = script::cited_facts(&chapter.beats);
+        for start in (0..chapter_scene_count).step_by(MAX_SCENES_PER_REQUEST) {
+            let count = (chapter_scene_count - start).min(MAX_SCENES_PER_REQUEST);
+            let mut shot_history: Vec<String> = project
                 .scenes
                 .iter()
-                .map(|s| scene_key(&s.narration))
+                .filter(|s| s.chapter < index as u32)
+                .rev()
+                .take(2)
+                .map(|s| s.shot.as_str().to_owned())
                 .collect();
-            let mut models = Vec::new();
-            for start in (0..chapter_scene_count).step_by(MAX_SCENES_PER_REQUEST) {
-                let count = (chapter_scene_count - start).min(MAX_SCENES_PER_REQUEST);
-                let mut shot_history: Vec<String> = project
+            shot_history.reverse();
+            shot_history.extend(replies.iter().map(|s| s.shot.clone()));
+            let shot_start = shot_history.len().saturating_sub(2);
+            let previous_shots: Vec<String> = shot_history.into_iter().skip(shot_start).collect();
+            let previous_shot_refs = previous_shots.iter().map(String::as_str).collect();
+            let previous_narration = replies
+                .last()
+                .map(|s: &SceneReply| s.narration.as_str())
+                .or(previous.as_deref());
+            let ctx = ChapterContext {
+                title: &outline.title,
+                hook: &outline.hook,
+                chapters: chapters.clone(),
+                index,
+                scene_count: count,
+                segment_start: start,
+                chapter_total_scenes: chapter_scene_count,
+                previous_narration,
+                previous_shots: previous_shot_refs,
+                bible: BibleKeys {
+                    characters: bible.characters.clone(),
+                    places: bible.places.clone(),
+                },
+                beats: chapter
+                    .beats
+                    .get(start..(start + count).min(chapter.beats.len()))
+                    .unwrap_or(&[]),
+                facts: &outline.facts,
+                chapter_facts: &chapter_facts,
+            };
+            let mut prompt = script::chapter_prompt(&brief, &ctx);
+            let mut covered = String::from(
+                "\nALREADY COVERED IN THIS VIDEO — continuation context, not new material:\n",
+            );
+            let mut prior_chapters: Vec<u32> = project
+                .scenes
+                .iter()
+                .filter(|s| s.chapter < index as u32)
+                .map(|s| s.chapter)
+                .collect();
+            prior_chapters.sort_unstable();
+            prior_chapters.dedup();
+            // Only the latest chapters: the `seen` set already blocks exact repeats, and
+            // the prompt would otherwise grow with every chapter of a 20-minute video.
+            let skip = prior_chapters.len().saturating_sub(MAX_COVERED_CHAPTERS);
+            for prior_chapter in prior_chapters.into_iter().skip(skip) {
+                let chapter_text = project
                     .scenes
                     .iter()
-                    .filter(|s| s.chapter < index as u32)
-                    .rev()
-                    .take(2)
-                    .map(|s| s.shot.as_str().to_owned())
-                    .collect();
-                shot_history.reverse();
-                shot_history.extend(replies.iter().map(|s| s.shot.clone()));
-                let shot_start = shot_history.len().saturating_sub(2);
-                let previous_shots: Vec<String> = shot_history.into_iter().skip(shot_start).collect();
-                let previous_shot_refs = previous_shots.iter().map(String::as_str).collect();
-                let previous_narration = replies
-                    .last()
-                    .map(|s: &SceneReply| s.narration.as_str())
-                    .or(previous.as_deref());
-                let ctx = ChapterContext {
-                    title: &outline.title,
-                    hook: &outline.hook,
-                    chapters: chapters.clone(),
-                    index,
-                    scene_count: count,
-                    segment_start: start,
-                    chapter_total_scenes: chapter_scene_count,
-                    previous_narration,
-                    previous_shots: previous_shot_refs,
-                    bible: BibleKeys {
-                        characters: bible.characters.clone(),
-                        places: bible.places.clone(),
-                    },
-                };
-                let mut prompt = script::chapter_prompt(&brief, &ctx);
-                let mut covered = String::from(
-                    "\nALREADY COVERED IN THIS VIDEO — continuation context, not new material:\n",
-                );
-                let mut prior_chapters: Vec<u32> = project
-                    .scenes
+                    .filter(|s| s.chapter == prior_chapter)
+                    .map(|s| s.narration.trim())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !chapter_text.is_empty() {
+                    covered.push_str(&format!(
+                        "Earlier chapter {}: {}\n",
+                        prior_chapter + 1,
+                        chapter_text.chars().take(700).collect::<String>()
+                    ));
+                }
+            }
+            for (offset, scene) in replies.iter().enumerate() {
+                covered.push_str(&format!(
+                    "Already written in this chapter, scene {}: {}\n",
+                    offset + 1,
+                    scene.narration.trim()
+                ));
+            }
+            let mut recent_visuals: Vec<String> = project
+                .scenes
+                .iter()
+                .filter(|s| s.chapter < index as u32)
+                .map(|s| s.image_prompt.trim().to_owned())
+                .filter(|s| !s.is_empty())
+                .collect();
+            recent_visuals.extend(
+                replies
                     .iter()
-                    .filter(|s| s.chapter < index as u32)
-                    .map(|s| s.chapter)
-                    .collect();
-                prior_chapters.sort_unstable();
-                prior_chapters.dedup();
-                // Only the latest chapters: the `seen` set already blocks exact repeats, and
-                // the prompt would otherwise grow with every chapter of a 20-minute video.
-                let skip = prior_chapters.len().saturating_sub(MAX_COVERED_CHAPTERS);
-                for prior_chapter in prior_chapters.into_iter().skip(skip) {
-                    let chapter_text = project
-                        .scenes
-                        .iter()
-                        .filter(|s| s.chapter == prior_chapter)
-                        .map(|s| s.narration.trim())
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if !chapter_text.is_empty() {
-                        covered.push_str(&format!(
-                            "Earlier chapter {}: {}\n",
-                            prior_chapter + 1,
-                            chapter_text.chars().take(700).collect::<String>()
+                    .map(|s| s.image_prompt.trim().to_owned())
+                    .filter(|s| !s.is_empty()),
+            );
+            let visual_start = recent_visuals.len().saturating_sub(8);
+            if visual_start < recent_visuals.len() {
+                covered.push_str("RECENT VISUALS ALREADY USED (avoid repeating these setups):\n");
+                for (offset, visual) in recent_visuals.iter().skip(visual_start).enumerate() {
+                    covered.push_str(&format!(
+                        "{}. {}\n",
+                        visual_start + offset + 1,
+                        visual.chars().take(180).collect::<String>()
+                    ));
+                }
+            }
+            covered.push_str(
+                "Give each new scene a distinct purpose and add a new fact, example, consequence, or step. Do not repeat a hook, definition, claim, example, transition, sentence, or sentence opening already covered. Continue the explanation from the next logical point. For every image_prompt, name a concrete topic-specific object and action; for technology scenes show real computing tools or a developer at work, not a generic classroom, group or landscape. Choose a different setting, composition and visible action from recent visuals unless the narration requires continuity. Use natural varied Khmer phrasing; do not force awkward synonyms.\n",
+            );
+            prompt.push_str(&covered);
+            if chapter_scene_count > MAX_SCENES_PER_REQUEST {
+                prompt.push_str(&format!(
+                    "\nThis is segment {} of {} for this chapter, covering chapter scenes {}–{}. \
+                     This segment continues the same chapter. Continue chronologically from the previous scene; \
+                     do not restart the hook or repeat earlier scenes. Advance the story to the next event.\n",
+                    start / MAX_SCENES_PER_REQUEST + 1,
+                    chapter_scene_count.div_ceil(MAX_SCENES_PER_REQUEST),
+                    start + 1,
+                    start + count,
+                ));
+            }
+            let mut fresh: Vec<SceneReply> = Vec::new();
+            let mut attempts = 0;
+            loop {
+                let (reply, model): (ChapterReply, String) = script::request_json(
+                    self.client,
+                    self.key,
+                    self.models,
+                    prompt.clone(),
+                    script::chapter_schema(
+                        count.saturating_sub(fresh.len()).max(1),
+                        &ctx.bible,
+                        source.is_some(),
+                        brief.real_world,
+                    ),
+                    self.hooks,
+                )
+                .await?;
+                models.push(model);
+                let mut scenes = reply.scenes;
+                for s in &scenes {
+                    names.learn(&s.narration);
+                }
+                for s in &mut scenes {
+                    s.narration = names.fix(&s.narration);
+                    s.spoken_text = names.fix(&s.spoken_text);
+                }
+                let (mut unique, dropped) = take_unique_scenes(scenes, &mut seen);
+                fresh.append(&mut unique);
+                if dropped == 0 {
+                    break;
+                }
+                self.log.warn(&format!(
+                    "chapter {} segment {}-{} repeated {dropped} scene(s) already written elsewhere",
+                    index + 1,
+                    start + 1,
+                    start + count
+                ));
+                if fresh.len() >= count || attempts >= MAX_DUPLICATE_RETRIES {
+                    if fresh.len() < count {
+                        self.log.warn(&format!(
+                            "chapter {} segment {}-{} kept {} of {count} scene(s); skipped the repeated ones",
+                            index + 1,
+                            start + 1,
+                            start + count,
+                            fresh.len()
                         ));
                     }
+                    break;
                 }
-                for (offset, scene) in replies.iter().enumerate() {
-                    covered.push_str(&format!(
-                        "Already written in this chapter, scene {}: {}\n",
-                        offset + 1,
+                attempts += 1;
+                prompt.push_str(&format!(
+                    "\nRETRY WARNING: your previous answer repeated {dropped} scene(s) that already exist in this video. \
+                     Do NOT restate them. Write completely NEW scenes describing the NEXT steps of the story. \
+                     Return exactly {} new scene(s).\n",
+                    count - fresh.len()
+                ));
+                for scene in &fresh {
+                    prompt.push_str(&format!(
+                        "Just written in this batch (do not repeat): {}\n",
                         scene.narration.trim()
                     ));
                 }
-                let mut recent_visuals: Vec<String> = project
+            }
+            replies.extend(fresh);
+        }
+        Ok((replies, models))
+    }
+
+    /// Saves a written chapter (dropping scenes another chapter of the same wave already
+    /// said) and reports progress.
+    async fn save_chapter(
+        &self,
+        id: &str,
+        index: usize,
+        total: usize,
+        replies: Vec<SceneReply>,
+        models: &[String],
+        emit: &impl Fn(ScriptProgress),
+    ) -> Result<(), ProjectError> {
+        let (project, (kept, dropped)) = self
+            .store
+            .update(id, |p| {
+                let mut seen: HashSet<String> = p
                     .scenes
                     .iter()
-                    .filter(|s| s.chapter < index as u32)
-                    .map(|s| s.image_prompt.trim().to_owned())
-                    .filter(|s| !s.is_empty())
+                    .filter(|s| s.chapter != index as u32)
+                    .map(|s| scene_key(&s.narration))
                     .collect();
-                recent_visuals.extend(
-                    replies
-                        .iter()
-                        .map(|s| s.image_prompt.trim().to_owned())
-                        .filter(|s| !s.is_empty()),
-                );
-                let visual_start = recent_visuals.len().saturating_sub(8);
-                if visual_start < recent_visuals.len() {
-                    covered.push_str("RECENT VISUALS ALREADY USED (avoid repeating these setups):\n");
-                    for (offset, visual) in recent_visuals.iter().skip(visual_start).enumerate() {
-                        covered.push_str(&format!(
-                            "{}. {}\n",
-                            visual_start + offset + 1,
-                            visual.chars().take(180).collect::<String>()
-                        ));
-                    }
-                }
-                covered.push_str(
-                    "Give each new scene a distinct purpose and add a new fact, example, consequence, or step. Do not repeat a hook, definition, claim, example, transition, sentence, or sentence opening already covered. Continue the explanation from the next logical point. For every image_prompt, name a concrete topic-specific object and action; for technology scenes show real computing tools or a developer at work, not a generic classroom, group or landscape. Choose a different setting, composition and visible action from recent visuals unless the narration requires continuity. Use natural varied Khmer phrasing; do not force awkward synonyms.\n",
-                );
-                prompt.push_str(&covered);
-                if chapter_scene_count > MAX_SCENES_PER_REQUEST {
-                    prompt.push_str(&format!(
-                        "\nThis is segment {} of {} for this chapter, covering chapter scenes {}–{}. \
-                         This segment continues the same chapter. Continue chronologically from the previous scene; \
-                         do not restart the hook or repeat earlier scenes. Advance the story to the next event.\n",
-                        start / MAX_SCENES_PER_REQUEST + 1,
-                        chapter_scene_count.div_ceil(MAX_SCENES_PER_REQUEST),
-                        start + 1,
-                        start + count,
-                    ));
-                }
-                let mut fresh: Vec<SceneReply> = Vec::new();
-                let mut attempts = 0;
-                loop {
-                    let (reply, model): (ChapterReply, String) = script::request_json(
-                        self.client,
-                        self.key,
-                        self.models,
-                        prompt.clone(),
-                        script::chapter_schema(
-                            count.saturating_sub(fresh.len()).max(1),
-                            &ctx.bible,
-                            source.is_some(),
-                            brief.real_world,
-                        ),
-                        self.hooks,
-                    )
-                    .await?;
-                    models.push(model);
-                    let (mut unique, dropped) = take_unique_scenes(reply.scenes, &mut seen);
-                    fresh.append(&mut unique);
-                    if dropped == 0 {
-                        break;
-                    }
-                    self.log.warn(&format!(
-                        "chapter {} segment {}-{} repeated {dropped} scene(s) already written elsewhere",
-                        index + 1,
-                        start + 1,
-                        start + count
-                    ));
-                    if fresh.len() >= count || attempts >= MAX_DUPLICATE_RETRIES {
-                        if fresh.len() < count {
-                            self.log.warn(&format!(
-                                "chapter {} segment {}-{} kept {} of {count} scene(s); skipped the repeated ones",
-                                index + 1,
-                                start + 1,
-                                start + count,
-                                fresh.len()
-                            ));
-                        }
-                        break;
-                    }
-                    attempts += 1;
-                    prompt.push_str(&format!(
-                        "\nRETRY WARNING: your previous answer repeated {dropped} scene(s) that already exist in this video. \
-                         Do NOT restate them. Write completely NEW scenes describing the NEXT steps of the story. \
-                         Return exactly {} new scene(s).\n",
-                        count - fresh.len()
-                    ));
-                    for scene in &fresh {
-                        prompt.push_str(&format!(
-                            "Just written in this batch (do not repeat): {}\n",
-                            scene.narration.trim()
-                        ));
-                    }
-                }
-                replies.extend(fresh);
-            }
-            self.log.info(&format!(
-                "chapter {}/{total} ({} scenes) written in {} request(s) by {}",
-                index + 1,
-                replies.len(),
-                models.len(),
-                models.join(", ")
+                let (unique, dropped) = take_unique_scenes(replies, &mut seen);
+                let kept = unique.len();
+                append_chapter(p, index, unique);
+                Ok((kept, dropped))
+            })
+            .await?;
+        if dropped > 0 {
+            self.log.warn(&format!(
+                "chapter {} repeated {dropped} scene(s) of a chapter written at the same time; skipped them",
+                index + 1
             ));
-            project = self
-                .store
-                .update(id, |p| {
-                    append_chapter(p, index, replies);
-                    Ok(())
-                })
-                .await?
-                .0;
         }
+        self.log.info(&format!(
+            "chapter {}/{total} ({kept} scenes) written in {} request(s) by {}",
+            index + 1,
+            models.len(),
+            models.join(", ")
+        ));
+        emit(progress(id, ScriptStage::Chapter, chapter_counts(&project).0, total));
         Ok(())
+    }
+}
+
+/// Awaits `task` if there is one (fills the fixed `tokio::join!` slots of a wave).
+async fn run_some<F: std::future::Future>(task: Option<F>) -> Option<F::Output> {
+    match task {
+        Some(task) => Some(task.await),
+        None => None,
     }
 }
 
@@ -453,6 +650,7 @@ fn brief<'a>(p: &'a Project, style_label: &'a str, source: Option<&'a str>) -> S
         keep_terms: &p.keep_terms,
         source,
         real_world: super::presets::is_real_world(&p.style.preset),
+        tone: p.tone,
     }
 }
 
@@ -482,15 +680,99 @@ fn take_unique_scenes(
 ) -> (Vec<SceneReply>, usize) {
     let mut dropped = 0;
     let mut out = Vec::with_capacity(scenes.len());
-    for scene in scenes {
+    for mut scene in scenes {
+        scene.narration = strip_ellipsis(&scene.narration);
         let key = scene_key(&scene.narration);
-        if key.is_empty() || !seen.insert(key) {
+        if key.is_empty() || seen.iter().any(|old| near_duplicate(old, &key)) || !seen.insert(key) {
             dropped += 1;
         } else {
             out.push(scene);
         }
     }
     (out, dropped)
+}
+
+/// True before the first chapter of a script that has no beat sheet yet.
+fn needs_plan(p: &Project) -> bool {
+    p.outline.as_ref().is_some_and(|o| {
+        p.scenes.is_empty()
+            && o.facts.is_empty()
+            && o.chapters.iter().all(|c| !c.done && c.beats.is_empty())
+    })
+}
+
+fn clean_lines(lines: &[String]) -> Vec<String> {
+    lines
+        .iter()
+        .map(|l| normalize(l).trim().to_owned())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// Capitalised Latin names seen in the outline and scenes, to fix the same name written in
+/// lower case ("napoleon") in Khmer narration. Only words that never appear capitalised
+/// elsewhere stay as they are (e.g. "km").
+#[derive(Default)]
+struct NameCase {
+    names: HashMap<String, String>,
+}
+
+impl NameCase {
+    fn learn(&mut self, text: &str) {
+        for word in latin_words(text) {
+            if word.len() >= 3 && word.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                self.names.entry(word.to_ascii_lowercase()).or_insert_with(|| word.to_owned());
+            }
+        }
+    }
+
+    fn fix(&self, text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut word = String::new();
+        let flush = |word: &mut String, out: &mut String| {
+            let all_lower = !word.is_empty() && word.chars().all(|c| c.is_ascii_lowercase());
+            match self.names.get(word.as_str()).filter(|_| all_lower) {
+                Some(name) => out.push_str(name),
+                None => out.push_str(word),
+            }
+            word.clear();
+        };
+        for c in text.chars() {
+            if c.is_ascii_alphabetic() {
+                word.push(c);
+            } else {
+                flush(&mut word, &mut out);
+                out.push(c);
+            }
+        }
+        flush(&mut word, &mut out);
+        out
+    }
+}
+
+fn latin_words(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| !c.is_ascii_alphabetic()).filter(|w| !w.is_empty())
+}
+
+/// Subtitles never carry the TTS pause marks the model likes to copy into `narration`.
+fn strip_ellipsis(text: &str) -> String {
+    let cleaned = text.replace("...", " ").replace('\u{2026}', " ");
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The same story retold in other words: most character trigrams are shared. Short lines
+/// are only compared exactly (by `seen`).
+fn near_duplicate(a: &str, b: &str) -> bool {
+    fn trigrams(s: &str) -> HashSet<(char, char, char)> {
+        let c: Vec<char> = s.chars().filter(|c| !c.is_whitespace()).collect();
+        c.windows(3).map(|w| (w[0], w[1], w[2])).collect()
+    }
+    let (ta, tb) = (trigrams(a), trigrams(b));
+    if ta.len() < 20 || tb.len() < 20 {
+        return false;
+    }
+    let shared = ta.intersection(&tb).count() as f32;
+    shared / ta.union(&tb).count() as f32 >= 0.6
 }
 
 fn build_outline(reply: OutlineReply, plan: &[u32]) -> Outline {
@@ -515,8 +797,10 @@ fn build_outline(reply: OutlineReply, plan: &[u32]) -> Outline {
                 summary: normalize(&c.summary),
                 scene_count,
                 done: false,
+                beats: vec![],
             })
             .collect(),
+        facts: vec![],
     }
 }
 
@@ -758,6 +1042,28 @@ mod tests {
     }
 
     #[test]
+    fn ellipses_leave_narration_and_reworded_lines_count_as_repeats() {
+        assert_eq!(strip_ellipsis("កាលពីពេលនោះ... គ្មាននរណាដឹង…។"), "កាលពីពេលនោះ គ្មាននរណាដឹង ។");
+        let a = "រោងចក្រ TSMC បានប្រើប្រាស់ទឹកបរិសុទ្ធជាង 150,000 តោនក្នុងមួយថ្ងៃ";
+        let b = "រោងចក្រ TSMC តែមួយ បានប្រើប្រាស់ទឹកបរិសុទ្ធជាង 150,000 តោនក្នុងមួយថ្ងៃ";
+        assert!(near_duplicate(&scene_key(a), &scene_key(b)));
+        let other = "ក្នុងឆ្នាំ 1971 Intel បានបញ្ចេញ microprocessor ដំបូងគេឈ្មោះ Intel 4004";
+        assert!(!near_duplicate(&scene_key(a), &scene_key(other)));
+    }
+
+    #[test]
+    fn names_get_their_capital_letter_back() {
+        let mut names = NameCase::default();
+        names.learn("មេទ័ព Napoleon និង Tsar Alexander I នៅ Moscow");
+        assert_eq!(
+            names.fix("napoleon រង់ចាំ tsar នៅ moscow 10 km, stubborn"),
+            "Napoleon រង់ចាំ Tsar នៅ Moscow 10 km, stubborn"
+        );
+        // Mixed case is left alone (iPhone), and so are words never seen capitalised.
+        assert_eq!(names.fix("iPhone napoleons"), "iPhone napoleons");
+    }
+
+    #[test]
     fn take_unique_scenes_drops_repeats_across_the_whole_project() {
         let mut seen: HashSet<String> = HashSet::new();
         let (kept, dropped) = take_unique_scenes(reply(2), &mut seen);
@@ -831,6 +1137,7 @@ mod tests {
                 target_minutes: 1,
                 aspect: crate::pipeline::project::Aspect::Wide,
                 style_preset: "storybook_watercolor".into(),
+                tone: Default::default(),
             },
             &settings.models.tts,
         )

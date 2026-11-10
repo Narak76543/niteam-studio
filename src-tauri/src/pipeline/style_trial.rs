@@ -40,6 +40,7 @@ fn outline() -> Outline {
         summary: summary.into(),
         scene_count: 3,
         done: false,
+        beats: vec![],
     };
     Outline {
         title: "ប្រវត្តិសាស្ត្រខ្មែរ ក្នុងមួយនាទី".into(),
@@ -56,6 +57,7 @@ fn outline() -> Outline {
                  stone temple. Scene 3: a crowd celebrating with lanterns at night.",
             ),
         ],
+        facts: vec![],
     }
 }
 
@@ -74,6 +76,7 @@ async fn write_project(paths: &AppPaths, store: &ProjectStore, preset: &str) -> 
             target_minutes: 1,
             aspect: Aspect::Wide,
             style_preset: preset.into(),
+            tone: Default::default(),
         },
         &settings.models.tts,
     )

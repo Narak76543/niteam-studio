@@ -12,7 +12,7 @@ import { api, errorMessage } from "../lib/api";
 import { estimateScenes } from "../lib/format";
 import { PRESET_IDS, isPresetId, presetKey, type PresetId } from "../lib/presets";
 import type { Navigate } from "../lib/route";
-import type { Aspect, Audience, Language, PdfInfo } from "../lib/types";
+import type { Aspect, Audience, Language, PdfInfo, ScriptTone } from "../lib/types";
 
 const MIN_MINUTES = 1;
 const MAX_MINUTES = 20;
@@ -22,6 +22,7 @@ const LANGUAGES: Language[] = ["km", "en"];
 const AUDIENCES: Audience[] = ["general", "students", "experts"];
 type Mode = "topic" | "document";
 const ASPECTS: Aspect[] = ["16:9", "9:16"];
+const TONES: ScriptTone[] = ["funny", "dramatic", "calm"];
 
 function sizeMb(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1);
@@ -44,6 +45,7 @@ export function NewProjectPage({ initialPreset, hasKey, navigate }: Props) {
   const [preset, setPreset] = useState<PresetId>(
     initialPreset && isPresetId(initialPreset) ? initialPreset : "stickman",
   );
+  const [tone, setTone] = useState<ScriptTone>("funny");
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<Mode>("topic");
   const [pdfPath, setPdfPath] = useState<string | null>(null);
@@ -93,6 +95,7 @@ export function NewProjectPage({ initialPreset, hasKey, navigate }: Props) {
         target_minutes: minutes,
         aspect,
         style_preset: preset,
+        tone,
         audience,
         focus,
         page_from: pdf.needs_range ? pageFrom : null,
@@ -122,6 +125,7 @@ export function NewProjectPage({ initialPreset, hasKey, navigate }: Props) {
         target_minutes: minutes,
         aspect,
         style_preset: preset,
+        tone,
       });
       projectId = project.id;
     } catch (e) {
@@ -317,6 +321,17 @@ export function NewProjectPage({ initialPreset, hasKey, navigate }: Props) {
 
             {step === 2 && (
               <>
+                <div className="field">
+                  <span className="field__label">{t("wizard.tone.label")}</span>
+                  <div className="segmented" role="group" aria-label={t("wizard.tone.label")}>
+                    {TONES.map((k) => (
+                      <button key={k} type="button" aria-pressed={tone === k} onClick={() => setTone(k)}>
+                        {t(`wizard.tone.${k}`)}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="t-small t-muted">{t(`wizard.tone.${tone}.hint`)}</span>
+                </div>
                 <div className="field">
                   <span className="field__label">{t("wizard.style.label")}</span>
                   <div className="option-grid">

@@ -679,6 +679,7 @@ mod tests {
                 target_minutes: 1,
                 aspect: crate::pipeline::project::Aspect::Wide,
                 style_preset: "storybook_watercolor".into(),
+                tone: Default::default(),
             },
             &settings.models.tts,
         )

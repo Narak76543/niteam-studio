@@ -48,6 +48,7 @@ async fn source_trial() {
             target_minutes: 1,
             aspect: Aspect::Wide,
             style_preset: "soft_2d_explainer".into(),
+            tone: Default::default(),
             audience: Audience::General,
             focus: String::new(),
             page_from: None,

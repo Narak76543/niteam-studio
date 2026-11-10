@@ -6,7 +6,9 @@ use sha2::{Digest, Sha256};
 
 use super::ProjectError;
 use super::editing::{NewProjectInput, new_project};
-use super::project::{Aspect, Audience, Language, Project, ProjectStatus, SourceChunk, SourceDoc, SourceStage};
+use super::project::{
+    Aspect, Audience, Language, Project, ProjectStatus, ScriptTone, SourceChunk, SourceDoc, SourceStage,
+};
 use crate::gemini::document;
 use crate::source::pdf::{self, MAX_PAGES, PdfFile};
 
@@ -23,6 +25,8 @@ pub struct NewDocumentInput {
     #[serde(default)]
     pub aspect: Aspect,
     pub style_preset: String,
+    #[serde(default)]
+    pub tone: ScriptTone,
     pub audience: Audience,
     #[serde(default)]
     pub focus: String,
@@ -96,6 +100,7 @@ pub fn new_document_project(
             target_minutes: input.target_minutes,
             aspect: input.aspect,
             style_preset: input.style_preset.clone(),
+            tone: input.tone,
         },
         tts_model,
     )?;
@@ -330,6 +335,7 @@ mod tests {
             target_minutes: 3,
             aspect: Aspect::default(),
             style_preset: "stickman".into(),
+            tone: Default::default(),
             audience: Audience::General,
             focus: String::new(),
             page_from: None,

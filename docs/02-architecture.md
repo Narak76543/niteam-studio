@@ -122,6 +122,7 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
   "language": "km",                   // "km" | "en"
   "target_minutes": 12,
   "aspect": "16:9",                   // "16:9" | "9:16" (missing in old projects → serde default "16:9")
+  "tone": "funny",                    // funny | dramatic | calm (missing in old projects → "dramatic")
                                       // 16:9: frame 1920×1080 (720p render: 1280×720) · 9:16: frame 1080×1920
                                       // switching aspect marks image/subs/clip assets stale again; voices stay
   "style": {
@@ -150,7 +151,9 @@ Writes to `project.json` are **atomic**: write `project.json.tmp`, then rename.
   "keep_terms": ["React Native"],     // names never translated (04 §4c), Script page → Names                // { "resets_at_utc": "…", "done": 40, "total": 86 } while paused_quota
   "outline": {                        // null until the outline call returns
     "title": "…", "hook": "…",
-    "chapters": [ { "title": "…", "summary": "…", "scene_count": 5, "done": true } ]
+    "chapters": [ { "title": "…", "summary": "…", "scene_count": 5, "done": true,
+                    "beats": ["F3 — …", "…"] } ],  // beat sheet, one per scene ([] for old scripts)
+    "facts": ["1958: …", "…"],                   // fact bank from the plan step ([] for old scripts)
   },                                  // `done` = scenes received → resume point
   "scenes": [
     {
@@ -268,7 +271,7 @@ every scene to have narration, spoken text and image prompt, and the outline to 
 
 ## Events (Rust → UI)
 
-`script-progress` `{project_id, stage: outline|chapter|done|failed|cancelled, chapters_done, chapters_total, error, error_kind}`
+`script-progress` `{project_id, stage: outline|plan|chapter|done|failed|cancelled, chapters_done, chapters_total, error, error_kind}`
 `gemini-retry` `{scope: script|key_test, project_id?, model, previous_model?, reason: busy|rate_limited|network|next_model, attempt, max_attempts, delay_ms, status?, error}`
 `scene-progress` `{project_id, scene_id, asset, status, duration_ms?, error?, error_kind?}`
 `generate-progress` `{project_id, job: voice|image, stage: running|done|cancelled|failed|paused_quota, done, failed, total, error?, error_kind?, resets_at_utc?}`

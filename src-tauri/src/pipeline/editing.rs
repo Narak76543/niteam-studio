@@ -7,7 +7,7 @@ use super::hashing::{self, normalize, normalize_spoken};
 use super::presets;
 use super::project::{
     Aspect, AssetStatus, ImageSnapshot, Language, Project, ProjectStatus, RenderSettings,
-    SCHEMA_VERSION, Scene, Shot, Style, VisualBible, VoiceSettings,
+    SCHEMA_VERSION, Scene, ScriptTone, Shot, Style, VisualBible, VoiceSettings,
 };
 use super::store::now;
 use super::visual_bible;
@@ -29,6 +29,8 @@ pub struct NewProjectInput {
     #[serde(default)]
     pub aspect: Aspect,
     pub style_preset: String,
+    #[serde(default)]
+    pub tone: ScriptTone,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -76,6 +78,7 @@ pub fn new_project(input: &NewProjectInput, tts_model: &str) -> Result<Project, 
         language: input.language,
         target_minutes: input.target_minutes,
         aspect: input.aspect,
+        tone: input.tone,
         style: Style {
             preset: preset.id.to_owned(),
             style_prompt: preset.style_prompt.to_owned(),
@@ -392,6 +395,7 @@ mod tests {
             target_minutes: 3,
             aspect: Aspect::Wide,
             style_preset: "storybook_watercolor".into(),
+            tone: Default::default(),
         }
     }
 
@@ -566,7 +570,9 @@ mod tests {
                 summary: "s".into(),
                 scene_count: p.scenes.len() as u32,
                 done: true,
+                beats: vec![],
             }],
+            facts: vec![],
         };
         p.outline = Some(o);
         p.status = ProjectStatus::Done;

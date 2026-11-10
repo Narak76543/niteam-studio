@@ -1,6 +1,23 @@
-import { ArrowDown, ArrowUp, Download, ExternalLink, FolderOpen, KeyRound, LoaderCircle, Plus, RefreshCw, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Download,
+  ExternalLink,
+  Film,
+  FolderOpen,
+  Image as ImageIcon,
+  Info,
+  KeyRound,
+  LoaderCircle,
+  Mic,
+  Plus,
+  RefreshCw,
+  SlidersHorizontal,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { Badge } from "../components/Badge";
 import { Button, IconButton } from "../components/Button";
@@ -11,7 +28,6 @@ import { LocalImagesSection } from "../components/LocalImagesSection";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { RetryStatus } from "../components/RetryStatus";
-import { SectionJumpBar } from "../components/SectionJumpBar";
 import { useToast } from "../components/toast";
 import { StockSettingsSection } from "../components/StockSettingsSection";
 import { VideoSettingsSection } from "../components/VideoSettingsSection";
@@ -26,6 +42,26 @@ const AI_STUDIO_KEY_URL = "https://aistudio.google.com/apikey";
 const SINGLE_MODEL_FIELDS = ["tts", "tts_lite"] as const;
 const MAX_TEXT_CHAIN = 6;
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
+const GROUP_KEY = "nitean.settingsGroup";
+
+type Group = "general" | "ai" | "voice" | "images" | "media" | "about";
+const GROUPS: { id: Group; icon: ReactNode }[] = [
+  { id: "general", icon: <SlidersHorizontal {...ICON} /> },
+  { id: "ai", icon: <Sparkles {...ICON} /> },
+  { id: "voice", icon: <Mic {...ICON} /> },
+  { id: "images", icon: <ImageIcon {...ICON} /> },
+  { id: "media", icon: <Film {...ICON} /> },
+  { id: "about", icon: <Info {...ICON} /> },
+];
+
+function loadGroup(): Group {
+  try {
+    const v = window.localStorage.getItem(GROUP_KEY);
+    return GROUPS.some((g) => g.id === v) ? (v as Group) : "general";
+  } catch {
+    return "general";
+  }
+}
 
 type TestState =
   | { kind: "idle" }
@@ -63,7 +99,11 @@ function UpdateStatus({ updater }: { updater: Updater }) {
         >
           {checking ? t("update.checking") : t("update.check")}
         </Button>
-        {state.kind === "upToDate" && <Badge tone="ok" dot>{t("update.upToDate")}</Badge>}
+        {state.kind === "upToDate" && (
+          <Badge tone="ok" dot>
+            {t("update.upToDate")}
+          </Badge>
+        )}
       </div>
       {state.kind === "checkFailed" && <Notice tone="warn">{t("update.error")}</Notice>}
       {updater.update && (
@@ -82,7 +122,15 @@ function UpdateStatus({ updater }: { updater: Updater }) {
 }
 
 export function SettingsPage({ settings, onSave, onKeyChanged, onReload, updater }: Props) {
-  const sectionsRef = useRef<HTMLDivElement>(null);
+  const [group, setGroupState] = useState<Group>(loadGroup);
+  const setGroup = (g: Group) => {
+    setGroupState(g);
+    try {
+      window.localStorage.setItem(GROUP_KEY, g);
+    } catch {
+      /* remembering the tab is a convenience only */
+    }
+  };
   const { t } = useI18n();
   const toast = useToast();
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -90,7 +138,10 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload, updater
   const [test, setTest] = useState<TestState>({ kind: "idle" });
   const [confirmClear, setConfirmClear] = useState(false);
   const [models, setModels] = useState<ModelSettings>(settings.models);
-  const [retry, setRetry] = useState<{ notice: GeminiRetry; at: number } | null>(null);
+  const [retry, setRetry] = useState<{
+    notice: GeminiRetry;
+    at: number;
+  } | null>(null);
   const [appVersion, setAppVersion] = useState<string>("");
 
   useEffect(() => {
@@ -201,255 +252,301 @@ export function SettingsPage({ settings, onSave, onKeyChanged, onReload, updater
     setChain(next);
   };
 
+  const modelsRow = (
+    <div className="settings-row">
+      <div className="settings-row__intro">
+        <h2 className="t-h3">{t("settings.models.title")}</h2>
+        <p className="t-small">{t("settings.models.body")}</p>
+      </div>
+      <form
+        className="settings-row__control"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const text_chain = chain.map((m) => m.trim()).filter(Boolean);
+          const document = models.document.map((m) => m.trim()).filter(Boolean);
+          void persist({
+            ...settings,
+            models: { ...models, text_chain, document },
+          });
+        }}
+      >
+        <div className="field">
+          <span className="t-small">{t("settings.models.textChain")}</span>
+          {chain.map((m, i) => (
+            <div key={i} className="row chain-row">
+              <span className="chain-row__num t-small">{i + 1}</span>
+              <input
+                className="input input--grow"
+                lang="en"
+                spellCheck={false}
+                aria-label={`${t("settings.models.textChain")} ${i + 1}`}
+                value={m}
+                onChange={(e) => setChain(chain.map((x, j) => (j === i ? e.target.value.trim() : x)))}
+              />
+              <IconButton
+                label={t("settings.models.moveUp")}
+                icon={<ArrowUp {...ICON} />}
+                disabled={i === 0}
+                onClick={() => moveModel(i, -1)}
+              />
+              <IconButton
+                label={t("settings.models.moveDown")}
+                icon={<ArrowDown {...ICON} />}
+                disabled={i === chain.length - 1}
+                onClick={() => moveModel(i, 1)}
+              />
+              <IconButton
+                label={t("settings.models.removeModel")}
+                icon={<X {...ICON} />}
+                disabled={chain.length <= 1}
+                onClick={() => setChain(chain.filter((_, j) => j !== i))}
+              />
+            </div>
+          ))}
+          <div className="row">
+            <Button
+              variant="pill"
+              icon={<Plus size={12} strokeWidth={1.5} />}
+              disabled={chain.length >= MAX_TEXT_CHAIN}
+              onClick={() => setChain([...chain, ""])}
+            >
+              {t("settings.models.addModel")}
+            </Button>
+          </div>
+          <p className="t-small">{t("settings.models.textChainHint")}</p>
+        </div>
+        <div className="models-grid">
+          {SINGLE_MODEL_FIELDS.map((f) => (
+            <label key={f} className="field">
+              <span className="t-small">{t(`settings.models.${f}`)}</span>
+              <input
+                className="input"
+                lang="en"
+                spellCheck={false}
+                value={models[f]}
+                onChange={(e) => setModels({ ...models, [f]: e.target.value.trim() })}
+              />
+            </label>
+          ))}
+          <label className="field">
+            <span className="t-small">{t("settings.models.document")}</span>
+            <input
+              className="input"
+              lang="en"
+              spellCheck={false}
+              value={models.document.join(", ")}
+              onChange={(e) =>
+                setModels({
+                  ...models,
+                  document: e.target.value.split(",").map((m) => m.trim()),
+                })
+              }
+            />
+            <span className="t-micro t-muted">{t("settings.models.documentHint")}</span>
+          </label>
+        </div>
+        <div className="row">
+          <Button type="submit" disabled={!modelsDirty}>
+            {t("common.save")}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+
   return (
     <div className="page">
       <PageHeader breadcrumb={[{ label: t("projects.breadcrumb") }]} title={t("settings.title")} />
 
       <div className="settings-layout">
-        <SectionJumpBar container={sectionsRef} label={t("settings.sections")} />
-        <div className="settings" ref={sectionsRef}>
-          {/* API key */}
-          <div className="settings-row">
-            <div className="settings-row__intro">
-              <h2 className="t-h3">{t("settings.key.title")}</h2>
-              <p className="t-small">{t("settings.key.body")}</p>
-              <button className="link t-small row" onClick={() => void api.openExternal(AI_STUDIO_KEY_URL)}>
-                {t("settings.key.getKey")} <ExternalLink size={12} strokeWidth={1.5} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="settings-row__control">
-              <div className="row">
-                <KeyRound {...ICON} aria-hidden="true" />
-                {hasKey === null ? null : hasKey ? (
-                  <Badge tone="ok">{t("settings.key.stored")}</Badge>
-                ) : (
-                  <Badge tone="warn">{t("settings.key.missing")}</Badge>
-                )}
-                {hasKey && (
-                  <>
-                    <Button variant="pill" disabled={test.kind === "testing"} onClick={() => void runTest()}>
-                      {test.kind === "testing" ? t("settings.key.testing") : t("settings.key.test")}
-                    </Button>
-                    <Button variant="pill" onClick={() => setConfirmClear(true)}>
-                      {t("settings.key.clear")}
-                    </Button>
-                  </>
-                )}
-              </div>
-              <form
-                className="row"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (keyInput.trim()) void saveKey();
-                }}
-              >
-                <input
-                  className="input input--grow"
-                  type="password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-label={t("settings.key.placeholder")}
-                  placeholder={t("settings.key.placeholder")}
-                  value={keyInput}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                />
-                <Button type="submit" disabled={!keyInput.trim()}>
-                  {t("settings.key.save")}
-                </Button>
-              </form>
-              {test.kind === "testing" && retry && (
-                <RetryStatus key={retry.at} retry={retry.notice} receivedAt={retry.at} />
-              )}
-              {test.kind === "ok" && <Notice tone="ok">{t("settings.key.ok", { model: test.model })}</Notice>}
-              {test.kind === "error" && (
-                <ErrorPanel kind={test.errorKind} details={test.details} onRetry={() => void runTest()} />
-              )}
-            </div>
-          </div>
-
-          <VoiceSettingsSection settings={settings} onSave={onSave} />
-
-          <VoiceProfilesSection onReload={onReload} />
-
-          {/* Remount when Rust changed the image settings (local install selects the provider). */}
-          <ImageSettingsSection key={JSON.stringify(settings.image)} settings={settings} onSave={onSave} />
-
-          <LocalImagesSection settings={settings} onSave={onSave} onReload={onReload} />
-
-          <StockSettingsSection settings={settings} onSave={onSave} />
-
-          <VideoSettingsSection settings={settings} onSave={onSave} />
-
-          {/* UI language */}
-          <div className="settings-row">
-            <div className="settings-row__intro">
-              <h2 className="t-h3">{t("settings.language.title")}</h2>
-              <p className="t-small">{t("settings.language.body")}</p>
-            </div>
-            <div className="settings-row__control">
-              <div className="segmented" role="group" aria-label={t("settings.language.title")}>
-                {langOptions.map((o) => (
-                  <button
-                    key={o.value ?? "auto"}
-                    type="button"
-                    lang={o.value ?? undefined}
-                    aria-pressed={settings.ui_language === o.value}
-                    onClick={() => void persist({ ...settings, ui_language: o.value })}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Appearance */}
-          <div className="settings-row">
-            <div className="settings-row__intro">
-              <h2 className="t-h3">{t("settings.theme.title")}</h2>
-              <p className="t-small">{t("settings.theme.body")}</p>
-            </div>
-            <div className="settings-row__control">
-              <div className="segmented" role="group" aria-label={t("settings.theme.title")}>
-                {themeOptions.map((o) => (
-                  <button
-                    key={o.value ?? "auto"}
-                    type="button"
-                    aria-pressed={settings.theme === o.value}
-                    onClick={() => void persist({ ...settings, theme: o.value })}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Output folder */}
-          <div className="settings-row">
-            <div className="settings-row__intro">
-              <h2 className="t-h3">{t("settings.output.title")}</h2>
-              <p className="t-small">{t("settings.output.body")}</p>
-            </div>
-            <div className="settings-row__control">
-              <span className="path">{settings.output_dir ?? t("settings.output.default")}</span>
-              <div className="row">
-                <Button variant="pill" icon={<FolderOpen size={12} strokeWidth={1.5} />} onClick={() => void chooseFolder()}>
-                  {t("settings.output.choose")}
-                </Button>
-                {settings.output_dir && (
-                  <Button variant="pill" onClick={() => void persist({ ...settings, output_dir: null })}>
-                    {t("settings.output.reset")}
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Models */}
-          <div className="settings-row">
-            <div className="settings-row__intro">
-              <h2 className="t-h3">{t("settings.models.title")}</h2>
-              <p className="t-small">{t("settings.models.body")}</p>
-            </div>
-            <form
-              className="settings-row__control"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const text_chain = chain.map((m) => m.trim()).filter(Boolean);
-                const document = models.document.map((m) => m.trim()).filter(Boolean);
-                void persist({ ...settings, models: { ...models, text_chain, document } });
-              }}
+        <nav className="settings-nav" aria-label={t("settings.sections")}>
+          {GROUPS.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              className="settings-nav__item"
+              aria-current={g.id === group ? "page" : undefined}
+              onClick={() => setGroup(g.id)}
             >
-              <div className="field">
-                <span className="t-small">{t("settings.models.textChain")}</span>
-                {chain.map((m, i) => (
-                  <div key={i} className="row chain-row">
-                    <span className="chain-row__num t-small">{i + 1}</span>
-                    <input
-                      className="input input--grow"
-                      lang="en"
-                      spellCheck={false}
-                      aria-label={`${t("settings.models.textChain")} ${i + 1}`}
-                      value={m}
-                      onChange={(e) => setChain(chain.map((x, j) => (j === i ? e.target.value.trim() : x)))}
-                    />
-                    <IconButton
-                      label={t("settings.models.moveUp")}
-                      icon={<ArrowUp {...ICON} />}
-                      disabled={i === 0}
-                      onClick={() => moveModel(i, -1)}
-                    />
-                    <IconButton
-                      label={t("settings.models.moveDown")}
-                      icon={<ArrowDown {...ICON} />}
-                      disabled={i === chain.length - 1}
-                      onClick={() => moveModel(i, 1)}
-                    />
-                    <IconButton
-                      label={t("settings.models.removeModel")}
-                      icon={<X {...ICON} />}
-                      disabled={chain.length <= 1}
-                      onClick={() => setChain(chain.filter((_, j) => j !== i))}
-                    />
-                  </div>
-                ))}
+              {g.icon}
+              <span>{t(`settings.group.${g.id}`)}</span>
+              {g.id === "ai" && hasKey === false && (
+                <span
+                  className="settings-nav__dot"
+                  title={t("settings.key.missing")}
+                  aria-label={t("settings.key.missing")}
+                />
+              )}
+            </button>
+          ))}
+        </nav>
+        <div className="settings">
+          <div className="settings-panel" hidden={group !== "ai"}>
+            {/* API key */}
+            <div className="settings-row">
+              <div className="settings-row__intro">
+                <h2 className="t-h3">{t("settings.key.title")}</h2>
+                <p className="t-small">{t("settings.key.body")}</p>
+                <button className="link t-small row" onClick={() => void api.openExternal(AI_STUDIO_KEY_URL)}>
+                  {t("settings.key.getKey")} <ExternalLink size={12} strokeWidth={1.5} aria-hidden="true" />
+                </button>
+              </div>
+              <div className="settings-row__control">
+                <div className="row">
+                  <KeyRound {...ICON} aria-hidden="true" />
+                  {hasKey === null ? null : hasKey ? (
+                    <Badge tone="ok">{t("settings.key.stored")}</Badge>
+                  ) : (
+                    <Badge tone="warn">{t("settings.key.missing")}</Badge>
+                  )}
+                  {hasKey && (
+                    <>
+                      <Button variant="pill" disabled={test.kind === "testing"} onClick={() => void runTest()}>
+                        {test.kind === "testing" ? t("settings.key.testing") : t("settings.key.test")}
+                      </Button>
+                      <Button variant="pill" onClick={() => setConfirmClear(true)}>
+                        {t("settings.key.clear")}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                <form
+                  className="row"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (keyInput.trim()) void saveKey();
+                  }}
+                >
+                  <input
+                    className="input input--grow"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    aria-label={t("settings.key.placeholder")}
+                    placeholder={t("settings.key.placeholder")}
+                    value={keyInput}
+                    onChange={(e) => setKeyInput(e.target.value)}
+                  />
+                  <Button type="submit" disabled={!keyInput.trim()}>
+                    {t("settings.key.save")}
+                  </Button>
+                </form>
+                {test.kind === "testing" && retry && (
+                  <RetryStatus key={retry.at} retry={retry.notice} receivedAt={retry.at} />
+                )}
+                {test.kind === "ok" && <Notice tone="ok">{t("settings.key.ok", { model: test.model })}</Notice>}
+                {test.kind === "error" && (
+                  <ErrorPanel kind={test.errorKind} details={test.details} onRetry={() => void runTest()} />
+                )}
+              </div>
+            </div>
+
+            {/* Models (moved here from below: they belong with the key) */}
+            {modelsRow}
+          </div>
+
+          <div className="settings-panel" hidden={group !== "voice"}>
+            <VoiceSettingsSection settings={settings} onSave={onSave} />
+
+            <VoiceProfilesSection onReload={onReload} />
+          </div>
+
+          <div className="settings-panel" hidden={group !== "images"}>
+            {/* Remount when Rust changed the image settings (local install selects the provider). */}
+            <ImageSettingsSection key={JSON.stringify(settings.image)} settings={settings} onSave={onSave} />
+
+            <LocalImagesSection settings={settings} onSave={onSave} onReload={onReload} />
+          </div>
+
+          <div className="settings-panel" hidden={group !== "media"}>
+            <StockSettingsSection settings={settings} onSave={onSave} />
+
+            <VideoSettingsSection settings={settings} onSave={onSave} />
+          </div>
+
+          <div className="settings-panel" hidden={group !== "general"}>
+            {/* UI language */}
+            <div className="settings-row">
+              <div className="settings-row__intro">
+                <h2 className="t-h3">{t("settings.language.title")}</h2>
+                <p className="t-small">{t("settings.language.body")}</p>
+              </div>
+              <div className="settings-row__control">
+                <div className="segmented" role="group" aria-label={t("settings.language.title")}>
+                  {langOptions.map((o) => (
+                    <button
+                      key={o.value ?? "auto"}
+                      type="button"
+                      lang={o.value ?? undefined}
+                      aria-pressed={settings.ui_language === o.value}
+                      onClick={() => void persist({ ...settings, ui_language: o.value })}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Appearance */}
+            <div className="settings-row">
+              <div className="settings-row__intro">
+                <h2 className="t-h3">{t("settings.theme.title")}</h2>
+                <p className="t-small">{t("settings.theme.body")}</p>
+              </div>
+              <div className="settings-row__control">
+                <div className="segmented" role="group" aria-label={t("settings.theme.title")}>
+                  {themeOptions.map((o) => (
+                    <button
+                      key={o.value ?? "auto"}
+                      type="button"
+                      aria-pressed={settings.theme === o.value}
+                      onClick={() => void persist({ ...settings, theme: o.value })}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Output folder */}
+            <div className="settings-row">
+              <div className="settings-row__intro">
+                <h2 className="t-h3">{t("settings.output.title")}</h2>
+                <p className="t-small">{t("settings.output.body")}</p>
+              </div>
+              <div className="settings-row__control">
+                <span className="path">{settings.output_dir ?? t("settings.output.default")}</span>
                 <div className="row">
                   <Button
                     variant="pill"
-                    icon={<Plus size={12} strokeWidth={1.5} />}
-                    disabled={chain.length >= MAX_TEXT_CHAIN}
-                    onClick={() => setChain([...chain, ""])}
+                    icon={<FolderOpen size={12} strokeWidth={1.5} />}
+                    onClick={() => void chooseFolder()}
                   >
-                    {t("settings.models.addModel")}
+                    {t("settings.output.choose")}
                   </Button>
+                  {settings.output_dir && (
+                    <Button variant="pill" onClick={() => void persist({ ...settings, output_dir: null })}>
+                      {t("settings.output.reset")}
+                    </Button>
+                  )}
                 </div>
-                <p className="t-small">{t("settings.models.textChainHint")}</p>
               </div>
-              <div className="models-grid">
-                {SINGLE_MODEL_FIELDS.map((f) => (
-                  <label key={f} className="field">
-                    <span className="t-small">{t(`settings.models.${f}`)}</span>
-                    <input
-                      className="input"
-                      lang="en"
-                      spellCheck={false}
-                      value={models[f]}
-                      onChange={(e) => setModels({ ...models, [f]: e.target.value.trim() })}
-                    />
-                  </label>
-                ))}
-                <label className="field">
-                  <span className="t-small">{t("settings.models.document")}</span>
-                  <input
-                    className="input"
-                    lang="en"
-                    spellCheck={false}
-                    value={models.document.join(", ")}
-                    onChange={(e) => setModels({ ...models, document: e.target.value.split(",").map((m) => m.trim()) })}
-                  />
-                  <span className="t-micro t-muted">{t("settings.models.documentHint")}</span>
-                </label>
-              </div>
-              <div className="row">
-                <Button type="submit" disabled={!modelsDirty}>
-                  {t("common.save")}
-                </Button>
-              </div>
-            </form>
+            </div>
           </div>
 
-          {/* About */}
-          <div className="settings-row">
-            <div className="settings-row__intro">
-              <h2 className="t-h3">{t("settings.about.title")}</h2>
-              <p className="t-small">{t("settings.about.body")}</p>
-            </div>
-            <div className="settings-row__control">
-              <span className="t-small t-muted">
-                {t("settings.about.version", { version: appVersion || "—" })}
-              </span>
-              <UpdateStatus updater={updater} />
+          <div className="settings-panel" hidden={group !== "about"}>
+            {/* About */}
+            <div className="settings-row">
+              <div className="settings-row__intro">
+                <h2 className="t-h3">{t("settings.about.title")}</h2>
+                <p className="t-small">{t("settings.about.body")}</p>
+              </div>
+              <div className="settings-row__control">
+                <span className="t-small t-muted">{t("settings.about.version", { version: appVersion || "—" })}</span>
+                <UpdateStatus updater={updater} />
+              </div>
             </div>
           </div>
         </div>

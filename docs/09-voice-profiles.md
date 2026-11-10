@@ -69,9 +69,20 @@ NVIDIA, AMD and Intel without a CUDA install; the bundled zip has no CUDA DLLs.
 
 ## 4. Synthesis of one scene (`voxcpm.rs`)
 
-1. `chunker::chunk(spoken_text)` — sentences (`។ ៕ ? ! .` and newlines), over-long ones split
-   at spaces then by grapheme clusters (cap: 110 graphemes Khmer ≈ 10 s, 200 English); very
-   short sentences are merged forward.
+1. `chunker::chunk(spoken_text)` — sentences (`។ ៕ ? ! .` and newlines); over-long ones are
+   split as evenly as possible (cap: 110 graphemes Khmer ≈ 10 s, 200 English) at the best break
+   in range: clause punctuation (`, ; : ៖`) > space (Khmer phrase pause) > right before a Khmer
+   connector word (`ដែល និង ប៉ុន្តែ ដើម្បី ព្រោះ ហើយ ដូច្នេះ នៅពេល …`, not inside `ពីព្រោះ`/`រួចហើយ`/`ដូចដែល`)
+   > before a syllable onset (cluster with a vowel sign or coeng) > any cluster boundary — never
+   after a coeng `្`, never before `ៗ` or punctuation. Very short sentences are merged forward.
+   Each piece knows whether it ends its sentence (`Chunk::ends_sentence`).
+1b. **Khmer prosody text** (`khmer_prosody::for_voxcpm`, Khmer projects only, request text
+   only): VoxCPM2 takes its intonation from Latin punctuation, so `។ ៕` → `.`, `៖` → `,`, a
+   phrase space between two Khmer words → `, ` (breathing pause, clause tone), whitespace
+   collapsed, no space before punctuation; spaces next to Latin words (names) stay plain. A
+   piece without an end mark gets `.` if it ends its sentence, else `,` (no false final fall in
+   the middle of a split sentence; an OOM half keeps `,` except the last). `spoken_text`,
+   `words.json` timings and subtitles keep the original text.
 2. Each piece: hold the app-wide GPU lock (`AppState.ffmpeg_lock`, shared with FFmpeg and
    local images), request with the profile's reference clip and **the same seed** for every
    piece of every scene.
@@ -120,8 +131,13 @@ different voice on every request, so it is only used to *find* a voice:
   sentence 3 times with different seeds (`voices/_design/0..2.wav`); the chosen sample becomes
   `reference.wav` and the test sentence its transcript (mode `design`, ultimate cloning).
   The New Voice dialog includes Khmer male and female documentary narrator presets that fill the
-  name, language, and description; the user still auditions the three generated samples and chooses
-  which one to save.
+  name, language, and description (≤ 300 chars; they ask for lively storytelling, clear pitch
+  variation, a rise on questions, a fall at sentence ends and pauses between phrases); the user
+  still auditions the three generated samples and chooses which one to save. New **Khmer** design
+  profiles get the default `style_hint` "lively Khmer storytelling, natural phrasing pauses, clear
+  rising and falling pitch" (`KM_STYLE_HINT`, editable). With Khmer selected the dialog tips that a
+  5–14 s native-speaker recording with its exact transcript gives more natural Khmer intonation
+  than any description.
 - **From my recording:** WAV/MP3/M4A/FLAC/OGG → FFmpeg to 16 kHz mono, cleaned
   (`volume=0.7,highpass=f=80,afftdn=nr=12:nf=-35:tn=1`: headroom, rumble cut, gentle noise
   reduction — the model copies a clip's noise into every scene) → silence trimmed →

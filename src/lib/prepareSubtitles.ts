@@ -1,5 +1,6 @@
 // Export step: asks Rust which scenes need subtitle images, draws one PNG per subtitle state
-// (cue + spoken word) and hands them back with `subs_save`. Only changed scenes are redrawn.
+// (cue + spoken word, plus the in-between frames of the gliding word box) and hands them back
+// with `subs_save`. Only changed scenes are redrawn.
 
 import { api } from "./api";
 import { bandFor, drawCuePng, ensureFont, toBase64 } from "./subtitleCanvas";
@@ -26,8 +27,10 @@ export async function prepareSubtitles(
     if (isCancelled()) return;
     const cues: CueIn[] = [];
     for (const st of subtitleStates(task, lang, highlight !== null, aspect)) {
-      const png = await drawCuePng(st.lines, st.active, { highlight }, band);
-      cues.push({ text: cueText(st.lines), start_ms: st.start_ms, end_ms: st.end_ms, png_base64: toBase64(png) });
+      const png = await drawCuePng(st, { highlight }, band);
+      // In-between glide frames carry no text: keeps project.json small on long videos.
+      const text = st.slide ? "" : cueText(st.lines);
+      cues.push({ text, start_ms: st.start_ms, end_ms: st.end_ms, png_base64: toBase64(png) });
     }
     if (cues.length > 0) await api.subsSave(projectId, task.scene_id, task.hash, cues);
     done += 1;

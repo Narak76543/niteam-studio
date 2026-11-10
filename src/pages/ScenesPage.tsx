@@ -1,4 +1,4 @@
-import { AlertTriangle, Clapperboard, Headphones, ImageIcon, ImagePlus, Images, Pause, PencilLine, Play, RotateCcw, ScanSearch, Sparkles, Square, Volume2, WandSparkles } from "lucide-react";
+import { AlertTriangle, Check, Clapperboard, Headphones, ImageIcon, ImagePlus, Images, Pause, PencilLine, Play, RotateCcw, ScanSearch, Sparkles, Square, Volume2, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AssetStatusBadge, Badge, ProjectStatusBadge } from "../components/Badge";
@@ -11,7 +11,9 @@ import { ImagesPanel } from "../components/ImagesPanel";
 import { Notice } from "../components/Notice";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PageHeader } from "../components/PageHeader";
-import { ProgressBar } from "../components/ProgressBar";
+import { GenArt } from "../components/GenArt";
+import { GenerationCard } from "../components/GenerationCard";
+import { ProjectFlow } from "../components/ProjectFlow";
 import { ProjectVoicePicker } from "../components/ProjectVoicePicker";
 import { RetryStatus } from "../components/RetryStatus";
 import { SceneThumb } from "../components/SceneThumb";
@@ -30,6 +32,8 @@ import { assetId, needsAiImage, visualReady } from "../lib/visuals";
 const ICON = { size: 16, strokeWidth: 1.5 } as const;
 /** Image "done" events arrive one per scene; reload the project at most this often. */
 const RELOAD_DELAY_MS = 400;
+/** How long a scene card shows its "just finished" check. */
+const FRESH_MS = 1600;
 
 type Job = "voice" | "image" | "visual";
 type JobState = { running: boolean; progress: GenerateProgress | null };
@@ -122,6 +126,8 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
     progress: null,
   });
   const [confirmRewrite, setConfirmRewrite] = useState(false);
+  /** Scenes whose voice or picture just finished (card shows a check for FRESH_MS). */
+  const [fresh, setFresh] = useState<Record<string, number>>({});
   /** Aspect switch asked from the header badge (marks images/subtitles/clips outdated). */
   const [aspectAsk, setAspectAsk] = useState(false);
   const reloadTimer = useRef<number | null>(null);
@@ -216,6 +222,14 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
     });
   }, []);
   useEffect(() => onAudioTimeUpdate(setAudioTime), []);
+  useEffect(() => {
+    if (Object.keys(fresh).length === 0) return;
+    const timer = window.setTimeout(() => {
+      const now = Date.now();
+      setFresh((f) => Object.fromEntries(Object.entries(f).filter(([, at]) => now - at < FRESH_MS)));
+    }, FRESH_MS);
+    return () => window.clearTimeout(timer);
+  }, [fresh]);
   useEffect(() => () => stopAudio(), []);
 
   useEffect(() => {
@@ -224,6 +238,7 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
         if (ev.project_id !== projectId) return;
         const job: Job = ev.asset;
         if (job === "image" && ev.status === "done") setImageTimes((ts) => [...ts.slice(-9), Date.now()]);
+        if (ev.status === "done") setFresh((f) => ({ ...f, [ev.scene_id]: Date.now() }));
         setRetry((r) => ({ ...r, [job]: null }));
         setProject((p) => (p ? applySceneProgress(p, ev) : p));
         // Thumbnail path / hash / picked file are not in the event.
@@ -483,16 +498,22 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
     const done = (progress?.done ?? 0) + (progress?.failed ?? 0);
     const r = retry[job];
     if (running) {
+      const speed = job === "image" ? imageSpeed(total - done) : null;
       return (
-        <>
-          <span className="t-small">
-            {label}: {t("scenes.jobProgress", { done, total })}
-            {(progress?.failed ?? 0) > 0 && ` · ${t("scenes.progressFailed", { failed: progress?.failed ?? 0 })}`}
-            {job === "image" && imageSpeed(total - done) && ` · ${imageSpeed(total - done) ?? ""}`}
-          </span>
-          <ProgressBar label={label} value={total > 0 ? done / total : undefined} />
+        <GenerationCard
+          kind={job === "voice" ? "voice" : "image"}
+          title={label}
+          detail={
+            <>
+              {t("scenes.jobProgress", { done, total })}
+              {(progress?.failed ?? 0) > 0 && ` · ${t("scenes.progressFailed", { failed: progress?.failed ?? 0 })}`}
+              {speed && ` · ${speed}`}
+            </>
+          }
+          value={total > 0 ? done / total : undefined}
+        >
           {r && <RetryStatus key={r.at} retry={r.notice} receivedAt={r.at} />}
-        </>
+        </GenerationCard>
       );
     }
     if (progress?.stage === "failed") {
@@ -524,17 +545,21 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
       const done = progress?.done ?? 0;
       const total = progress?.total ?? 0;
       return (
-        <div className="row">
-          <span className="t-small">{t("prompts.progress", { done, total })}</span>
-          <ProgressBar label={t("prompts.action")} value={total > 0 ? done / total : undefined} />
-          <Button
-            variant="pill"
-            icon={<Square size={12} strokeWidth={1.5} />}
-            onClick={() => void api.imagePromptsRewriteCancel(projectId)}
-          >
-            {t("prompts.stop")}
-          </Button>
-        </div>
+        <GenerationCard
+          kind="script"
+          title={t("prompts.action")}
+          detail={t("prompts.progress", { done, total })}
+          value={total > 0 ? done / total : undefined}
+          action={
+            <Button
+              variant="pill"
+              icon={<Square size={12} strokeWidth={1.5} />}
+              onClick={() => void api.imagePromptsRewriteCancel(projectId)}
+            >
+              {t("prompts.stop")}
+            </Button>
+          }
+        />
       );
     }
     if (progress?.stage === "failed") {
@@ -655,6 +680,16 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
             )}
           </>
         }
+        flow={
+          <ProjectFlow
+            projectId={projectId}
+            status={project.status}
+            current="scenes"
+            scenesReady={allReady}
+            locked={anyRunning}
+            navigate={navigate}
+          />
+        }
       />
 
       <div className="status-strip">
@@ -732,18 +767,35 @@ export function ScenesPage({ projectId, navigate }: { projectId: string; navigat
                     ? `${s.visual.thumb_path}#${s.visual.asset ?? ""}#${s.visual.focus?.join(",") ?? ""}#${s.visual.render_hash ?? ""}`
                     : null;
                 const pick = s.visual.candidates.find((c) => assetId(c) === s.visual.asset);
+                const drawing = (ai ? s.image.status : s.visual.status) === "running";
+                const speaking = s.voice.status === "running";
+                const cardClass = [
+                  "scene-card card",
+                  playing === s.id && "scene-card--playing",
+                  (drawing || speaking) && "scene-card--working",
+                  fresh[s.id] !== undefined && "scene-card--fresh",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
                 return (
-                  <article
-                    key={s.id}
-                    id={`scene-${s.id}`}
-                    className={`scene-card card ${playing === s.id ? "scene-card--playing" : ""}`}
-                  >
+                  <article key={s.id} id={`scene-${s.id}`} className={cardClass}>
                     <SceneThumb
                       projectId={projectId}
                       sceneId={s.id}
                       version={thumbVersion}
                       alt={t("images.thumbAlt", { n: s.order })}
+                      working={drawing}
                     >
+                      {speaking && (
+                        <span className="thumb__voice" title={t("scenes.voice")}>
+                          <GenArt kind="voice" />
+                        </span>
+                      )}
+                      {fresh[s.id] !== undefined && (
+                        <span className="thumb__done" aria-hidden="true">
+                          <Check size={14} strokeWidth={3} />
+                        </span>
+                      )}
                       <span className="thumb__meta t-micro">
                         {String(s.order).padStart(3, "0")} · {formatDuration(s.voice.duration_ms)}
                       </span>

@@ -7,7 +7,8 @@
 // 1280×160 at 720p, 1080×240 at 9:16). Changing the look here? Bump `SUBS_VERSION` in
 // src-tauri/src/pipeline/hashing.rs so existing subtitle PNGs are redrawn.
 
-import { lineText, type Word } from "./subtitles";
+import type { SubtitleState } from "./subtitleStates";
+import { lineText } from "./subtitles";
 import type { Aspect } from "./types";
 
 export interface Band {
@@ -68,18 +69,16 @@ export interface CueStyle {
   highlight: string | null;
 }
 
+/** What one subtitle image shows: the cue, the spoken word, and the box mid-glide. */
+export type CueFrame = Pick<SubtitleState, "lines" | "active" | "slide">;
+
 /**
  * Paints one cue (1–2 lines) into `ctx`, bottom-aligned in a band of `band` size whose top
- * is at `top`. `active` = index of the spoken word over all lines of the cue, or null.
+ * is at `top`. `active` = index of the spoken word over all lines of the cue, or null;
+ * `slide` puts the box part-way from the previous word (same line) to `active`.
  */
-export function paintCue(
-  ctx: CanvasRenderingContext2D,
-  lines: Word[][],
-  active: number | null,
-  style: CueStyle,
-  band: Band,
-  top = 0,
-) {
+export function paintCue(ctx: CanvasRenderingContext2D, cue: CueFrame, style: CueStyle, band: Band, top = 0) {
+  const { lines, active, slide } = cue;
   let px = band.fontPx;
   ctx.font = font(px);
   const widest = Math.max(...lines.map((l) => ctx.measureText(lineText(l)).width), 1);
@@ -116,8 +115,15 @@ export function paintCue(
     });
     wordIndex += words.length;
     const hit = style.highlight !== null && active !== null ? spans.find((s) => s.index === active) : undefined;
+    const from = hit && slide ? spans.find((s) => s.index === slide.from) : undefined;
+    // Mid-glide the box edges sit between the previous word and this one, and the dark
+    // text stays on whichever word the box mostly covers.
+    const t = from && slide ? slide.t : 1;
+    const onBox = from && t < 0.5 ? from : hit;
 
     if (hit && style.highlight) {
+      const left = from ? from.start + (hit.start - from.start) * t : hit.start;
+      const right = from ? from.end + (hit.end - from.end) * t : hit.end;
       // Box height from the whole line's real glyph extent (vowels above, subscripts below),
       // so it is the same for every word of the line and always wraps the Khmer stacks.
       const m = ctx.measureText(text);
@@ -129,9 +135,9 @@ export function paintCue(
       ctx.fillStyle = style.highlight;
       roundRect(
         ctx,
-        hit.start - boxPadX,
+        left - boxPadX,
         y - up - boxPadY,
-        hit.end - hit.start + boxPadX * 2,
+        right - left + boxPadX * 2,
         up + down + boxPadY * 2,
         px * 0.22,
       );
@@ -145,23 +151,23 @@ export function paintCue(
     ctx.shadowOffsetY = Math.round(px * 0.05);
     ctx.strokeStyle = "rgba(0, 0, 0, 0.9)";
     ctx.lineWidth = stroke * 2;
-    for (const s of spans) if (s !== hit) ctx.strokeText(s.word.text, s.start, y);
+    for (const s of spans) if (s !== onBox) ctx.strokeText(s.word.text, s.start, y);
     ctx.restore();
     for (const s of spans) {
-      ctx.fillStyle = s === hit && style.highlight ? textOn(style.highlight) : "#FFFFFF";
+      ctx.fillStyle = s === onBox && style.highlight ? textOn(style.highlight) : "#FFFFFF";
       ctx.fillText(s.word.text, s.start, y);
     }
   });
 }
 
 /** PNG bytes of one subtitle state (transparent band). */
-export async function drawCuePng(lines: Word[][], active: number | null, style: CueStyle, band: Band): Promise<Uint8Array> {
+export async function drawCuePng(cue: CueFrame, style: CueStyle, band: Band): Promise<Uint8Array> {
   const canvas = document.createElement("canvas");
   canvas.width = band.width;
   canvas.height = band.height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas is not available.");
-  paintCue(ctx, lines, active, style, band);
+  paintCue(ctx, cue, style, band);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("Could not create the subtitle image.");
   return new Uint8Array(await blob.arrayBuffer());

@@ -55,6 +55,10 @@ Assert: no line breaks inside a word, each line ≤ 38 graphemes (16:9).
   line's real glyph extent so Khmer vowels above and subscripts below stay inside. Word times:
   Edge phrase timings, interpolated by grapheme count inside a phrase (Edge does not time
   individual Khmer words), or each word's share of the text without timings.
+  **Sliding highlight** (owner, 2026-11-03): within a line the box glides to the next word over
+  3 video frames (~100 ms, two in-between PNGs, `03-pipeline.md` Step 5 → States); between
+  lines and cues it jumps. Mid-glide the dark text stays on the word the box mostly covers.
+  The preview plays the very same states, so it matches the export frame for frame.
 - **Never use FFmpeg `drawtext` or ASS/libass for Khmer** — shaping of subscripts
   breaks depending on the FFmpeg build.
 
@@ -97,6 +101,10 @@ Implemented in `src-tauri/src/pipeline/khmer_numbers.rs`.
   (it does not split Khmer words). Subtitle timing therefore snaps line breaks to phrase pauses
   when a break falls at a phrase end, and interpolates by grapheme count inside a phrase
   (`src/lib/subtitleTiming.ts`). This is one more reason to keep phrase spaces in `narration`.
+- **VoxCPM2 (local)** reads intonation from Latin punctuation, so the request text (only) is
+  rewritten: `។ ៕` → `.`, phrase spaces between Khmer words → `, `, mid-sentence pieces end in
+  `,` (`tts/khmer_prosody.rs`, `09-voice-profiles.md` §4). `spoken_text`, timings and subtitles
+  keep the Khmer original. Phrase spaces in `spoken_text` therefore directly shape the pauses.
 
 ## 4c. Names stay as written
 

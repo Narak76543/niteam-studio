@@ -55,6 +55,11 @@ const DESIGN_EN: &str = "Hello! Today I will tell you a fascinating story about 
 const PREVIEW_KM: &str = "តើអ្នកដឹងទេថា ប្រាសាទអង្គរវត្ត ត្រូវបានសាងសង់ឡើងក្នុងរយៈពេលតិចជាងសាមសិបឆ្នាំ? នេះជាសំឡេងនិទានរបស់អ្នក។";
 const PREVIEW_EN: &str = "Did you know that Angkor Wat was built in less than thirty years? This is your narration voice.";
 
+/// Style hint given to new Khmer voices made from a description (sent as the `(…)` control
+/// prefix of every scene request; editable in Settings → Voices). Keeps VoxCPM2 from reading
+/// Khmer flat: lively cadence, pauses at phrase commas, rise on questions, fall at the end.
+const KM_STYLE_HINT: &str = "lively Khmer storytelling, natural phrasing pauses, clear rising and falling pitch";
+
 fn design_text(language: Language) -> &'static str {
     match language {
         Language::Km => DESIGN_KM,
@@ -320,6 +325,9 @@ pub async fn voice_profile_create_design(
     let mut p = new_profile(name, language, ProfileMode::Design);
     p.description = clean_description(&description);
     p.reference_transcript = design_text(language).into();
+    if language == Language::Km {
+        p.style_hint = KM_STYLE_HINT.into();
+    }
     let p = store(&state).create(p, &reference).map_err(err)?;
     let _ = std::fs::remove_dir_all(state.paths.voices_dir().join(DESIGN_DIR));
     remember_default(&state, &p.id, false).await?;

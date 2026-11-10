@@ -44,6 +44,8 @@
   /* thumbnail overlays (on top of images in both themes) */
   --scrim: rgba(10, 12, 16, .62);
   --scrim-text: #FFFFFF;
+  /* light band swept across things being generated (shimmer) */
+  --shimmer: rgba(255, 255, 255, .55);
 
   color-scheme: light;
 
@@ -115,5 +117,6 @@
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35);
   --btn-highlight: rgba(255, 255, 255, .5);
   --backdrop: rgba(0, 0, 0, .6);
+  --shimmer: rgba(255, 255, 255, .14);
   color-scheme: dark;
 }

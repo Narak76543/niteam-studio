@@ -180,10 +180,37 @@ dotted `--border-strong` for comparison, ring markers. Keep to at most one chart
 | App start | `BootSplash`: app icon breathing + thin coral bar |
 | Compact "update available" dot | slow pulse |
 
+**Generation** (owner request, 2026-11-03) — every running job is a `GenerationCard`
+(`src/components/GenerationCard.tsx`): a 44 px `--accent-soft` tile with a looping
+illustration (`GenArt`), title + muted detail (count, speed, ETA), optional stage row, the
+progress bar and retry notice, optional action (Stop).
+
+| Job | Illustration | Where |
+|---|---|---|
+| Script writing / grammar check / image-prompt rewrite | three lines drawn in turn (`scaleX`) by a bobbing pen | Script page (stage row Outline → Story plan → Chapters n/total), Scenes page |
+| Voices | five sound-wave bars (`scaleY`, staggered) | Scenes page card; small bars on the cover of each scene being voiced |
+| Images / photos & clips | picture icon with a shimmer band sweeping across (`translateX`) + twinkling sparkle | Scenes page card; the same sweep over the cover of each scene being drawn |
+
+The active stage dot breathes a ring outwards. A scene whose voice or picture just finished
+shows a green check on its cover that pops in and fades out (1.6 s). New scene rows rise in
+while chapters are written. Loops run only while the job runs; the shimmer colour is the
+`--shimmer` token. Reduced motion: no loops, lines drawn, bars still, no sweep, check fades.
+
 All entrances use `animation-fill-mode: both` ending at `transform: none`, so nothing stays
 in a transformed state (fixed-position dialogs inside pages keep working). With Windows
 "Animation effects" off (`prefers-reduced-motion`), entrances and hover nudges are disabled
 and skeletons pulse at half speed.
+
+**Project flow bar** (`ProjectFlow`, 2026-11-03) — under the title on the Script and Scenes
+pages and in the editor's top bar: three 26 px pill steps *Script → Voices & pictures → Edit &
+export* joined by short lines. Current step: `--accent-soft` pill, `--accent-strong` text;
+done: green check icon and a green joining line; not reachable yet: `--text-faint`, disabled.
+Steps are buttons that open that page (locked while a job runs on the Scenes page). The bar
+never wraps; the page header lets its actions wrap under the title block (min 440 px) instead.
+
+**Projects page** (2026-11-03) — header shows the project count; each card's footer ends in a
+three-segment step meter (green = done, coral = current step, grey = to do; tooltip
+"Step 2 of 3: Voices & pictures"). The empty state adds a three-row "how it works" list.
 
 ## 6. Icons
 

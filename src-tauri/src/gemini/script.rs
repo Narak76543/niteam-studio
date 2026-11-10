@@ -2,6 +2,7 @@
 //! Replies are JSON constrained by a schema, validated with serde + [`Validate`],
 //! and repaired once with targeted feedback; a second invalid response escalates to the next model.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Deserialize;
@@ -13,7 +14,7 @@ use super::models::{Content, GenerateContentRequest, GenerationConfig};
 use super::retry::{RetryHooks, RetryNotice, RetryReason};
 use super::{GeminiClient, GeminiError};
 use crate::pipeline::presets::{self, Figures};
-use crate::pipeline::project::Language;
+use crate::pipeline::project::{Language, ScriptTone};
 use crate::storage::ApiKey;
 
 pub const MOODS: &[&str] = &[
@@ -37,6 +38,8 @@ pub struct ScriptBrief<'a> {
     /// "Real-world Tech Explainer": each scene also gets a visual type, English search
     /// keywords, a Mermaid diagram or a code snippet (`visual_rules`).
     pub real_world: bool,
+    /// Funny / dramatic / calm writing ([`tone_rules`]).
+    pub tone: ScriptTone,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -50,6 +53,192 @@ pub struct OutlineReply {
 pub struct OutlineChapterReply {
     pub title: String,
     pub summary: String,
+}
+
+/// Plan step: a fact bank for the whole video and a beat sheet (one job per scene) keyed
+/// `chapter_1…chapter_N`, so every scene has its own new content before any narration exists.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlanReply {
+    pub facts: Vec<String>,
+    pub chapters: HashMap<String, Vec<String>>,
+}
+
+impl PlanReply {
+    /// Beats for the 0-based chapter `index` (empty when the model left it out).
+    pub fn beats(&self, index: usize) -> &[String] {
+        self.chapters.get(&plan_key(index)).map_or(&[], Vec::as_slice)
+    }
+}
+
+fn plan_key(index: usize) -> String {
+    format!("chapter_{}", index + 1)
+}
+
+/// Fact numbers beats cite (`F12`, `(F3, F4)`), 1-based, sorted, without repeats.
+pub fn cited_facts<S: AsRef<str>>(beats: &[S]) -> Vec<usize> {
+    let mut out = Vec::new();
+    for beat in beats {
+        let chars: Vec<char> = beat.as_ref().chars().collect();
+        for (i, c) in chars.iter().enumerate() {
+            if *c != 'F' || (i > 0 && chars[i - 1].is_alphanumeric()) {
+                continue;
+            }
+            let digits: String = chars[i + 1..].iter().take_while(|d| d.is_ascii_digit()).collect();
+            let after = chars.get(i + 1 + digits.len());
+            if digits.is_empty() || after.is_some_and(|a| a.is_alphanumeric()) {
+                continue;
+            }
+            if let Ok(n) = digits.parse::<usize>() {
+                out.push(n);
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// "F3: In 1812 …" → "In 1812 …" (the prompts number the facts themselves).
+pub fn strip_fact_label(fact: &str) -> &str {
+    let t = fact.trim_start();
+    let Some(rest) = t.strip_prefix('F') else {
+        return fact;
+    };
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    if digits == 0 {
+        return fact;
+    }
+    match rest[digits..].trim_start().strip_prefix([':', '.', ')', '-', '—']) {
+        Some(r) => r.trim_start(),
+        None => fact,
+    }
+}
+
+impl PlanReply {
+    /// The beat sheet must move forward (Napoleon script, 2026-11-03: the plan handed out
+    /// F1…F40 one per scene, the whole story was told by scene 40 and the rest retold it).
+    /// Every fact belongs to ONE chapter, most beats cite a fact, and every fact is used. The
+    /// bank's order is not checked: [`PlanReply::in_chapter_order`] fixes it.
+    fn check_structure(&self) -> Result<(), String> {
+        let n_facts = self.facts.len();
+        let mut owner: Vec<Option<usize>> = vec![None; n_facts];
+        for index in 0..self.chapters.len() {
+            let key = plan_key(index);
+            let beats = self.beats(index);
+            let mut with_fact = 0;
+            // A fact's beats come in one run: once the plan moves on, the fact is finished.
+            let mut previous: Vec<usize> = Vec::new();
+            let mut finished: Vec<usize> = Vec::new();
+            for beat in beats {
+                let cited = cited_facts(std::slice::from_ref(beat));
+                if !cited.is_empty() {
+                    with_fact += 1;
+                    if let Some(f) = cited.iter().find(|f| finished.contains(f)) {
+                        return Err(format!(
+                            "`{key}` comes back to F{f} after moving on to other facts: give each fact its beats \
+in a row (event, detail, consequence) and then finish it; never cycle through the chapter's facts again. Use \
+more facts instead"
+                        ));
+                    }
+                    finished.extend(previous.iter().filter(|p| !cited.contains(p)));
+                    previous.clone_from(&cited);
+                }
+                for f in cited {
+                    let Some(slot) = f.checked_sub(1).and_then(|i| owner.get_mut(i)) else {
+                        return Err(format!("`{key}` cites F{f}, but the fact bank has only {n_facts} facts"));
+                    };
+                    match *slot {
+                        Some(other) if other != index => {
+                            return Err(format!(
+                                "F{f} is used in both `{}` and `{key}`: every fact belongs to ONE chapter. Later \
+chapters tell their own new facts and never retell an earlier chapter's events",
+                                plan_key(other)
+                            ));
+                        }
+                        _ => *slot = Some(index),
+                    }
+                }
+            }
+            if beats.len() >= 3 && with_fact * 10 < beats.len() * 6 {
+                return Err(format!(
+                    "`{key}`: only {with_fact} of {} beats cite a fact (Fn). Almost every beat must develop one of \
+THIS chapter's facts (several beats may develop the same fact: a detail, the result, a reaction); no filler beats",
+                    beats.len()
+                ));
+            }
+            if cited_facts(beats).is_empty() {
+                return Err(format!("`{key}` cites no facts: give every chapter its own facts that fit its summary"));
+            }
+        }
+        let unused: Vec<String> =
+            owner.iter().enumerate().filter(|(_, o)| o.is_none()).map(|(i, _)| format!("F{}", i + 1)).collect();
+        if !unused.is_empty() {
+            return Err(format!(
+                "facts {} are never used in a beat: use every fact in its chapter or remove it from the bank",
+                unused.join(", ")
+            ));
+        }
+        Ok(())
+    }
+
+    /// Facts sorted by the chapter that uses them (keeping their order inside a chapter) and
+    /// every chapter's beats with the citations renumbered to match, so chapter k's facts
+    /// always come after chapter k−1's. Call after validation (every fact has one chapter).
+    pub fn in_chapter_order(&self) -> (Vec<String>, Vec<Vec<String>>) {
+        let chapters = self.chapters.len();
+        let mut owner = vec![chapters; self.facts.len()];
+        for index in 0..chapters {
+            for f in cited_facts(self.beats(index)) {
+                if let Some(slot) = f.checked_sub(1).and_then(|i| owner.get_mut(i)) {
+                    *slot = (*slot).min(index);
+                }
+            }
+        }
+        let mut order: Vec<usize> = (0..self.facts.len()).collect();
+        order.sort_by_key(|&i| (owner[i], i));
+        let mut new_number = vec![0; self.facts.len()];
+        for (new, &old) in order.iter().enumerate() {
+            new_number[old] = new + 1;
+        }
+        let facts = order.iter().map(|&i| self.facts[i].clone()).collect();
+        let beats = (0..chapters)
+            .map(|index| {
+                self.beats(index)
+                    .iter()
+                    .map(|b| renumber_citations(b, |n| n.checked_sub(1).and_then(|i| new_number.get(i)).copied()))
+                    .collect()
+            })
+            .collect();
+        (facts, beats)
+    }
+}
+
+/// Rewrites every `Fn` citation in `beat` through `map` (unknown numbers stay as they are).
+fn renumber_citations(beat: &str, map: impl Fn(usize) -> Option<usize>) -> String {
+    let chars: Vec<char> = beat.chars().collect();
+    let mut out = String::with_capacity(beat.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let starts = c == 'F' && (i == 0 || !chars[i - 1].is_alphanumeric());
+        if starts {
+            let digits: String = chars[i + 1..].iter().take_while(|d| d.is_ascii_digit()).collect();
+            let end = i + 1 + digits.len();
+            let clean_end = chars.get(end).is_none_or(|a| !a.is_alphanumeric());
+            if !digits.is_empty() && clean_end {
+                let n = digits.parse::<usize>().ok().and_then(&map);
+                match n {
+                    Some(n) => out.push_str(&format!("F{n}")),
+                    None => out.push_str(&format!("F{digits}")),
+                }
+                i = end;
+                continue;
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -131,6 +320,11 @@ pub struct BibleKeys<'a> {
 /// Checks beyond what serde enforces. Errors are fed back to the model.
 pub trait Validate {
     fn validate(&self) -> Result<(), String>;
+    /// Style rules worth one repair, but not worth a slower fallback model: a reply that
+    /// still breaks only these after the repair is kept. Checked after `validate`.
+    fn soft_check(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 impl Validate for OutlineReply {
@@ -144,14 +338,67 @@ impl Validate for OutlineReply {
         if self.chapters.iter().any(|c| c.title.trim().is_empty()) {
             return Err("every chapter needs a title".into());
         }
+        let texts = [self.title.as_str(), self.hook.as_str()]
+            .into_iter()
+            .chain(self.chapters.iter().flat_map(|c| [c.title.as_str(), c.summary.as_str()]));
+        for text in texts {
+            if let Some(c) = foreign_script(text) {
+                return Err(format!(
+                    "the outline contains a foreign-script character '{c}'; write it in the required language only"
+                ));
+            }
+        }
         Ok(())
     }
 }
 
-/// Thai (U+0E00..U+0E7F) and Lao (U+0E80..U+0EFF) letters never belong in Khmer or English
-/// narration, but lighter models sometimes mix them into Khmer words.
+/// Thai/Lao, Hebrew/Arabic and Vietnamese letters never belong in Khmer or English
+/// narration, but lighter models sometimes mix them into Khmer words or sentences.
 pub(crate) fn foreign_script(text: &str) -> Option<char> {
-    text.chars().find(|c| ('\u{0E00}'..='\u{0EFF}').contains(c))
+    text.chars().find(|c| {
+        ('\u{0590}'..='\u{06FF}').contains(c)
+            || ('\u{0750}'..='\u{077F}').contains(c)
+            // Devanagari, Bengali, Gurmukhi, Gujarati, Tamil… Sinhala (look-alike vowel signs).
+            || ('\u{0900}'..='\u{0DFF}').contains(c)
+            || ('\u{0E00}'..='\u{0EFF}').contains(c)
+            || ('\u{1000}'..='\u{109F}').contains(c)
+            || ('\u{1EA0}'..='\u{1EF9}').contains(c)
+    })
+}
+
+impl Validate for PlanReply {
+    fn validate(&self) -> Result<(), String> {
+        // A short source document may only give a few facts; never push the model to pad.
+        if self.facts.iter().all(|f| f.trim().is_empty()) {
+            return Err("`facts` needs at least one verified fact".into());
+        }
+        for index in 0..self.chapters.len() {
+            let beats = self.beats(index);
+            if beats.is_empty() || beats.iter().any(|b| b.trim().is_empty()) {
+                return Err(format!("`{}` needs one non-empty beat per scene", plan_key(index)));
+            }
+        }
+        let texts = self.facts.iter().chain(self.chapters.values().flatten());
+        for text in texts {
+            if let Some(c) = foreign_script(text) {
+                return Err(format!(
+                    "the plan contains a foreign-script character '{c}'; write facts and beats in English"
+                ));
+            }
+        }
+        self.check_structure()
+    }
+}
+
+/// A `snake_case` token (Visual Bible key, variable name) leaked into spoken text.
+fn code_word(text: &str) -> Option<&str> {
+    text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .find(|w| w.contains('_') && w.chars().any(|c| c.is_ascii_alphabetic()) && !w.starts_with('_') && !w.ends_with('_'))
+}
+
+/// A scene that speaks to the viewer with a question (Khmer «តើ…» or a question mark).
+fn asks_viewer(narration: &str) -> bool {
+    narration.contains('?') || narration.contains('\u{FF1F}') || narration.contains("តើ")
 }
 
 impl Validate for ChapterReply {
@@ -163,10 +410,17 @@ impl Validate for ChapterReply {
             for (field, text) in [("narration", &s.narration), ("spoken_text", &s.spoken_text)] {
                 if let Some(c) = foreign_script(text) {
                     return Err(format!(
-                        "scene {} {field} contains a Thai/Lao character '{c}'; write it in Khmer script only",
+                        "scene {} {field} contains a foreign-script character '{c}'; write it in Khmer script only",
                         i + 1
                     ));
                 }
+            }
+            if let Some(word) = code_word(&s.narration) {
+                return Err(format!(
+                    "scene {} narration contains the code word '{word}' (a Visual Bible key or variable name); \
+write what it means in normal words instead",
+                    i + 1
+                ));
             }
             if s.narration.trim().is_empty()
                 || s.spoken_text.trim().is_empty()
@@ -190,6 +444,20 @@ impl Validate for ChapterReply {
                 "code" if s.code.trim().is_empty() => return Err(format!("scene {n} is code but `code` is empty")),
                 _ => {}
             }
+        }
+        Ok(())
+    }
+
+    /// Too many questions to the viewer: one repair, then kept (Napoleon runs, 2026-11-03,
+    /// failed when this rule sent chapters to busy fallback models).
+    fn soft_check(&self) -> Result<(), String> {
+        let questions = self.scenes.iter().filter(|s| asks_viewer(&s.narration)).count();
+        let allowed = self.scenes.len() / 5 + 1;
+        if questions > allowed {
+            return Err(format!(
+                "{questions} of {} scenes ask the viewer a question; at most {allowed} may. Rewrite the others as plain statements that tell the story",
+                self.scenes.len()
+            ));
         }
         Ok(())
     }
@@ -217,6 +485,181 @@ pub fn outline_schema(chapter_count: usize) -> Value {
         },
         "required": ["title", "hook", "chapters"]
     })
+}
+
+/// One property per chapter so each beat list gets its exact scene count.
+pub fn plan_schema(scene_counts: &[u32]) -> Value {
+    let chapters: serde_json::Map<String, Value> = scene_counts
+        .iter()
+        .enumerate()
+        .map(|(i, &n)| {
+            (
+                plan_key(i),
+                json!({ "type": "array", "minItems": n, "maxItems": n, "items": { "type": "string" } }),
+            )
+        })
+        .collect();
+    let required: Vec<String> = (0..scene_counts.len()).map(plan_key).collect();
+    json!({
+        "type": "object",
+        "properties": {
+            "facts": { "type": "array", "items": { "type": "string" } },
+            "chapters": { "type": "object", "properties": chapters, "required": required }
+        },
+        "required": ["facts", "chapters"]
+    })
+}
+
+/// The beat sheet + fact bank request (`docs/03-pipeline.md` step 1, "Plan").
+pub fn plan_prompt(brief: &ScriptBrief, title: &str, hook: &str, chapters: &[(&str, &str, u32)]) -> String {
+    let outline: String = chapters
+        .iter()
+        .enumerate()
+        .map(|(i, (t, s, n))| format!("chapter_{}: {t} — {s} ({n} scenes)\n", i + 1))
+        .collect();
+    let total: u32 = chapters.iter().map(|c| c.2).sum();
+    // About one fact per 2 scenes (one per 3 left too few: the Napoleon plan of 2026-11-03 then
+    // cycled through each chapter's 4 facts twice), shared out by chapter size.
+    let (min_facts, max_facts) = ((total / 2).clamp(8, 60), (total * 2 / 3).clamp(12, 80));
+    let per_chapter: String = chapters
+        .iter()
+        .enumerate()
+        .map(|(i, c)| format!("chapter_{}: about {}", i + 1, (c.2 * min_facts).div_ceil(total.max(1)).max(1)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let (source, fact_count) = match brief.source {
+        Some(s) => (
+            format!(
+                "\n{s}\nTake every fact from the source document above, keeping its [p. …] page mark at the end \
+of the fact (e.g. \"… [p. 4]\"). General background knowledge may only explain a fact, never add one. \
+Use as many facts as the document gives (up to {max_facts}); never pad the list.\n"
+            ),
+            format!("up to {max_facts}"),
+        ),
+        None => (String::new(), format!("{min_facts}-{max_facts}")),
+    };
+    let tone = tone_rules(brief.tone, brief.language);
+    format!(
+        "You are planning the script of a {minutes}-minute narrated video BEFORE any narration is written. \
+A professional writer first decides what every scene says, so nothing is told twice and the story always moves forward.\n\
+TOPIC: {topic}\nTITLE: {title}\nHOOK: {hook}\n\
+CHAPTERS:\n{outline}{source}\n\
+{tone}\n{tone_beats}\n\n\
+Return, in ENGLISH (the narration is written later in the video language):\n\
+1. `facts`: the FACT BANK — {fact_count} short, verifiable facts this video will use, each with its \
+real name, year, place or number (e.g. \"1971: Intel releases the 4004, the first commercial microprocessor\"). \
+Include ONLY facts you are confident are true; never invent statistics. If an exact number is uncertain, write a \
+safe approximation (\"about\", \"more than\"). Each fact appears ONCE with ONE value; no two facts may give \
+different numbers for the same thing. Do not write \"F1:\" in the text; number them in your head as F1, F2, … \
+in list order.\n\
+   GROUP THE FACTS BY CHAPTER, in story order: first the facts that belong to chapter_1's summary, then \
+chapter_2's, and so on. Each chapter gets its own block of facts that fit ITS summary ({per_chapter}); the last \
+chapter's facts are the outcome and what it changed. Never put a later chapter's event into an earlier block.\n\
+   If the title or hook states a popular belief that is only part of the truth (e.g. \"beaten by the winter\"), \
+the bank must also hold the facts that give the fuller answer, told where they happened in the story.\n\
+2. `chapters`: for every chapter key, exactly the listed number of BEATS — one beat per scene, in story order. \
+A beat is one sentence saying what that scene tells, starting with the fact it develops, e.g. \"F12 — the 4004 \
+fits on a fingernail yet matches a room-sized 1946 computer\". Rules:\n\
+- A chapter's beats use ONLY the facts of that chapter's block, and every fact is used in its chapter. A fact \
+carries 1-3 beats IN A ROW (the event, then a concrete detail or number, then the consequence or the main \
+character's reaction) and is then finished: never come back to a fact after moving on to the next one, and never \
+cycle through the chapter's facts a second time. Cite the fact (Fn) in every such beat.\n\
+- Every beat adds ONE new piece of information or one new step of the story. No beat may repeat, rephrase or \
+summarise another beat, in any chapter. A chapter never retells an earlier chapter's events and never tells a \
+later chapter's events early.\n\
+- chapter_1 beats 1-2 are the hook (in the TONE's style, not a summary of the video); from beat 3 the story \
+starts at its true beginning. No beat previews what a later chapter reveals.\n\
+- The story moves forward: cause → effect, earlier → later, simple → deeper. Each chapter's last beat pulls into \
+the next chapter; the very last 2-3 beats of the video answer the hook and close it.\n\
+- At most ONE beat in every 6 is a question to the viewer (write it as \"QUESTION: …\"), and only when the next \
+beat answers it. All other beats are statements.\n\
+- Spread the {total} beats evenly: no filler beats (\"this changed everything\", \"the world was amazed\", \
+\"nature is stronger than anything\"), every beat carries real content. The closing chapter adds new facts \
+(what happened next, what it changed), not repeated morals.",
+        minutes = brief.target_minutes,
+        topic = brief.topic,
+        tone = tone.rules,
+        tone_beats = tone.beats,
+    )
+}
+
+/// What the chosen [`ScriptTone`] adds to the outline, plan and chapter prompts.
+pub struct ToneRules {
+    /// The TONE section: voice, humour, feelings, image moments.
+    pub rules: String,
+    pub title: &'static str,
+    pub hook: &'static str,
+    /// How the chapters are arranged (outline prompt).
+    pub arc: &'static str,
+    /// Extra beat-sheet rule (plan prompt).
+    pub beats: &'static str,
+}
+
+pub fn tone_rules(tone: ScriptTone, language: Language) -> ToneRules {
+    match tone {
+        ScriptTone::Funny => {
+            let khmer = if language == Language::Km {
+                "\n- Khmer: playful spoken Khmer, the way Cambodians joke with friends. A short exclamation (e.g. «អូយ!», \
+«ម៉េចក៏អញ្ចឹង?») is fine now and then, never in every scene; never vulgar or rude slang."
+            } else {
+                ""
+            };
+            ToneRules {
+                rules: format!(
+                    "TONE: FUNNY CARTOON EXPLAINER — a comedy history / science channel for the whole family: real facts \
+told through a funny story.\n\
+- A funny MAIN CHARACTER (one or two) lives the story, e.g. a clumsy caveman, a confused villager, a proud inventor. \
+Refer to them only by a simple role (\"the caveman\"), never by a personal name, and keep them through the whole video. They try things, fail, react and finally get it \
+right; every attempt teaches one real fact.\n\
+- Humour comes from situations and reactions: things going wrong, exaggerated surprise, modern comparisons \
+(\"basically the first apartment block\"), and the narrator's light, amused comments. At most one joke per scene, \
+and the scene still delivers its fact. A joke never changes a fact.\n\
+- Kind, clean humour for all ages: never mock real peoples, cultures, religions, bodies or disabilities; nothing crude.\n\
+- Voice: a playful friend telling a funny story; simple everyday words, short sentences, amused, never dramatic. \
+No doom, no \"shocking truth\", no \"the fate of the world\".\n\
+- Feelings: curiosity, laughter, \"aha!\", warmth.\n\
+- `image_prompt`: the characters in a comic moment that matches the narration, with big, exaggerated reactions \
+(faces and body language, as far as the art style allows).{khmer}"
+                ),
+                title: "one short, everyday curiosity question that the video answers (e.g. \"When did humans build the \
+first house?\"), asked the way a curious kid would ask it",
+                hook: "1-2 sentences that drop the viewer into a funny situation of the main character that raises the \
+title question (e.g. it starts to rain and the caveman has nowhere to hide).",
+                arc: "a funny journey: each chapter is the next attempt or stage in answering the title question, from \
+the earliest to the latest, ending with a warm, funny payoff that answers the question in one clear line",
+                beats: "- FUNNY beats: name what the main character does or suffers in that scene and the real fact it \
+shows (e.g. \"Caveman's branch roof collapses in the rain — F2: early shelters were simple branch huts\").",
+            }
+        }
+        ScriptTone::Dramatic => ToneRules {
+            rules: "TONE: DRAMATIC STORYTELLING — a high-retention 'why / history / science / technology' channel.\n\
+- NARRATIVE TENSION: find the conflict, contrast or hidden twist and make it the spine: old belief vs surprising \
+reality, underdog vs giant, or a step-by-step revelation that keeps building.\n\
+- Voice: a charismatic storyteller; short sentences that hit hard; fast facts, then a slow reveal.\n\
+- Feelings: awe → curiosity → tension → surprise → satisfaction.\n\
+- `image_prompt`: cinematic, emotional moments that match the narration."
+                .to_owned(),
+            title: "a compelling, curiosity-inducing title that frames a fascinating debate, mystery or comparison",
+            hook: "1-2 sentences for the first 10 seconds: contrast a common belief with a surprising reality.",
+            arc: "a dramatic narrative arc with escalating tension, ending in a resonant conclusion that resolves the \
+central tension",
+            beats: "",
+        },
+        ScriptTone::Calm => ToneRules {
+            rules: "TONE: CALM DOCUMENTARY — a clear, warm narrator, like a good teacher or a nature documentary.\n\
+- The spine is one clear question, answered step by step in a logical order.\n\
+- Voice: calm, friendly and precise; simple sentences; curiosity without hype. No jokes, no shock words, no \
+cliffhanger drama; chapters link with a gentle \"next\".\n\
+- Feelings: curiosity, understanding, quiet wonder.\n\
+- `image_prompt`: clear, explanatory scenes that show exactly what the narration describes."
+                .to_owned(),
+            title: "a clear, inviting title that says what the viewer will understand",
+            hook: "1-2 sentences: an interesting observation or question that makes the viewer want to understand the topic.",
+            arc: "a clear learning path from the basics to the deeper ideas, ending with a short, calm answer to the \
+opening question",
+            beats: "",
+        },
+    }
 }
 
 pub fn chapter_schema(scene_count: usize, bible: &BibleKeys, with_source: bool, real_world: bool) -> Value {
@@ -329,8 +772,10 @@ fn language_rules_base(language: Language) -> &'static str {
             "LANGUAGE: Khmer.\n\
 - Write `narration` in natural, CONVERSATIONAL spoken Khmer — the way a charismatic Cambodian storyteller talks to a friend, NOT a literal translation from English. Use vivid, everyday words. Short punchy sentences for impact. Vary the rhythm: fast facts, then a slow dramatic reveal. NO formal or academic language.\n\
 - End sentences with ។ . Do not insert zero-width spaces.\n\
-- RHETORICAL QUESTIONS in `narration`: when the scene asks a curiosity or rhetorical question, end the sentence with ។? or ? so the TTS voice naturally rises on that line. These questions must speak directly to the listener (e.g. «តើអ្នកចាប់អារម្មណ៍ទេថា...?», «ចុះហេតុអ្វីបានជា...?»).\n\
-- PACING in `spoken_text`: use commas `,` for natural breath pauses, and `...` (three dots) for a dramatic pause before a key reveal. Punchy short sentences only. Example: «កាលពីពេលនោះ... គ្មាននរណាម្នាក់ដឹងទេថា... អ្វីៗនឹងប្រែប្រួលជារៀងរហូត។»\n\
+- QUESTIONS in `narration` are rare (at most one per 6 scenes); a real question ends with ។? or ? so the TTS voice rises. Everything else is a plain statement. Do not open scenes with «តើអ្នកដឹងទេថា» / «តើអ្នកអាចស្រមៃ» over and over.\n\
+- PACING in `spoken_text`: use commas `,` for natural breath pauses and short sentences. `...` (three dots) only for the rare dramatic pause before a major reveal (at most once every 10 scenes). NEVER put `...` in `narration`.\n\
+- Write ONLY Khmer script, Latin letters (names/terms) and digits. Never use Thai, Lao, Arabic, Vietnamese or any other script, and no random English filler words in the middle of Khmer sentences.\n\
+- Avoid filler intensifiers (យក្ស, មហាសាល, ដ៏គួរឱ្យរន្ធត់, ដ៏អស្ចារ្យ) unless they carry real meaning; prefer one precise fact.\n\
 - Write EVERY number with DIGITS (0-9), in BOTH `narration` and `spoken_text`: years `ឆ្នាំ 1969`, quantities `1,500 នាក់`, decimals `3.5`, percentages `30%`. NEVER spell a number or a year out in Khmer number words (write `ឆ្នាំ 1863`, never `ឆ្នាំមួយពាន់ប្រាំបីរយ…`): spelled-out Khmer numbers usually come out wrong, while the app reads the digits in correct Khmer itself.\n\
 - `spoken_text` is the same content written exactly as it must be SPOKEN: write units in Khmer words (km → គីឡូម៉ែត្រ) and translate English abbreviations (BC → មុនគ្រិស្តសករាជ, AD → គ្រិស្តសករាជ). Foreign names of people, places, missions, and technical terms stay in Latin letters in BOTH fields (see names rule below).\n\
 - `title` and chapter titles in Khmer. `fact_note` in Khmer."
@@ -338,8 +783,8 @@ fn language_rules_base(language: Language) -> &'static str {
         Language::En => {
             "LANGUAGE: English.\n\
 - Write `narration` in clear, warm, CONVERSATIONAL spoken English — the way a passionate, brilliant friend explains something amazing. Short punchy sentences. Vivid everyday language. Vary the rhythm: fast facts, then a slow reveal. NO formal or academic language.\n\
-- RHETORICAL QUESTIONS in `narration`: when the scene asks a curiosity or rhetorical question, end it with ? so the TTS voice naturally rises (e.g. \"But why did this change everything?\", \"Could you imagine living through that?\").\n\
-- PACING in `spoken_text`: use commas `,` for natural breath pauses, and `...` (three dots) for a dramatic pause before a key reveal. Punchy short sentences only. Example: \"And then... everything changed.\"\n\
+- QUESTIONS in `narration` are rare (at most one per 6 scenes); a real question ends with ? so the TTS voice rises. Everything else is a plain statement.\n\
+- PACING in `spoken_text`: use commas `,` for natural breath pauses and short sentences. `...` only for the rare dramatic pause before a major reveal (at most once every 10 scenes). NEVER put `...` in `narration`.\n\
 - `spoken_text` is the same content written exactly as it must be SPOKEN: numbers, years, units and abbreviations written out as words (1863 → eighteen sixty-three; 5 km → five kilometers; 30% → thirty percent; BC → B.C.). No digits may remain in `spoken_text`."
         }
     }
@@ -352,39 +797,49 @@ You write narration for one storyteller voice over a sequence of illustrations (
 \n\
 YOUR WRITING METHOD — follow every rule in every video:\n\
 \n\
-1. NARRATIVE TENSION — every topic has two sides, a conflict, or a hidden twist. Find it and make it the spine \
-of the video. Frame the story as: old belief vs surprising reality, underdog vs giant, question nobody asks vs \
-shocking answer, or a step-by-step revelation that keeps building. NEVER write a flat list of facts.\n\
+1. STORY SPINE — every video follows one clear thread (a question, a problem, a journey or a twist, as the TONE \
+section of the task describes). NEVER write a flat list of facts.\n\
 \n\
-2. THE HOOK (scenes 1-2) — open with a visceral contrast or a jaw-dropping question the viewer CANNOT ignore. \
-Pattern: [familiar assumption everyone holds] + [sharp contradiction or mystery that breaks it]. \
+2. THE HOOK (scenes 1-2) — grab the viewer in the way the TONE section describes. \
 NEVER open with a definition, background, or \"In this video we will...\"\n\
 \n\
-3. CONVERSATIONAL TONE — write the way a brilliant, passionate friend talks, not the way a textbook reads. \
-Use vivid, everyday language. Short punchy sentences that hit hard. Vary the rhythm: fast facts, then a slow \
-revelation. No formal or academic language.\n\
+3. TONE — the TONE section of the task decides the voice, the humour and the feelings; follow it in every scene. \
+Always conversational, the way a person talks, never the way a textbook reads.\n\
 \n\
-4. RHETORICAL QUESTIONS — use at least 1-2 per chapter to pull the listener back in. Place them right before \
-a key reveal: \"But here is what nobody tells you...\", \"So why did this change everything?\", \
-\"Could you imagine...?\". End rhetorical questions with a '?' so the TTS voice rises naturally.\n\
+4. RHETORICAL QUESTIONS ARE RARE — at most ONE question per 6 scenes, only right before a real reveal that the \
+next scene answers. Most scenes are plain, confident statements that TELL the story. Never ask a question you do \
+not answer in the next 1-2 scenes, never ask two questions in a row, and never repeat the same question pattern \
+(\"Did you know...?\", \"Can you imagine...?\"). End real questions with a '?'.\n\
 \n\
-5. CONNECTIVE BRIDGES — every scene must flow into the next with a forward pull. End scenes with a \
-half-answered question, a surprising consequence, or a cliffhanger phrase. \
-NEVER end a scene with a bland summary sentence like \"This was an important moment.\"\n\
+5. FLOW — each scene continues the previous one with a natural link (cause and effect, \"so\", \"but\", \"then\", a \
+time jump). Only a chapter's LAST scene needs a cliffhanger. NEVER end scenes with a bland summary like \
+\"This was an important moment.\"\n\
 \n\
-6. SPOKEN_TEXT PACING — in `spoken_text`, use commas `,` and ellipsis `...` strategically to create \
-natural breath pauses for the TTS engine. Break long sentences into short punchy ones. \
-Dramatic pause before a reveal: \"And then... everything changed.\" Questions must end with `?`.\n\
+6. SPOKEN_TEXT PACING — in `spoken_text`, use commas `,` for breath pauses and break long sentences into short \
+ones. Use the ellipsis `...` at most once every 10 scenes, only before a major reveal. `narration` (the subtitle) \
+never contains `...`.\n\
 \n\
-7. EMOTIONAL ARC PER CHAPTER — mix emotions intentionally: awe → curiosity → tension → surprise → satisfaction. \
-Every chapter must make the viewer FEEL something, not just learn facts.\n\
+7. FEELING — every chapter makes the viewer FEEL something (the TONE section says what), not just learn facts.\n\
 \n\
-8. CONCRETE FACTS ONLY — anchor every claim with a specific year, name, number, location, or mechanism. \
-\"In 1974\" not \"a long time ago\". \"200,000 workers\" not \"many people\". \
-No vague filler phrases.\n\
+8. TRUE, CONCRETE FACTS — anchor claims with a specific year, name, place or mechanism, but ONLY facts you are \
+confident are real. NEVER invent statistics, quotes, dates or names to sound precise. If you are unsure of an exact \
+figure, use a safe approximation (\"more than half\", \"about 90%\") or explain the mechanism instead, and say so in \
+`fact_note`. A figure that appears more than once (a total, a price, a share) must be the SAME number every time. \
+Never write vague filler (\"an unbelievable amount\", \"a huge number of things\").\n\
 \n\
-9. CHAPTER CLIFFHANGERS — each chapter's last scene must end on a tension hook that makes the viewer \
-unable to stop. The final chapter resolves all tension with a resonant, satisfying conclusion.\n\
+9. NO TRAILERS, NO REPEATS — the video moves forward. Never preview, summarise or name events of later chapters \
+(the first chapter is the START of the story, not a trailer of the whole video), and never retell a fact, example or \
+idea that an earlier scene already covered. Every scene adds one NEW piece of information or one new step.\n\
+\n\
+10. CHAPTER ENDINGS — a chapter's last scene pulls the viewer into the next chapter. The final chapter answers \
+the hook with a short conclusion built on what the video showed — no new claims, no list of hypothetical disasters.\n\
+\n\
+11. NO INVENTED PEOPLE — the only people named are REAL people who are part of this topic's true story, with \
+their real role. NEVER create a fictional named character, guide, friend, relative (\"Uncle ...\", \"Aunt ...\"), \
+student or \"someone called ...\", and never give the narrator a name or a family role. This is true in every \
+language: do not slip in a local-sounding name (for example a Khmer name in a video about another country). When a \
+scene needs a person, use a generic role (\"a farmer\", \"a factory worker\", \"the minister\") or speak to the viewer \
+as \"you\". If the viewer would have to ask \"who is that?\", the name must not be there.\n\
 \n\
 When a claim is uncertain, disputed or a simplification, say so in that scene's `fact_note` (otherwise leave it empty). \
 Reply with JSON only, matching the given schema.";
@@ -399,24 +854,29 @@ is covered and nothing outside the document is presented as its content.\n"
 }
 
 pub fn outline_prompt(brief: &ScriptBrief, chapter_count: usize, scene_count: usize) -> String {
+    let tone = tone_rules(brief.tone, brief.language);
     format!(
-        "Plan a {minutes}-minute high-retention narrated explainer video in the B-Studio storytelling style.\n\
+        "Plan a {minutes}-minute high-retention narrated explainer video.\n\
 TOPIC: {topic}\n\
 VISUAL STYLE (for your information only): {style}\n\
+{tone_rules}\n\
 {rules}\n{source}\n\
 Return:\n\
-- `title`: a compelling, curiosity-inducing video title that frames a fascinating debate, mystery or comparison.\n\
-- `hook`: the dramatic opening (first 10 seconds): contrast a common belief vs a shocking reality, or ask a question the viewer cannot resist.\n\
-- `chapters`: exactly {chapter_count} chapters structured as a dramatic narrative arc with escalating tension:\n\
-  * Chapter 1 introduces the hook and the core debate/mystery.\n\
-  * Middle chapters explore conflicting angles, turning points, unseen mechanisms, and shocking discoveries.\n\
-  * Each chapter must cover a distinct phase without overlapping: never rush ahead, never repeat facts.\n\
-  * Each chapter needs a short `title` and a fact-specific one-line `summary` outlining the key revelation, turning point, and tension hook for that chapter.\n\
-The video will have about {scene_count} scenes in total, spread evenly across the chapters. \
-The final chapter resolves the central tension with a resonant, memorable conclusion.",
+- `title`: {tone_title}.\n\
+- `hook`: {tone_hook} It must tease, not summarise the video.\n\
+- `chapters`: exactly {chapter_count} chapters structured as {tone_arc}:\n\
+  * Chapter 1 opens the story at its true beginning (the first event, person or problem). It is NOT a preview or trailer of the whole video.\n\
+  * Middle chapters follow the story forward: turning points, unseen mechanisms, conflicts, discoveries.\n\
+  * Each chapter covers a distinct phase with its own events, examples and numbers: no two chapters may share a subject, example or statistic, and no chapter may mention what a later chapter reveals.\n\
+  * Each chapter needs a short `title` and a fact-specific `summary` listing the 3-5 concrete, verifiable facts/events (real names, years, places) that chapter will cover, and its closing tension hook. Use only facts you are confident are true. Never invent a named person: name only real people who belong to the topic.\n\
+The video will have about {scene_count} scenes in total, spread evenly across the chapters.",
         minutes = brief.target_minutes,
         topic = brief.topic,
         style = brief.style_label,
+        tone_rules = tone.rules,
+        tone_title = tone.title,
+        tone_hook = tone.hook,
+        tone_arc = tone.arc,
         rules = language_rules(brief),
         source = outline_source(brief),
     )
@@ -436,6 +896,51 @@ pub struct ChapterContext<'a> {
     /// Shots of the previous chapter's last two scenes (to keep shots varied).
     pub previous_shots: Vec<&'a str>,
     pub bible: BibleKeys<'a>,
+    /// This request's beats from the plan step, one per scene (empty for older scripts).
+    pub beats: &'a [String],
+    /// The whole video's fact bank (empty for older scripts).
+    pub facts: &'a [String],
+    /// 1-based fact numbers the plan gives this whole chapter (empty = no limit).
+    pub chapter_facts: &'a [usize],
+}
+
+/// The scene plan and fact bank block of a chapter prompt ("" without a plan).
+fn plan_section(ctx: &ChapterContext) -> String {
+    let mut out = String::new();
+    if !ctx.facts.is_empty() {
+        out.push_str(
+            "FACT BANK (the only figures, dates and names you may state; copy every number exactly, never change it; \
+a [p. …] mark gives the `source_pages` of the scene that uses the fact):\n",
+        );
+        for (i, f) in ctx.facts.iter().enumerate() {
+            out.push_str(&format!("F{}. {}\n", i + 1, strip_fact_label(f).trim()));
+        }
+        if !ctx.chapter_facts.is_empty() {
+            let list: Vec<String> = ctx.chapter_facts.iter().map(|n| format!("F{n}")).collect();
+            out.push_str(&format!(
+                "THIS CHAPTER'S FACTS: {}. Every other fact belongs to another chapter: earlier chapters already \
+told theirs, later chapters will tell theirs. Never state them here, not even as a summary or a preview.\n",
+                list.join(", ")
+            ));
+        }
+    }
+    if !ctx.beats.is_empty() {
+        out.push_str(
+            "SCENE PLAN — scene k tells beat k, in this order. Tell ONLY that beat (use the facts it cites); \
+do not add other beats' facts, do not jump ahead in the story and do not retell earlier beats. A beat marked QUESTION is the only scene \
+that may ask the viewer a question:\n",
+        );
+        for (i, b) in ctx.beats.iter().enumerate() {
+            out.push_str(&format!("Scene {}: {}\n", i + 1, b.trim()));
+        }
+        if ctx.beats.len() < ctx.scene_count {
+            out.push_str("Scenes after the plan continue with the next new step of this chapter.\n");
+        }
+    }
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out
 }
 
 pub fn bible_section(b: &BibleKeys) -> String {
@@ -460,7 +965,14 @@ pub fn image_prompt_rules(figures: Figures, topic: &str, title: &str) -> String 
     let people = match figures {
         Figures::StickFigure => {
             "People are drawn as simple stick figures: show who they are through props, tools, clothing \
-accents and what they are doing, never through faces or bodies. "
+accents and what they are doing, never through faces or bodies. The main stick man is always the same \
+character: show his feeling with the eyebrows, eyes and smile (curious, surprised, worried, proud) and a \
+clear pose that matches the narration. Because a stick man carries almost no detail, the TOPIC must be carried \
+by the props and the setting: STRICT TOPIC RELEVANCE — every image_prompt names the exact subject of its \
+narration (the specific object, machine, place, person, animal, event or number it talks about) and at least \
+two concrete props or setting details that belong only to this video's topic and era; the stick man interacts \
+with that subject. Self-check each prompt: if the same picture could illustrate a different video (a man at a \
+desk, a crowd, a generic city), it is wrong — rewrite it around the narration's own subject. "
         }
         Figures::SharedCartoon => {
             "All people share ONE simple cartoon design that is added to the image automatically: show who \
@@ -542,9 +1054,9 @@ pub fn chapter_prompt(brief: &ScriptBrief, ctx: &ChapterContext) -> String {
     let is_chapter_end = ctx.segment_start + ctx.scene_count >= ctx.chapter_total_scenes.max(ctx.scene_count);
 
     let position = if ctx.index == 0 && is_chapter_start {
-        "This is the FIRST chapter: scenes 1–2 must deliver the hook — open with the surprising question or fact so the viewer keeps watching."
+        "This is the FIRST chapter: scenes 1–2 must deliver the hook — open with the surprising contrast or fact so the viewer keeps watching. From scene 3 on, START THE STORY at its beginning and stay inside this chapter's focus: do not preview or list what later chapters will reveal."
     } else if number == total && is_chapter_end {
-        "This is the LAST chapter: end the video with a satisfying conclusion that answers the hook."
+        "This is the LAST chapter: end the video with a short, satisfying conclusion that answers the hook using what the video already showed. No new claims and no list of hypothetical disasters."
     } else if is_chapter_end {
         "End this chapter's last scene with a small cliffhanger that pulls the viewer into the next chapter."
     } else {
@@ -614,14 +1126,18 @@ TOPIC: {topic}\n\
 HOOK: {hook}\n\
 FULL OUTLINE:\n{outline}\n\
 {previous}{position}\n\n\
-STORYTELLING CRAFT — B-STUDIO METHOD (apply every rule to every scene):\n\
-1. NARRATIVE TENSION: Every chapter has a conflict, contrast, or hidden twist. Frame each scene as part of that tension arc — old belief vs new reality, underdog vs giant, mystery vs reveal. NEVER write a flat sequence of facts.\n\
-2. CONVERSATIONAL PUNCH: Write each `narration` the way a charismatic storyteller SPEAKS, not writes. Short sentences hit hard. Vary the rhythm: fast-paced facts, then a slow dramatic reveal. Use vivid, everyday words. Ban academic or formal language.\n\
-3. RHETORICAL QUESTIONS (at least 1-2 per chapter): Place a curiosity question just before a key reveal to pull the listener in. End with `?` so the TTS voice rises naturally. Patterns: the question this chapter's big reveal answers, or 'Could you imagine...?', 'But here is what nobody tells you...'.\n\
-4. CONNECTIVE BRIDGES: End every scene with a forward pull — a half-answered question, a surprising consequence, or a cliffhanger phrase that makes the viewer UNABLE to stop. NEVER end a scene with a bland summary like 'This was an important moment.'.\n\
-5. EMOTIONAL ARC: Mix emotions intentionally scene by scene within each chapter: awe → curiosity → tension → surprise → satisfaction. Every scene must make the viewer FEEL something, not just learn a fact.\n\
-6. CONCRETE FACTS: Anchor every claim with a specific year, name, number, location, or mechanism. '200,000 workers' not 'many people'. 'In 1974' not 'a long time ago'. Zero vague filler phrases.\n\
-7. SCENE PROGRESSION: Each scene delivers ONE new fact or narrative beat. Never repeat the same event, phrasing, or idea already covered.\n\n\
+{plan}\
+{tone}\n\n\
+STORYTELLING CRAFT (apply every rule to every scene):\n\
+1. TONE: follow the TONE section above in every scene; it decides the voice, the humour and the feelings. NEVER write a flat sequence of facts.\n\
+2. SPOKEN WORDS: write each `narration` the way a person SPEAKS, not writes: short sentences, vivid everyday words, no academic or formal language.\n\
+3. QUESTIONS ARE RARE: at most ONE question per 6 scenes, placed right before a reveal that the next scene answers. Most scenes are plain statements that tell the story. Never two questions in a row; never reuse the same question pattern.\n\
+4. FLOW: each scene continues the last one (cause, effect, contrast, time jump). Only this chapter's LAST scene needs a cliffhanger. NEVER end a scene with a bland summary like 'This was an important moment.'.\n\
+5. FEELING: every scene makes the viewer feel what the TONE section asks for, not just learn a fact.\n\
+6. TRUE FACTS: anchor claims with a real year, name, place or mechanism, but NEVER invent statistics, quotes or dates. If unsure of an exact figure, use a safe approximation or explain the mechanism, and flag it in `fact_note`. A number used before must stay identical. No vague filler.\n\
+7. SCENE PROGRESSION: each scene delivers ONE new fact or narrative beat. Never repeat an event, example, statistic or idea already covered (see ALREADY COVERED), and never preview events of later chapters.\n\
+8. No `...` in `narration`; at most one in `spoken_text` per 10 scenes.\n\
+9. NO INVENTED PEOPLE: name only real people who belong to this topic's true story. Never invent a named character, guide, friend or relative (no \"Uncle ...\", no made-up names in any language), and never name the narrator; use a generic role (\"a farmer\") or speak to the viewer as \"you\".\n\n\
 {bible}\n\
 {rules}\n{source}\n\
 Write exactly {scenes} scenes. For each scene:\n\
@@ -641,6 +1157,8 @@ Write exactly {scenes} scenes. For each scene:\n\
         outline = outline,
         previous = previous,
         position = position,
+        plan = plan_section(ctx),
+        tone = tone_rules(brief.tone, brief.language).rules,
         bible = bible_section(&ctx.bible),
         rules = language_rules(brief),
         source = brief.source.map_or(String::new(), |s| format!("\n{s}")),
@@ -712,9 +1230,14 @@ pub async fn request_json_with<T: DeserializeOwned + Validate>(
             match parse_reply::<T>(&repaired) {
                 Ok(value) => Ok((value, repair_model)),
                 Err(repair_error) => {
-                    // Thai/Lao slips are random per scene: a fresh request on the same fast
+                    // Only a soft rule still broken: keep the reply rather than wait on a
+                    // slower (often busy) fallback model.
+                    if let Ok(value) = parse_lenient::<T>(&repaired) {
+                        return Ok((value, repair_model));
+                    }
+                    // foreign-script slips are random per scene: a fresh request on the same fast
                     // model usually passes, and it avoids waiting on a slower model.
-                    if repair_error.contains("Thai/Lao character") {
+                    if repair_error.contains("foreign-script character") {
                         notify_invalid(hooks, &repair_model, 3, &repair_error);
                         let strict = format!("{system}{SCRIPT_PURITY_REMINDER}");
                         match generate_text(client, key, chain, &strict, &contents[..1], &schema, hooks).await {
@@ -756,9 +1279,9 @@ pub async fn request_json_with<T: DeserializeOwned + Validate>(
     }
 }
 
-/// Appended to the system prompt for the same-model retry after a Thai/Lao slip.
+/// Appended to the system prompt for the same-model retry after a foreign-script slip.
 const SCRIPT_PURITY_REMINDER: &str = "\n\nCRITICAL: write every word only in the script the task requires (for Khmer: Khmer script). \
-Never output Thai or Lao characters, even for words that look similar. Keep official names in Latin letters and preserve digits.";
+Never output Thai, Lao, Myanmar, Hindi, Punjabi, Arabic or Vietnamese characters, even for words that look similar. Keep official names in Latin letters and preserve digits.";
 
 /// Makes the otherwise silent repair / escalation steps visible in the log and the UI.
 fn notify_invalid(hooks: &RetryHooks, model: &str, step: u32, error: &str) {
@@ -775,9 +1298,9 @@ fn notify_invalid(hooks: &RetryHooks, model: &str, step: u32, error: &str) {
 }
 
 fn repair_instruction(error: &str) -> String {
-    if error.contains("Thai/Lao character") {
+    if error.contains("foreign-script character") {
         format!(
-            "Your previous JSON was rejected: {error}. Repair the specific scene and field named in the error. Replace the Thai/Lao character with the correct spelling in the language required by the original prompt. For Khmer, write Khmer words in Khmer script; keep official names in Latin letters and preserve digits. Keep all other scene content and facts unchanged. Return the complete JSON only, matching the schema."
+            "Your previous JSON was rejected: {error}. Repair the specific scene and field named in the error. Replace the foreign-script character with the correct spelling in the language required by the original prompt. For Khmer, write Khmer words in Khmer script; keep official names in Latin letters and preserve digits. Keep all other scene content and facts unchanged. Return the complete JSON only, matching the schema."
         )
     } else {
         format!(
@@ -818,6 +1341,13 @@ async fn generate_text(
 
 /// Parses model output, tolerating a ```json fence around it.
 pub fn parse_reply<T: DeserializeOwned + Validate>(raw: &str) -> Result<T, String> {
+    let value: T = parse_lenient(raw)?;
+    value.soft_check()?;
+    Ok(value)
+}
+
+/// [`parse_reply`] without [`Validate::soft_check`].
+fn parse_lenient<T: DeserializeOwned + Validate>(raw: &str) -> Result<T, String> {
     let trimmed = raw.trim();
     let body = trimmed
         .strip_prefix("```json")
@@ -843,7 +1373,44 @@ mod tests {
             keep_terms: &[],
             source: None,
             real_world: false,
+            tone: ScriptTone::Dramatic,
         }
+    }
+
+    #[test]
+    fn tone_changes_every_prompt() {
+        let funny = ScriptBrief { tone: ScriptTone::Funny, ..brief() };
+        let outline = outline_prompt(&funny, 3, 15);
+        assert!(outline.contains("FUNNY CARTOON EXPLAINER"));
+        assert!(outline.contains("everyday curiosity question"));
+        assert!(outline.contains("«អូយ!»"), "Khmer projects get the Khmer humour line");
+        assert!(!outline.contains("DRAMATIC STORYTELLING"));
+        let plan = plan_prompt(&funny, "T", "H", &[("A", "a", 3)]);
+        assert!(plan.contains("FUNNY beats"));
+        let ctx = ChapterContext {
+            title: "T",
+            hook: "H",
+            chapters: vec![("A", "a")],
+            index: 0,
+            scene_count: 3,
+            segment_start: 0,
+            chapter_total_scenes: 3,
+            previous_narration: None,
+            previous_shots: vec![],
+            bible: BibleKeys::default(),
+            beats: &[],
+            facts: &[],
+            chapter_facts: &[],
+        };
+        assert!(chapter_prompt(&funny, &ctx).contains("MAIN CHARACTER"));
+        assert!(chapter_prompt(&funny, &ctx).contains("NO INVENTED PEOPLE"));
+        assert!(SYSTEM_PROMPT.contains("NO INVENTED PEOPLE"));
+        assert!(chapter_prompt(&brief(), &ctx).contains("DRAMATIC STORYTELLING"));
+        let calm = ScriptBrief { tone: ScriptTone::Calm, language: Language::En, ..brief() };
+        let calm_outline = outline_prompt(&calm, 3, 15);
+        assert!(calm_outline.contains("CALM DOCUMENTARY"));
+        assert!(!calm_outline.contains("«អូយ!»"));
+        assert!(!SYSTEM_PROMPT.contains("shocking"), "the shared rules stay tone-neutral");
     }
 
     #[test]
@@ -859,6 +1426,9 @@ mod tests {
             previous_narration: None,
             previous_shots: vec![],
             bible: BibleKeys::default(),
+            beats: &[],
+            facts: &[],
+            chapter_facts: &[],
         };
         let schema = chapter_schema(3, &ctx.bible, false, true);
         let item = &schema["properties"]["scenes"]["items"];
@@ -919,6 +1489,9 @@ mod tests {
             previous_narration: None,
             previous_shots: vec![],
             bible: BibleKeys { characters: vec![], places: vec![] },
+            beats: &[],
+            facts: &[],
+            chapter_facts: &[],
         };
         let block = "SOURCE DOCUMENT: \"Rice\"\nSOURCE RULES: never add facts";
         let b = ScriptBrief { source: Some(block), ..brief() };
@@ -949,6 +1522,9 @@ mod tests {
             previous_narration: None,
             previous_shots: vec![],
             bible: BibleKeys { characters: vec![], places: vec![] },
+            beats: &[],
+            facts: &[],
+            chapter_facts: &[],
         };
         let p = chapter_prompt(&brief(), &ctx);
         assert!(p.contains("must EXPLAIN this scene's narration"));
@@ -957,6 +1533,8 @@ mod tests {
         assert!(!p.contains("ONE simple cartoon design"));
         let stick = chapter_prompt(&ScriptBrief { figures: Figures::StickFigure, ..brief() }, &ctx);
         assert!(stick.contains("stick figures: show who"));
+        assert!(stick.contains("STRICT TOPIC RELEVANCE"));
+        assert!(!p.contains("STRICT TOPIC RELEVANCE"));
         assert!(stick.contains("- `mood`:"), "rules are followed by the next field");
         let soft = chapter_prompt(&ScriptBrief { figures: Figures::SharedCartoon, ..brief() }, &ctx);
         assert!(soft.contains("ONE simple cartoon design"));
@@ -994,9 +1572,152 @@ mod tests {
     fn rejects_thai_letters_mixed_into_khmer() {
         let raw = r#"{"scenes":[{"narration":"ញើសឈាមរបស់บรรพបុរាណ","spoken_text":"x","image_prompt":"y","mood":"calm","fact_note":""}]}"#;
         let err = parse_reply::<ChapterReply>(raw).unwrap_err();
-        assert!(err.contains("Thai/Lao"), "{err}");
+        assert!(err.contains("foreign-script"), "{err}");
         let ok = r#"{"scenes":[{"narration":"ញើសឈាមរបស់បុព្វបុរស","spoken_text":"x","image_prompt":"y","mood":"calm","fact_note":""}]}"#;
         assert!(parse_reply::<ChapterReply>(ok).is_ok());
+    }
+
+    #[test]
+    fn plan_schema_fixes_each_chapters_beat_count() {
+        let schema = plan_schema(&[3, 4]);
+        let chapters = &schema["properties"]["chapters"];
+        assert_eq!(chapters["properties"]["chapter_1"]["minItems"], 3);
+        assert_eq!(chapters["properties"]["chapter_2"]["maxItems"], 4);
+        assert_eq!(chapters["required"][1], "chapter_2");
+        let p = plan_prompt(&brief(), "T", "H", &[("A", "a", 3), ("B", "b", 4)]);
+        assert!(p.contains("chapter_2: B — b (4 scenes)"));
+        assert!(p.contains("FACT BANK — 8-12 short"));
+        let doc = plan_prompt(&ScriptBrief { source: Some("SOURCE DOCUMENT: \"X\""), ..brief() }, "T", "H", &[("A", "a", 3)]);
+        assert!(doc.contains("SOURCE DOCUMENT: \"X\""));
+        assert!(doc.contains("[p. …] page mark"));
+        assert!(doc.contains("FACT BANK — up to 12 short"));
+    }
+
+    #[test]
+    fn plan_reply_needs_facts_and_every_chapters_beats() {
+        let ok = r#"{"facts":["a","b","c"],"chapters":{"chapter_1":["F1 x","F2 y"],"chapter_2":["F3 z"]}}"#;
+        let plan: PlanReply = parse_reply(ok).unwrap();
+        assert_eq!(plan.beats(1), ["F3 z".to_owned()]);
+        assert!(plan.beats(5).is_empty());
+        let none = r#"{"facts":[" "],"chapters":{"chapter_1":["x"]}}"#;
+        assert!(parse_reply::<PlanReply>(none).unwrap_err().contains("facts"));
+        assert!(parse_reply::<PlanReply>(r#"{"facts":["a"],"chapters":{"chapter_1":["F1 x"]}}"#).is_ok());
+        let gap = r#"{"facts":["a","b","c"],"chapters":{"chapter_1":["F1 x"],"chapter_3":["F2 y"]}}"#;
+        assert!(parse_reply::<PlanReply>(gap).unwrap_err().contains("chapter_2"));
+    }
+
+    fn plan(facts: usize, chapters: &[&[&str]]) -> Result<PlanReply, String> {
+        let facts: Vec<String> = (1..=facts).map(|i| format!("fact {i}")).collect();
+        let chapters: serde_json::Map<String, Value> = chapters
+            .iter()
+            .enumerate()
+            .map(|(i, beats)| (plan_key(i), json!(beats)))
+            .collect();
+        parse_reply::<PlanReply>(&json!({ "facts": facts, "chapters": chapters }).to_string())
+    }
+
+    #[test]
+    fn plan_facts_move_forward_one_chapter_each() {
+        // Good: each chapter has its own block, facts carry several beats, a question is allowed.
+        assert!(plan(4, &[&["F1 a", "F1 b", "F2 c", "QUESTION: why?"], &["F3 d", "F3 e", "F4 f"]]).is_ok());
+        // The Napoleon failure: the climax facts told again in a later chapter.
+        let retold = plan(3, &[&["F1 a", "F2 b", "F3 c"], &["F3 again"]]).unwrap_err();
+        assert!(retold.contains("F3 is used in both `chapter_1` and `chapter_2`"), "{retold}");
+        // Out of bank order is accepted: `in_chapter_order` fixes it.
+        let mixed = plan(4, &[&["F1 a", "F3 b"], &["F2 c", "F4 d"]]).unwrap();
+        let (facts, beats) = mixed.in_chapter_order();
+        assert_eq!(facts, ["fact 1", "fact 3", "fact 2", "fact 4"]);
+        assert_eq!(beats, [vec!["F1 a", "F2 b"], vec!["F3 c", "F4 d"]]);
+        // The second Napoleon failure: the chapter cycles through its facts again.
+        let cycle = plan(2, &[&["F1 a", "F2 b", "F1 c", "F2 d"]]).unwrap_err();
+        assert!(cycle.contains("comes back to F1"), "{cycle}");
+        // A beat may carry two facts; a question in between does not break a run.
+        assert!(plan(3, &[&["F1 a", "F1, F2 b", "QUESTION: why?", "F2 c", "F3 d"]]).is_ok());
+        // Filler: most beats cite nothing.
+        let filler = plan(1, &[&["F1 a", "nature wins", "winter wins", "the end"]]).unwrap_err();
+        assert!(filler.contains("only 1 of 4 beats"), "{filler}");
+        // A chapter without facts, an unknown fact, an unused fact.
+        assert!(plan(1, &[&["F1 a"], &["moral"]]).unwrap_err().contains("cites no facts"));
+        assert!(plan(1, &[&["F1 a", "F7 b"]]).unwrap_err().contains("only 1 facts"));
+        assert!(plan(3, &[&["F1 a", "F2 b"]]).unwrap_err().contains("F3 are never used"));
+    }
+
+    #[test]
+    fn too_many_questions_is_a_soft_rule() {
+        let scene = |n: &str| format!(r#"{{"narration":"{n}","spoken_text":"x","image_prompt":"y","mood":"calm","fact_note":""}}"#);
+        let raw = format!(r#"{{"scenes":[{},{}]}}"#, scene("តើហេតុអ្វី?"), scene("ហេតុអ្វី?"));
+        assert!(parse_reply::<ChapterReply>(&raw).unwrap_err().contains("ask the viewer a question"));
+        assert!(parse_lenient::<ChapterReply>(&raw).is_ok());
+        // Hard rules stay hard.
+        let raw = format!(r#"{{"scenes":[{}]}}"#, scene("សេះ russian_steppe"));
+        assert!(parse_lenient::<ChapterReply>(&raw).is_err());
+    }
+
+    #[test]
+    fn renumbers_citations_only() {
+        let map = |n: usize| (n == 3).then_some(7);
+        assert_eq!(renumber_citations("F3 — x (F3, F12) FIFA F3a", map), "F7 — x (F7, F12) FIFA F3a");
+    }
+
+    #[test]
+    fn code_words_in_narration_are_rejected() {
+        assert_eq!(code_word("វាលស្មៅ frozen russian_steppe ត្រជាក់"), Some("russian_steppe"));
+        assert_eq!(code_word("Napoleon 1812 snake_"), None);
+        let raw = r#"{"scenes":[{"narration":"សេះ russian_steppe","spoken_text":"x","image_prompt":"y","mood":"calm","fact_note":""}]}"#;
+        assert!(parse_reply::<ChapterReply>(raw).unwrap_err().contains("code word 'russian_steppe'"));
+    }
+
+    #[test]
+    fn reads_fact_citations_and_strips_fact_labels() {
+        assert_eq!(cited_facts(&["F12 — x (F3, F4)", "F3/F1: y", "QUESTION: why?"]), vec![1, 3, 4, 12]);
+        // Not citations: words, model names, a lone F.
+        assert!(cited_facts(&["FIFA and F-16 and F", "the 3F12 code", "F1a"]).is_empty());
+        assert_eq!(strip_fact_label("F3: In 1812 …"), "In 1812 …");
+        assert_eq!(strip_fact_label("F12 — x"), "x");
+        assert_eq!(strip_fact_label("Fire in Moscow"), "Fire in Moscow");
+        assert_eq!(strip_fact_label("F1 racing cars"), "F1 racing cars");
+    }
+
+    #[test]
+    fn chapter_prompt_lists_the_beats_and_fact_bank() {
+        let beats = vec!["F1 — the first chip".to_owned(), "QUESTION: why so small?".to_owned()];
+        let facts = vec!["1958: Jack Kilby builds the first integrated circuit".to_owned()];
+        let ctx = ChapterContext {
+            title: "T",
+            hook: "H",
+            chapters: vec![("A", "a")],
+            index: 0,
+            scene_count: 3,
+            segment_start: 0,
+            chapter_total_scenes: 3,
+            previous_narration: None,
+            previous_shots: vec![],
+            bible: BibleKeys::default(),
+            beats: &beats,
+            facts: &facts,
+            chapter_facts: &[],
+        };
+        let p = chapter_prompt(&brief(), &ctx);
+        assert!(p.contains("F1. 1958: Jack Kilby"));
+        assert!(!p.contains("THIS CHAPTER'S FACTS"));
+        let own = ChapterContext { chapter_facts: &[1, 2], ..ctx };
+        assert!(chapter_prompt(&brief(), &own).contains("THIS CHAPTER'S FACTS: F1, F2."));
+        assert!(p.contains("Scene 2: QUESTION: why so small?"));
+        assert!(p.contains("Scenes after the plan continue"));
+        let none = ChapterContext { beats: &[], facts: &[], chapter_facts: &[], ..own };
+        assert!(!chapter_prompt(&brief(), &none).contains("SCENE PLAN"));
+    }
+
+    #[test]
+    fn rejects_arabic_and_vietnamese_letters() {
+        // …and Gurmukhi / Devanagari / Myanmar vowel signs that look like Khmer ones.
+        for bad in ["សំឡេង سرم", "AI bắt đầu", "ពੀរ", "អਤិមា", "ក ि", "ក ာ"] {
+            let raw = format!(
+                r#"{{"scenes":[{{"narration":"{bad}","spoken_text":"x","image_prompt":"y","mood":"calm","fact_note":""}}]}}"#
+            );
+            let err = parse_reply::<ChapterReply>(&raw).unwrap_err();
+            assert!(err.contains("foreign-script"), "{err}");
+        }
     }
 
     #[test]
@@ -1029,6 +1750,9 @@ mod tests {
                 characters: vec![("farmer", "old farmer")],
                 places: vec![],
             },
+            beats: &[],
+            facts: &[],
+            chapter_facts: &[],
         };
         let p = chapter_prompt(&brief(), &ctx);
         assert!(p.contains("FIRST chapter"));

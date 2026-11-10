@@ -13,10 +13,12 @@ interface Props {
   placeholder?: ReactNode;
   /** Drawn over the image (e.g. a status badge). */
   children?: ReactNode;
+  /** The picture is being generated: a shimmer sweeps across it. */
+  working?: boolean;
 }
 
 /** 384×216 `thumb.jpg` of a scene, or a placeholder. */
-export function SceneThumb({ projectId, sceneId, version, alt, placeholder, children }: Props) {
+export function SceneThumb({ projectId, sceneId, version, alt, placeholder, children, working = false }: Props) {
   const [loaded, setLoaded] = useState<{ version: string; url: string } | null>(null);
 
   useEffect(() => {
@@ -41,12 +43,13 @@ export function SceneThumb({ projectId, sceneId, version, alt, placeholder, chil
 
   const url = loaded && loaded.version === version ? loaded.url : null;
   return (
-    <div className="thumb">
+    <div className={working ? "thumb thumb--working" : "thumb"}>
       {url ? (
         <img className="thumb__img" src={url} alt={alt} />
       ) : (
         (placeholder ?? <ImageIcon size={20} strokeWidth={1.5} aria-hidden="true" />)
       )}
+      {working && <span className="thumb__sweep" aria-hidden="true" />}
       {children}
     </div>
   );
